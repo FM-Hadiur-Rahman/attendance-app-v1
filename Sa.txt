@@ -1,0 +1,147 @@
+If you want to adjust the icon inside inputbox
+
+<InputBox
+  label="Password"
+  placeholder="Enter password"
+  secureTextEntry
+  rightIcon={require("../assets/icons/eye.png")}
+  rightIconStyle={{ width: 20, height: 20, tintColor: "gray" }}
+  onRightIconPress={() => console.log("Toggle password")}
+  borderColor="blue"
+/>
+
+
+//-----------------------------------------------------------------//
+how to call popup for the Logout (Red border)
+//-----------------------------------------------------------------//
+<Popup
+        visible={showPopup}
+        onClose={() => setShowPopup(false)}
+        popupBorderColor="#FF3B30"  
+        dismissOnOverlayPress={false} 
+        title="Logout?"
+        titleStyle={{ color: '#FF3B30' }} 
+      >
+        {/* Subtext with styled spans */}
+        <Text style={{ textAlign: 'center', fontSize: 12, marginBottom: 20 }}>
+          <Text style={{ color: '#757575' }}>
+            Confirm the logging out by clicking{" "}
+          </Text>
+          <Text style={{ color: '#2196F3' }}>yes.</Text>
+        </Text>
+
+        {/* Button group */}
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>
+          <Button1 text='Yes' backgroundColor='' width={'45%'} />
+          <Button1 text='No' backgroundColor='#FF3B30' width={'45%'}/>
+        </View>
+      </Popup>
+
+//---------------------------------------------------------------------//
+
+
+// import React, { useState } from 'react';
+// import { View, Text } from 'react-native';
+// import { TouchableOpacity } from 'react-native';
+// import Popup from '../../components/Popup';
+// import { Button1 } from '../../components/Button';
+
+// export default function ExampleScreen() {
+//   const [showPopup, setShowPopup] = useState(false);
+
+//   return (
+//     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+//       {/* Button to open popup */}
+//       <TouchableOpacity onPress={() => setShowPopup(true)}>
+//         <Text>Open Logout Popup</Text>
+//       </TouchableOpacity>
+
+//       <Popup
+//         visible={showPopup}
+//         onClose={() => setShowPopup(false)}
+//         popupBorderColor="#FF3B30"  
+//         dismissOnOverlayPress={false} 
+//         title="Logout?"
+//         titleStyle={{ color: '#FF3B30' }} 
+//       >
+//         {/* Subtext with styled spans */}
+//         <Text style={{ textAlign: 'center', fontSize: 12, marginBottom: 20 }}>
+//           <Text style={{ color: '#757575' }}>
+//             Confirm the logging out by clicking{" "}
+//           </Text>
+//           <Text style={{ color: '#2196F3' }}>yes.</Text>
+//         </Text>
+
+//         {/* Button group */}
+//         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>
+//           <Button1 text='Yes' backgroundColor='' width={'45%'} />
+//           <Button1 text='No' backgroundColor='#FF3B30' width={'45%'}/>
+//         </View>
+//       </Popup>
+//     </View>
+//   );
+// }
+//--------------------------Popup full screen code //--------------------------//
+
+
+
+//-----------------------cartbox------------------------------------//
+          <CartBox containerStyle={{ alignItems : 'flex-start', justifyContent : 'center', paddingLeft:12, paddingRight:12, paddingTop:12, paddingBottom:12}}>
+            <Text style={{fontSize:14, fontWeight:'500', marginBottom:5}}> Shift Starting soon </Text> 
+            <Text style={{fontSize:14, fontWeight:'400'}}> Your shift starts in 15 minutes. Don't forget to heck in! </Text> 
+          </CartBox>
+//-----------------------cartbox end------------------------------------//
+
+
+
+
+///-----------------------Header-------------------------------------//
+
+//Header with text only
+       <Header
+        backgroundColor={colors.secondary}
+        position="relative"
+        center={{ type: 'text', value: 'Product details', color: colors.text }}
+      />
+
+//Header with text an back Button
+       <Header
+        backgroundColor={colors.secondary}
+        position="relative"
+        left={{
+          type: 'image',
+          url: require('../../assets/icons/back_b.png'),
+          width: 24,
+          height: 24,
+          onPress: () => navigation.goBack(),
+        }}
+        center={{ type: 'text', value: 'Product details', color: colors.text }}
+      />
+
+//Header with righ notification button
+       <Header
+        backgroundColor={colors.secondary}
+        position="relative"
+        center={{ type: 'text', value: 'Product details', color: colors.text }}
+        right={{
+          type:'image',
+          url: require('../../assets/icons/f_notification_b.png'),
+          width:24,
+          height:24
+        }}
+      />
+
+
+///------------to use searchbar---------------------------------//
+      <SearchBar
+        ref={searchRef}
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search items..."
+        iconSource={searchIcon}
+        borderColor="#2196F3"
+        borderRadius={12}
+        textColor="#000"
+        placeholderColor="#BFBFBF"
+        onSubmitEditing={() => console.log('Search submitted:', query)}
+      />

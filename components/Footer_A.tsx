@@ -1,0 +1,162 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  useWindowDimensions,
+  Platform,
+} from 'react-native';
+import { useRoute } from '@react-navigation/native';
+import HomeScreen from '../screens/admin/main/HomeScreen';
+import AttendancerecordScreen from '../screens/admin/main/AttendancerecordScreen';
+import WorkScheduleScreen from '../screens/admin/main/WorkScheduleScreen';
+import StaffRecordScreen from '../screens/admin/main/StaffRecordScreen';
+import MoreScreen from '../screens/admin/main/MoreScreen';
+import colors from '../styles/Colors';
+import fonts from '../styles/Fonts';
+
+const Footer_A = () => {
+  const [selectedTab, setSelectedTab] = useState<string>('Home');
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isTablet = SCREEN_WIDTH >= 768;
+  const route = useRoute<any>();
+
+  const userId = route.params?.userId;
+  const langId = route.params?.langId ?? 'de';
+
+const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
+//const lang = translations[currentLangId];
+
+  // Now tabConfig is inside Footer and uses lang dynamically
+  const tabConfig = [
+    {
+      key: 'Home',
+      component: HomeScreen,
+      icon: require('../assets/icons/a_home_g.png'),
+      activeIcon: require('../assets/icons/a_home_b.png'),
+    },
+    {
+      key: 'Attendancerecord',
+      component: AttendancerecordScreen,
+      icon: require('../assets/icons/a_attendance_g.png'),
+      activeIcon: require('../assets/icons/a_attendance_b.png'),
+    },
+    {
+      key: 'WorkSchedule',
+      component: WorkScheduleScreen,
+      icon: require('../assets/icons/a_workschedule_g.png'),
+      activeIcon: require('../assets/icons/a_workschedule_b.png'),
+    },
+    {
+      key: 'StaffRecord',
+      component: StaffRecordScreen,
+      icon: require('../assets/icons/a_staffrecord_g.png'),
+      activeIcon: require('../assets/icons/a_staffrecord_b.png'),
+    },
+    {
+      key: 'More',
+      component: MoreScreen,
+      icon: require('../assets/icons/a_more_g.png'),
+      activeIcon: require('../assets/icons/a_more_b.png'),
+    },
+  ];
+
+  const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab)?.component;
+
+  return (
+    <View style={styles.safeArea}>
+      <View style={styles.content}>
+        {ActiveScreen ? (
+        <ActiveScreen
+          userId={userId}
+          langId={currentLangId}              
+          setLangId={setCurrentLangId}      
+        />
+      ) : null}
+      </View>
+
+      <View
+        style={[
+          styles.tabBar,
+          isTablet ? styles.tabBarTablet : styles.tabBarMobile,
+          styles.footerFixed,
+        ]}
+      >
+        {tabConfig.map((tab, index) => {
+          const focused = selectedTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={index}
+              style={styles.tabItem}
+              onPress={() => {
+                console.log('Footer -> tab press:', tab.key, { userId, langId: currentLangId });
+                setSelectedTab(tab.key);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={{ width: 28, height: 28, justifyContent: 'center', alignItems: 'center' }}>
+                <Image
+                  source={focused ? tab.activeIcon : tab.icon}
+                  style={[styles.icon, isTablet && styles.tabletIcon]}
+                  resizeMode="contain"
+                />
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
+
+export default Footer_A;
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flex: 1,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: colors.secondary,
+    borderTopColor: colors.border,
+    borderTopWidth:1,
+    overflow: 'hidden',
+  },
+  tabBarMobile: {
+    height: 60,          
+    paddingTop: 12,     
+    paddingBottom: 0,
+  },
+  tabBarTablet: {
+    height: 80,         
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 6 : 8,
+  },
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  icon: {
+    width: 28,
+    height: 28,
+  },
+  tabletIcon: {
+    width: 32,
+    height: 32,
+  },
+  footerFixed: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+});

@@ -1,0 +1,389 @@
+// screens/admin/main/WorkScheduleScreen.tsx
+import React, { useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
+  Dimensions,
+  RefreshControl,
+} from "react-native";
+import Header from "../../../components/Header";
+import colors from "../../../styles/Colors";
+import CartBox from "../../../components/CartBox";
+import fonts from "../../../styles/Fonts";
+import translations from "../../../assets/translations.json"
+import { users } from "../../../api/Users";
+import { schedules } from "../../../api/Schedule";
+import { workHours } from "../../../api/WorkHours";
+import { useNavigation, useRoute } from "@react-navigation/native";
+
+const { width: deviceWidth } = Dimensions.get("window");
+const base = deviceWidth / 440;
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+
+const toYMD = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// convert hh:mm:ss -> minutes from midnight
+const timeToMinutes = (hhmmss: string) => {
+  if (!hhmmss) return 0;
+  const parts = hhmmss.split(":").map((p) => parseInt(p, 10) || 0);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+};
+
+// format minutes difference as "1h 30m" or "30m"
+const formatMinutesDiff = (mins: number) => {
+  const abs = Math.abs(Math.round(mins));
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  if (h > 0) {
+    return `${h}h ${m}m`;
+  }
+  return `${m}m`;
+};
+
+// format hh:mm:ss -> "h:mm AM/PM"
+const formatTime12 = (hhmmss: string) => {
+  if (!hhmmss) return "";
+  const [hhStr, mmStr] = hhmmss.split(":");
+  const hh = parseInt(hhStr || "0", 10);
+  const mm = mmStr || "00";
+  const ampm = hh >= 12 ? "PM" : "AM";
+  let h12 = hh % 12;
+  if (h12 === 0) h12 = 12;
+  return `${h12}:${mm} ${ampm}`;
+};
+
+// format YYYY-MM-DD -> "Thu, Aug 18"
+const formatYMDDisplay = (ymd: string) => {
+  const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
+};
+
+
+const HomeScreen_A = (props: any) => {
+    const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+
+    // Support prop-based injection from Footer (preferred) or fallback to route params.
+ const propUserId = props?.userId;
+    const propLangId = props?.langId;
+    const propSetLangId = props?.setLangId; // if Footer passes a setter
+
+    const routeUserId = route.params?.userId ?? route.params?.id;
+    const routeLangId = route.params?.langId ?? route.params?.language;
+
+    const userId = propUserId || routeUserId;
+    const langId = propLangId || routeLangId || "en";
+
+    // translation dictionary for this screen
+    const lang = (translations as any)[langId] || (translations as any)["en"];
+    
+  // today's date in local timezone (Y-M-D)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayYMD = toYMD(today);
+
+  // refresh state
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // add this next to your refreshing state
+  const [version, setVersion] = useState<number>(0);
+
+
+  // Pull-to-refresh: clear search and refresh view
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await new Promise((r) => setTimeout(r, 1000));
+    // bump version to force re-evaluation of all useMemo hooks that depend on it
+    setVersion((v) => v + 1);
+    setRefreshing(false);
+  };
+
+  // total employees
+  const totalStaff = useMemo(
+    () => users.filter((u) => u.role === "employee").length,
+    [version]
+  );
+
+  // staff on shift (based on workHours entries for today)
+  const todaysWorkHours = useMemo(
+    () => workHours.filter((w) => w.date === todayYMD),
+    [todayYMD, version]
+  );
+
+  const staffOnShiftCount = todaysWorkHours.length;
+
+  // recent check-ins: today's workHours sorted by check_in descending (most recent first)
+  const recentCheckins = useMemo(() => {
+    return todaysWorkHours
+      .slice()
+      .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
+      .map((wh) => {
+        const user = users.find((u) => u.id === wh.user_id) || null;
+        // find schedule for this user for today (if any)
+        const sched = schedules.find(
+          (s) => s.user_id === wh.user_id && s.date === wh.date
+        );
+        // compute early/late compared to schedule
+        let status: "early" | "late" | "noschedule" = "noschedule";
+        let diffText = "";
+        if (sched) {
+          const schedMin = timeToMinutes(sched.start_time);
+          const checkMin = timeToMinutes(wh.check_in);
+          const diff = checkMin - schedMin;
+          if (diff > 0) {
+            status = "late";
+            diffText = formatMinutesDiff(diff);
+          } else {
+            status = "early";
+            diffText = formatMinutesDiff(diff); // positive magnitude
+          }
+        } else {
+          status = "noschedule";
+        }
+
+        return { work: wh, user, schedule: sched ?? null, status, diffText };
+      });
+  }, [todaysWorkHours, version]);
+
+  return (
+    <View style={styles.container}>
+      <Header
+        backgroundColor={colors.secondary}
+        position="relative"
+        center={{ type: "text", value: lang.timeTrack, color: colors.text }}
+        right={{
+          type: "image",
+          url: require("../../../assets/icons/f_notification_b.png"),
+          width: 24,
+          height: 24,
+          onPress: () => {
+            console.log("Navigate -> NotificationScreen", { userId, langId: langId });
+            navigation.navigate("NotificationScreen" as any, { userId, langId: langId });
+          },
+        }}
+      />
+
+      <View style={styles.body}>
+        <View style={styles.boxes}>
+          <CartBox containerStyle={styles.staff}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Image
+                source={require("../../../assets/icons/totalstaff_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
+            </View>
+            <Text style={styles.total_count}>{totalStaff}</Text>
+          </CartBox>
+
+          <CartBox containerStyle={styles.staff}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Image
+                source={require("../../../assets/icons/staff_tik_g.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
+            </View>
+
+            <Text style={styles.shift_count}>{staffOnShiftCount}</Text>
+          </CartBox>
+        </View>
+  <Text style={styles.heading}>{lang.recent_check_ins}</Text>
+
+        <ScrollView
+          style={{ marginBottom: '15%' }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+        >
+          <View style={styles.details}>
+
+
+            {recentCheckins.length === 0 ? (
+              <Text style={styles.noDataText}>No check-ins for today</Text>
+            ) : null}
+
+            {recentCheckins.map(({ work, user, schedule, status, diffText }) => {
+              const displayName = user ? `${user.firstname} ${user.lastname}` : "Unknown";
+              const position = user?.position ?? "";
+              const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(
+                work.check_out
+              )}`;
+              const dateDisplay = formatYMDDisplay(work.date);
+              return (
+                <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
+                    <Image
+                      source={require("../../../assets/images/profile2.png")}
+                      style={styles.profileImage}
+                    />
+                    <View style={styles.name_position}>
+                      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                        {displayName}
+                      </Text>
+                      <Text style={styles.time}>{timeStr}</Text>
+                      <Text style={styles.time}>{dateDisplay}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: "flex-end" }}>
+                    {status === "late" ? (
+                      <Text style={styles.status_late}>{lang.late}</Text>
+                    ) : status === "early" ? (
+                      <Text style={styles.status_early}>{lang.early}</Text>
+                    ) : (
+                      <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
+                    )}
+                    {status !== "noschedule" ? (
+                      <Text style={styles.duration}>{diffText}</Text>
+                    ) : null}
+                  </View>
+                </CartBox>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.secondary },
+  body: {
+    marginTop: 20,
+    marginHorizontal: 20,
+    flex: 1,
+  },
+  boxes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  details: {
+  },
+  detail_cartbox: {
+    width: "100%",
+    borderRadius: 10,
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    marginBottom: 12,
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    flexDirection: "row",
+  },
+  profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
+  name_position: { marginLeft: 10, width: "65%" },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
+  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
+  duration: {
+    color: colors.primary,
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.m,
+    marginTop: 6,
+    textAlign: "right",
+  },
+  status_early: {
+    fontWeight: fonts.weight.regular as any,
+    color: colors.status_early,
+    fontSize: fonts.size.xs,
+    paddingVertical: 2,
+    paddingHorizontal: 12,
+    backgroundColor: colors.status_early_bg,
+    borderRadius: 10,
+    marginRight: 7,
+    textAlign: "center",
+  },
+  status_late: {
+    fontWeight: fonts.weight.regular as any,
+    color: colors.status_late,
+    fontSize: fonts.size.xs,
+    paddingVertical: 2,
+    paddingHorizontal: 12,
+    backgroundColor: colors.status_late_bg,
+    borderRadius: 10,
+    marginRight: 7,
+    textAlign: "center",
+  },
+  status_noschedule: {
+    fontWeight: fonts.weight.regular as any,
+    color: colors.subtext,
+    fontSize: fonts.size.xs,
+    paddingVertical: 2,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginRight: 7,
+    textAlign: "center",
+  },
+  heading: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+    marginBottom: 12,
+     marginTop: 20,
+  },
+  staff: {
+    backgroundColor: colors.secondary,
+    borderWidth: 1,
+    borderColor: colors.border1,
+    width: 190 * base,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingLeft: 12,
+    alignItems: "flex-start",
+    
+  },
+  icon: {
+    width: 30 * base,
+    height: 30,
+  },
+  total_staff: {
+    color: colors.search,
+    fontWeight: fonts.weight.regular as any,
+    fontSize: 14,
+    marginLeft: 8,
+    width:"75%"
+  },
+  total_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.primary,
+    marginTop: 8,
+  },
+  shift_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.text,
+    marginTop: 8,
+  },
+  noDataText: {
+    textAlign: "center",
+    color: colors.subtext,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+});
+
+export default HomeScreen_A;
