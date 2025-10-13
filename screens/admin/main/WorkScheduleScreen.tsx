@@ -20,6 +20,7 @@ import translations from "../../../assets/translations.json";
 
 import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button"; 
+import { getBranchById } from "../../../api/Branch";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -183,7 +184,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       },
     });
   };
-
     // Refresh -> clear inputs
   const onRefresh = async () => {
     setRefreshing(true);
@@ -275,30 +275,63 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       >
           {schedulesForDate.length === 0 ? <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text> : null}
 
-          {schedulesForDate.map(({ schedule, user }) => {
-            const displayName = `${user!.firstname} ${user!.lastname}`;
-            const position = user!.position ?? "";
-            const timeStr = `${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`;
-            return (
-              <TouchableOpacity key={schedule.id} onPress={() => openEditScreen(schedule.id)}>
-                <CartBox containerStyle={styles.detail_cartbox}>
-               <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-                    <View style={styles.name_position}>
-                      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
-                      <Text style={styles.position}>{position}</Text>
-                    </View>
-                  </View>
+          { schedulesForDate.map(({ schedule, user }) => {
+  if (!user) return null;
 
-                  <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                    <Text style={styles.time}>{timeStr}</Text>
-                  </View>
-                  </View>
-                </CartBox>
-              </TouchableOpacity>
-            );
-          })}
+  const displayName = user.fullname;
+  const position = user.position ?? "";
+  const timeStr = `${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`;
+
+  // ✅ Find branch details
+  const getBranchById = (id: string) => {
+    const { branches } = require("../../../api/Branch"); // import branches here
+    return branches.find((b: any) => b.id === id);
+  };
+
+  const branch = getBranchById(schedule.branch_id);
+  const branchName = branch ? branch.name : "Unknown Branch";
+
+  // ✅ Only show branch name if schedule.branch_id ≠ user.branch_id
+  const showBranch = schedule.branch_id !== user.branch_id;
+
+  return (
+    <TouchableOpacity key={schedule.id} onPress={() => openEditScreen(schedule.id)}>
+      <CartBox containerStyle={styles.detail_cartbox}>
+
+        {showBranch && (
+          <View style={styles.branchHeader}>
+            <Image
+              source={require("../../../assets/icons/branch.png")}
+              style={styles.branchIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.branchName}>{branchName}</Text>
+          </View>
+        )}
+
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <Image
+              source={require("../../../assets/images/profile2.png")}
+              style={styles.profileImage}
+            />
+            <View style={styles.name_position}>
+              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                {displayName}
+              </Text>
+              <Text style={styles.position}>{position}</Text>
+            </View>
+          </View>
+
+          <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+            <Text style={styles.time}>{timeStr}</Text>
+          </View>
+        </View>
+      </CartBox>
+    </TouchableOpacity>
+  );
+})}
+
         </ScrollView>
       </View>
 
@@ -365,7 +398,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 12,
-    flexDirection: "row",
+   
     justifyContent: "flex-start"
   },
   profileImage: {
@@ -394,6 +427,24 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular as any,
     color: colors.subtext,
   },
+  branchHeader: {
+  flexDirection: "row",
+  marginBottom: 6,
+  alignSelf : 'flex-start'
+  
+},
+
+branchIcon: {
+  width: 16,
+  height: 16,
+  marginRight: 6,
+
+},
+
+branchName: {
+  fontSize: fonts.size.m,
+  fontWeight: fonts.weight.regular as any,
+},
 });
 
 export default WorkScheduleScreen;

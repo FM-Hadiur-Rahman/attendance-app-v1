@@ -371,4 +371,5 @@ export let workHours: WorkHour[] = [
     createDate: "2025-10-10T08:10:00Z",
     updateDate: "2025-10-10T08:10:00Z"
   }
+  
 ];
