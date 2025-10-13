@@ -44,7 +44,7 @@ export default function AddScheduleScreen(props: any) {
   const lang = (translations as any)[langId] || (translations as any)["en"];
 
   // confirm save popup visibility
-const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
+  const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -53,6 +53,9 @@ const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
   }, []);
 
   const editingId: string | undefined = route.params?.id;
+
+  // quick helper: true when the screen was opened to edit an existing schedule
+  const isEditingScreen = () => Boolean(editingId);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -191,8 +194,13 @@ const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
     }
   };
 
-  // staff suggestions filter by fullname, id, branch_id (substring, case-insensitive)
-  const employeeList = localUsers.filter((u) => u.role === "employee");
+  // staff suggestions filtered by the branch_id passed from previous screen.
+  // If no branch_id is passed, default to "B001".
+  const screenBranchId: string = (route.params?.branch_id as string) ?? "B001";
+
+  const employeeList = localUsers.filter(
+    (u) => u.role === "employee" && (u.branch_id ?? "") === screenBranchId
+  );
   const branchList = localBranches;
 
   const staffSuggestions = employeeList.filter((u) => {
@@ -498,34 +506,34 @@ const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
     }
   };
 
-const onFooterSaveAndBack = () => {
-  // don't open popup if nothing changed
-  if (changeLog.length === 0) {
-    showErrorToast("No changes to save");
-    return;
-  }
+  const onFooterSaveAndBack = () => {
+    // don't open popup if nothing changed
+    if (changeLog.length === 0) {
+      showErrorToast(lang.no_changes_to_save);
+      return;
+    }
 
-  // don't open popup if modal is open (user might have unfinished input)
-  if (addScheduleModalVisible) {
-    showErrorToast("Please finish editing the schedule");
-    return;
-  }
+    // don't open popup if modal is open (user might have unfinished input)
+    if (addScheduleModalVisible) {
+      showErrorToast("Please finish editing the schedule");
+      return;
+    }
 
-  // don't open popup if there are validation errors visible
-  if (staffError || timeFromError || durationError) {
-    showErrorToast("Please fix errors before saving");
-    return;
-  }
+    // don't open popup if there are validation errors visible
+    if (staffError || timeFromError || durationError) {
+      showErrorToast("Please fix errors before saving");
+      return;
+    }
 
-  // Additional safety: ensure at least one meaningful change exists (redundant, but harmless)
-  if (!Array.isArray(changeLog) || changeLog.length === 0) {
-    showErrorToast("No changes to save");
-    return;
-  }
+    // Additional safety: ensure at least one meaningful change exists (redundant, but harmless)
+    if (!Array.isArray(changeLog) || changeLog.length === 0) {
+      showErrorToast("No changes to save");
+      return;
+    }
 
-  // All checks passed — show confirmation popup
-  setSaveConfirmVisible(true);
-};
+    // All checks passed — show confirmation popup
+    setSaveConfirmVisible(true);
+  };
 
   // screen dims for overlay limits
   const screenH = Dimensions.get("window").height;
@@ -570,20 +578,39 @@ const onFooterSaveAndBack = () => {
             }}
           >
             <InputBox
-              label={"Staff member"}
+              label={lang.staff_member}
               placeholder={lang.Select_staff_member}
               value={selectedStaff}
-              setValue={(v: string) => {
+              // setValue={(v: string) => {
+              //   setSelectedStaff(v);
+              //   setStaffError("");
+              //   setSelectedStaffId(null);
+              //   setStaffFilterOpen(true);
+              //   setTimeout(measureStaffInput, 20);
+              // }}
+              setValue={isEditingScreen() ? (_v: string) => { } : (v: string) => {
                 setSelectedStaff(v);
                 setStaffError("");
                 setSelectedStaffId(null);
                 setStaffFilterOpen(true);
                 setTimeout(measureStaffInput, 20);
               }}
+              editable={!isEditingScreen()}
               onPress={undefined}
               rightIcon={require("../../../../assets/icons/a_staffrecord_b.png")}
               rightIconStyle={{ tintColor: colors.primary }}
+              // onRightIconPress={() => {
+              //   if (!staffFilterOpen) {
+              //     setStaffFilterOpen(true);
+              //     setTimeout(measureStaffInput, 20);
+              //   } else {
+              //     setStaffFilterOpen(false);
+              //     setStaffInputLayout(null);
+              //   }
+              // }}
               onRightIconPress={() => {
+                // don't allow toggling suggestions when in edit-mode
+                if (isEditingScreen()) return;
                 if (!staffFilterOpen) {
                   setStaffFilterOpen(true);
                   setTimeout(measureStaffInput, 20);
@@ -627,16 +654,16 @@ const onFooterSaveAndBack = () => {
                     activeOpacity={expired ? 1 : 0.8}
                     onPress={() => { if (expired) return; openAddModalForDate(ymd); }}
                   >
-                    <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor:colors.background, borderColor: colors.background } : {}]}>
+                    <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
-                        <View style={{alignItems:'center'}}>
+                        <View style={{ alignItems: 'center' }}>
                           {branchNameForSchedule ?
-                          <View style={{flexDirection: 'row', marginBottom:4, width:'80%'}}>
-                            <Image source={require("../../../../assets/icons/branch_b.png")} style={styles.branch} />
-                            <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{branchNameForSchedule}</Text>
-                          </View>
-                          : null}
-                           <View style={{flexDirection: 'row'}}>
+                            <View style={{ flexDirection: 'row', marginBottom: 4, width: '80%' }}>
+                              <Image source={require("../../../../assets/icons/branch_b.png")} style={styles.branch} />
+                              <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{branchNameForSchedule}</Text>
+                            </View>
+                            : null}
+                          <View style={{ flexDirection: 'row' }}>
                             <Image source={require("../../../../assets/icons/clock_b.png")} style={styles.clock} />
                             <Text style={styles.time_text}>{displayTime}</Text>
                           </View>
@@ -664,7 +691,7 @@ const onFooterSaveAndBack = () => {
         <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{modalEditingId ? "Edit schedule" : "Add schedule"}</Text>
+            <Text style={styles.modalTitle}>{modalEditingId ? lang.Edit_Schedule : lang.Add_Schedule}</Text>
 
             {/* We render branch overlay inside modal container (so it sits above modal content) */}
             <View>
@@ -675,7 +702,7 @@ const onFooterSaveAndBack = () => {
                   onLayout={onBranchLayout}
                 >
                   <InputBox
-                    label={"Branch"}
+                    label={lang.Branch}
                     placeholder={"Select branch"}
                     value={selectedBranch}
                     setValue={(v: string) => {
@@ -715,7 +742,7 @@ const onFooterSaveAndBack = () => {
 
                 {/* Start time */}
                 <InputBox
-                  label={"Start time"}
+                  label={lang.Start_time}
                   placeholder={"00:00:00"}
                   value={timeFrom}
                   setValue={(v: string) => {
@@ -732,7 +759,7 @@ const onFooterSaveAndBack = () => {
 
                 {/* Duration */}
                 <InputBox
-                  label={"Duration"}
+                  label={lang.Duration}
                   placeholder={"Eg: 8"}
                   value={durationHours}
                   setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
@@ -742,7 +769,7 @@ const onFooterSaveAndBack = () => {
 
                 <View style={{ height: 18 }} />
 
-                <Button1 text={modalEditingId ? "Save" : "Add"} width={"100%"} onPress={onAddSchedule} />
+                <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
                 <View style={{ height: 20 }} />
               </ScrollView>
 
@@ -837,40 +864,40 @@ const onFooterSaveAndBack = () => {
       <Toast config={toastConfig} />
 
       {/* Save confirmation popup */}
-<Popup
-  visible={saveConfirmVisible}
-  onClose={() => setSaveConfirmVisible(false)}
+      <Popup
+        visible={saveConfirmVisible}
+        onClose={() => setSaveConfirmVisible(false)}
 
-  dismissOnOverlayPress={false}
-  title= {lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
-  titleStyle={{ color: colors.primary, marginBottom:30, fontSize:fonts.size.m, fontWeight:fonts.weight.regular as any }}
->
-  <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-    <Button1
-      text={lang.yes || "Yes"}
-      onPress={() => {
-        setSaveConfirmVisible(false);
-        // navigate back and pass changes (same behaviour as before)
-        try {
-          navigation.navigate("WorkScheduleScreen" as any, { userId, langId, changes: changeLog });
-        } catch (e) {
-          console.warn("navigate to WorkScheduleScreen failed", e);
-        }
-        navigation.goBack();
-      }}
-      backgroundColor={colors.primary}
-      width={'48%'}
-      textStyle={{ color: colors.secondary }}
-    />
-    <Button1
-      text={lang.no || "No"}
-      onPress={() => setSaveConfirmVisible(false)}
-      backgroundColor={colors.error_text}
-      width={'48%'}
-      textStyle={{ color: colors.secondary }}
-    />
-  </View>
-</Popup>
+        dismissOnOverlayPress={false}
+        title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
+        titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any }}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+          <Button1
+            text={lang.yes || "Yes"}
+            onPress={() => {
+              setSaveConfirmVisible(false);
+              // navigate back and pass changes (same behaviour as before)
+              try {
+                navigation.navigate("WorkScheduleScreen" as any, { userId, langId, changes: changeLog });
+              } catch (e) {
+                console.warn("navigate to WorkScheduleScreen failed", e);
+              }
+              navigation.goBack();
+            }}
+            backgroundColor={colors.primary}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          />
+          <Button1
+            text={lang.no || "No"}
+            onPress={() => setSaveConfirmVisible(false)}
+            backgroundColor={colors.error_text}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          />
+        </View>
+      </Popup>
 
     </View>
   );
@@ -880,7 +907,7 @@ const onFooterSaveAndBack = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
   scrollContainer: { paddingBottom: 0 },
-  scrollBody: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, paddingBottom: 30 },
+  scrollBody: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, paddingBottom: "25%" },
   group1: { marginBottom: 20 },
   groupTitle: { color: colors.text, fontWeight: fonts.weight.regular as any, fontSize: fonts.size.m },
   groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular as any, fontSize: fonts.size.s, marginTop: 6 },
@@ -904,14 +931,15 @@ const styles = StyleSheet.create({
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
   modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium as any, textAlign: "center", marginBottom: 8 },
 
-  footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 30 ,},
-  each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center",  },
+  footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 0, paddingTop: 10, paddingBottom: 30, backgroundColor: colors.secondary },
+  each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center", },
   day: { borderColor: colors.primary, borderWidth: 1, borderRadius: 12, backgroundColor: colors.secondary, marginRight: 10, paddingTop: 11, paddingBottom: 11, width: 52, alignItems: "center" },
   day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any },
-  time: { 
-    borderColor: colors.primary, 
-    borderWidth: 1, borderRadius: 12, 
-    backgroundColor: colors.secondary, flex: 1, justifyContent: "center" , alignItems:'center'},
+  time: {
+    borderColor: colors.primary,
+    borderWidth: 1, borderRadius: 12,
+    backgroundColor: colors.secondary, flex: 1, justifyContent: "center", alignItems: 'center'
+  },
   plus: { width: 16, height: 16 },
 
   // overlay (full-screen pressable backdrop)
@@ -937,19 +965,19 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   suggestionText: { color: colors.text, fontSize: fonts.size.m },
-  branch:{
-    width:16, height:16, marginRight:4
+  branch: {
+    width: 16, height: 16, marginRight: 4
   },
-  branch_name:{
-    fontSize: fonts.size.m ,
+  branch_name: {
+    fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular as any,
-    color:colors.primary,
+    color: colors.primary,
 
   },
-  time_text:{
+  time_text: {
     fontSize: fonts.size.s,
-     fontWeight: fonts.weight.regular as any,
-    color:colors.primary,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.primary,
   },
-  clock:{width:14, height:14, marginRight:4},
+  clock: { width: 14, height: 14, marginRight: 4 },
 });

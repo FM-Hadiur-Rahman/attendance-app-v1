@@ -16,6 +16,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import SearchBar from "../../../components/SearchBar";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { users as usersArr, User } from "../../../api/Users";
+import { branches, getBranchById } from "../../../api/Branch";
 import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
 import { workHours as workHoursArr } from "../../../api/WorkHours";
@@ -25,10 +26,33 @@ import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 
+import * as XLSX from "xlsx";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+
+import { Buffer } from "buffer";
+import base64 from "base-64";
+
+if (typeof (global as any).Buffer === "undefined") {
+  (global as any).Buffer = Buffer;
+}
+// ensure atob/btoa exist for some libs
+if (typeof (global as any).atob === "undefined") {
+  (global as any).atob = (str: string) => base64.decode(str);
+}
+if (typeof (global as any).btoa === "undefined") {
+  (global as any).btoa = (str: string) => base64.encode(str);
+}
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const FULL_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
 ];
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
@@ -68,7 +92,7 @@ const dateInputToYMD = (display: string): { ok: boolean; ymd?: string; message?:
   const [wd, mon, dayStr] = parts;
   const wdLower = wd.slice(0, 3).toLowerCase();
   const monLower = mon.slice(0, 3).toLowerCase();
-  if (!["sun","mon","tue","wed","thu","fri","sat"].includes(wdLower))
+  if (!["sun", "mon", "tue", "wed", "thu", "fri", "sat"].includes(wdLower))
     return { ok: false, message: "Weekday must be 3-letter (Mon..Sun)" };
   const monIndex = MONTHS.findIndex(m => m.toLowerCase() === monLower);
   if (monIndex === -1) return { ok: false, message: "Month must be 3-letter (Jan..Dec)" };
@@ -76,11 +100,11 @@ const dateInputToYMD = (display: string): { ok: boolean; ymd?: string; message?:
   if (isNaN(day) || day <= 0) return { ok: false, message: "Invalid day" };
   const year = new Date().getFullYear();
   const maxDays = new Date(year, monIndex + 1, 0).getDate();
-  if (day > maxDays) return { ok: false, message: `${MONTHS[monIndex]} has only ${maxDays} days` };
+  if (day > maxDays) return { ok: false, message: `${FULL_MONTHS[monIndex]} has only ${maxDays} days` };
   const dt = new Date(year, monIndex, day);
   if (WEEKDAYS[dt.getDay()].toLowerCase() !== wdLower)
     return { ok: false, message: `Weekday mismatch (expected ${WEEKDAYS[dt.getDay()]})` };
-  const ymd = `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`;
+  const ymd = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
   return { ok: true, ymd };
 };
 
@@ -89,6 +113,48 @@ const formatYMDDisplay = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
   const dt = new Date(y, (m || 1) - 1, d || 1);
   return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
+};
+
+const getStartOfWeekSunday = (date: Date) => {
+  const day = date.getDay(); // 0 Sun ... 6 Sat
+  const start = new Date(date);
+  start.setDate(date.getDate() - day);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
+const getEndOfWeekSaturday = (date: Date) => {
+  const start = getStartOfWeekSunday(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+};
+
+const formatWeekDisplayFromDate = (date: Date) => {
+  const s = getStartOfWeekSunday(date);
+  const e = getEndOfWeekSaturday(date);
+  const sFmt = `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()}`;
+  const eFmt = `${WEEKDAYS[e.getDay()]}, ${MONTHS[e.getMonth()]} ${e.getDate()}`;
+  return `${sFmt} - ${eFmt}`;
+};
+
+const formatMonthDisplayFromDate = (date: Date) => {
+  return `${FULL_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+};
+
+// parse month display like "October 2025" or "Oct" or "Oct 2025" or "October"
+const parseMonthInput = (display: string): { ok: boolean; year?: number; monthIndex?: number; message?: string } => {
+  if (!display || display.trim() === "") return { ok: false, message: "Empty" };
+  const tokens = display.trim().split(/\s+/);
+  const mTok = tokens[0].slice(0, 3).toLowerCase();
+  const monthIndex = MONTHS.findIndex(m => m.toLowerCase() === mTok);
+  if (monthIndex === -1) return { ok: false, message: "Invalid month" };
+  let year = new Date().getFullYear();
+  if (tokens.length >= 2) {
+    const y = parseInt(tokens[1], 10);
+    if (!isNaN(y)) year = y;
+  }
+  return { ok: true, year, monthIndex };
 };
 
 const AttendancerecordScreen: React.FC = (props: any) => {
@@ -113,8 +179,14 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   // refresh
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
+  // MODE: "day" | "week" | "month"
+  const [mode, setMode] = useState<"day" | "week" | "month">("day");
+
+  // derive current admin user & branch id from incoming userId param
+  const currentUser = usersArr.find(u => u.id === userId) || null;
+  const currentBranchId = currentUser?.branch_id ?? null;
+
   // date input & validation
-  // date input & validation (default to today's date, editable by user)
   const defaultToday = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -129,8 +201,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(defaultToday);
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
 
-
-  // helper: handle date text change (light formatting, permissive)
+  // helper: handle date text change (same permissive formatting)
   const handleDateTextChange = (raw: string) => {
     const prev = prevDateRef.current || "";
     const isDeleting = raw.length < prev.length;
@@ -139,10 +210,17 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     if (isDeleting) {
       setDateInput(s);
       prevDateRef.current = s;
-      const conv = dateInputToYMD(s);
-      if (conv.ok) setDateError("");
+      // light validation only
+      if (mode === "day") {
+        const conv = dateInputToYMD(s);
+        if (conv.ok) setDateError("");
+      } else if (mode === "month") {
+        const conv = parseMonthInput(s);
+        if (conv.ok) setDateError("");
+      }
       return;
     }
+    // reuse your formatting logic (day-oriented)
     const hasComma = s.indexOf(",") !== -1;
     let wdPart = "";
     let rest = "";
@@ -188,56 +266,146 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const onNativeDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
-      selectedDate.setHours(0,0,0,0);
+      selectedDate.setHours(0, 0, 0, 0);
       setSelectedDateObj(selectedDate);
-      // format to "Thu, Aug 18"
-      const wd = WEEKDAYS[selectedDate.getDay()];
-      const mon = MONTHS[selectedDate.getMonth()];
-      const day = selectedDate.getDate();
-      const fmt = `${wd}, ${mon} ${day}`;
-      setDateInput(fmt);
+      // update display depending on mode
+      if (mode === "day") {
+        const wd = WEEKDAYS[selectedDate.getDay()];
+        const mon = MONTHS[selectedDate.getMonth()];
+        const day = selectedDate.getDate();
+        const fmt = `${wd}, ${mon} ${day}`;
+        setDateInput(fmt);
+      } else if (mode === "week") {
+        setDateInput(formatWeekDisplayFromDate(selectedDate));
+      } else { // month
+        setDateInput(formatMonthDisplayFromDate(selectedDate));
+      }
       setDateError("");
-      prevDateRef.current = fmt;
+      prevDateRef.current = dateInput;
     }
   };
 
   // pull to refresh — clear inputs, errors and force recompute
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 900));
-      // clear UI inputs/errors
-      setQuery(""); 
-      setDateInput(defaultDateDisplay); // reset to today on pull-to-refresh
-      setDateError(""); 
-      setSelectedDateObj(null);
-      prevDateRef.current = ""; 
-  // force all memoized derived lists to recompute
+    await new Promise((r) => setTimeout(r, 600));
+    // reset depending on mode: keep mode but reset date to today-week-month accordingly
+    setQuery("");
+    setDateError("");
+    setSelectedDateObj(defaultToday);
+    if (mode === "day") {
+      setDateInput(defaultDateDisplay);
+    } else if (mode === "week") {
+      setDateInput(formatWeekDisplayFromDate(defaultToday));
+    } else {
+      setDateInput(formatMonthDisplayFromDate(defaultToday));
+    }
+    prevDateRef.current = "";
     setVersion((v) => v + 1);
-    // clear search & input? keep search but keep date input as is (you could clear it if you want)
     setRefreshing(false);
   };
 
-  // derive selected YMD (if any)
-  const selectedYMD = useMemo(() => {
-    if (selectedDateObj) {
-      return `${selectedDateObj.getFullYear()}-${pad2(selectedDateObj.getMonth()+1)}-${pad2(selectedDateObj.getDate())}`;
+  // derive the selection range depending on mode
+  // returns an object: { type: 'day', ymd } | { type: 'week', startYmd, endYmd } | { type: 'month', year, monthIndex } or null
+  const selectedRange = useMemo(() => {
+    // prefer selectedDateObj if present
+    const baseDate = selectedDateObj ?? new Date();
+    try {
+      if (mode === "day") {
+        // attempt to parse typed dateInput first
+        const conv = dateInputToYMD(dateInput.trim());
+        if (conv.ok) return { type: "day" as const, ymd: conv.ymd! };
+        // fallback to selectedDateObj
+        if (selectedDateObj) {
+          return { type: "day" as const, ymd: `${selectedDateObj.getFullYear()}-${pad2(selectedDateObj.getMonth() + 1)}-${pad2(selectedDateObj.getDate())}` };
+        }
+        return null;
+      } else if (mode === "week") {
+        // try to parse a single date from dateInput (day format) and compute the week
+        const conv = dateInputToYMD(dateInput.trim());
+        if (conv.ok) {
+          const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
+          const dt = new Date(y, m - 1, d);
+          const s = getStartOfWeekSunday(dt);
+          const e = getEndOfWeekSaturday(dt);
+          return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+        }
+        // if user typed a week-range format like "Sun, Oct 12 - Sat, Oct 18" try to parse first date
+        const dashIdx = dateInput.indexOf("-");
+        if (dashIdx !== -1) {
+          const left = dateInput.slice(0, dashIdx).trim();
+          const conv2 = dateInputToYMD(left.replace(",", ""));
+          if (conv2.ok) {
+            const [y, m, d] = conv2.ymd!.split("-").map(x => parseInt(x, 10));
+            const dt = new Date(y, m - 1, d);
+            const s = getStartOfWeekSunday(dt);
+            const e = getEndOfWeekSaturday(dt);
+            return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+          }
+        }
+        // fallback to baseDate's week
+        const s = getStartOfWeekSunday(baseDate);
+        const e = getEndOfWeekSaturday(baseDate);
+        return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+      } else { // month
+        // try to parse typed month input
+        const pm = parseMonthInput(dateInput.trim());
+        if (pm.ok) {
+          return { type: "month" as const, year: pm.year!, monthIndex: pm.monthIndex! };
+        }
+        // fallback to selectedDateObj or baseDate
+        const dt = selectedDateObj ?? baseDate;
+        return { type: "month" as const, year: dt.getFullYear(), monthIndex: dt.getMonth() };
+      }
+    } catch (e) {
+      return null;
     }
-    const conv = dateInputToYMD(dateInput);
-    if (conv.ok) return conv.ymd;
-    return null;
-  }, [selectedDateObj, dateInput, version]);
+  }, [mode, dateInput, selectedDateObj, version]);
 
-  // get workHours filtered by selected date (if none selected -> empty)
-  const workForDate = useMemo(() => {
-    if (!selectedYMD) return [];
-    return workHoursArr.filter(w => w.date === selectedYMD);
-  }, [selectedYMD, version]);
+  // work filtered by selected range (day, week, month). returns array of WorkHour matching range
+  // IMPORTANT: filter by currentBranchId — include only records where either:
+  //   - employee's own branch_id === currentBranchId OR
+  //   - schedule.branch_id === currentBranchId (employee working at another branch that day)
+  const workForRange = useMemo(() => {
+    if (!selectedRange) return [];
+    let base = [];
+    if (selectedRange.type === "day") {
+      base = workHoursArr.filter(w => w.date === selectedRange.ymd);
+    } else if (selectedRange.type === "week") {
+      const s = selectedRange.startYmd;
+      const e = selectedRange.endYmd;
+      base = workHoursArr.filter(w => w.date >= s && w.date <= e);
+    } else {
+      const y = selectedRange.year;
+      const mi = selectedRange.monthIndex;
+      const prefix = `${y}-${pad2(mi + 1)}-`;
+      base = workHoursArr.filter(w => w.date.startsWith(prefix));
+    }
+
+    if (!currentBranchId) return base; // if we don't know admin's branch, show everything
+
+    // filter base by branch logic + exclude admin users (only show employee records)
+    return base.filter(w => {
+      const emp = usersArr.find(u => u.id === w.user_id) || null;
+
+      // skip if we couldn't find the user or if the user is an admin (we only show employees)
+      if (!emp || emp.role === "admin") return false;
+
+      const sched = schedulesArr.find(s => s.user_id === w.user_id && s.date === w.date) || null;
+      const empBranch = emp.branch_id ?? null;
+      const schedBranch = sched?.branch_id ?? null;
+
+      // include record if either employee's primary branch matches OR schedule branch matches
+      return empBranch === currentBranchId || schedBranch === currentBranchId;
+    });
+
+  }, [selectedRange, version, currentBranchId]);
 
   // Build UI list entries combining user, workHours, schedule and status/diff
   const entries = useMemo(() => {
-    return workForDate
+    return workForRange
       .slice()
-      .sort((a,b) => (a.check_in < b.check_in ? 1 : -1))
+      .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
       .map(wh => {
         const user = usersArr.find(u => u.id === wh.user_id) || null;
         const sched = schedulesArr.find(s => s.user_id === wh.user_id && s.date === wh.date) || null;
@@ -257,88 +425,135 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         }
         return { work: wh, user, schedule: sched, status, diffText };
       });
-  }, [workForDate, version]);
+  }, [workForRange, version]);
 
-  // CSV generation and share
+  //------------------------------------------------------------------//
   const onGenerateCSV = async () => {
-    // require date
-    if (!selectedYMD) {
+    if (!selectedRange) {
       setDateError(lang.please_select_valid_date);
       showErrorToast(lang.please_select_valid_date);
       return;
     }
 
-    const rows = [];
-    // header
-    rows.push(["Staff ID","First Name","Last Name","Position","Check In","Check Out","Date","Status","Diff"].join(","));
-
-    // If no work records -> produce header only (or notify)
-    if (workForDate.length === 0) {
-      showErrorToast(lang.no_attendance_records);
-      // still produce a CSV with header
-    }
-
-    for (const item of entries) {
-      const wh = item.work;
-      const u = item.user;
-      const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : "Late";
-      const row = [
-        u ? u.id : "",
-        u ? (u.firstname || "") : "",
-        u ? (u.lastname || "") : "",
-        u ? (u.position || "") : "",
-        wh.check_in,
-        wh.check_out,
-        wh.date,
-        status,
-        item.diffText || "",
-      ].map(field => {
-        // sanitize commas / quotes by wrapping in quotes and escaping internal quotes
-        if (field == null) field = "";
-        const s = String(field);
-        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-          return `"${s.replace(/"/g, '""')}"`;
-        }
-        return s;
-      }).join(",");
-      rows.push(row);
-    }
-
-    const csv = rows.join("\n");
-
-    const filename = `attendance_${selectedYMD}.csv`;
-
     try {
-      // Try to share as data URI (works in many cases)
-      await Share.share({
-        title: filename,
-        message: csv,
-        url: `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`,
+      // build structured data
+      const sheetData = entries.map(item => {
+        const u = item.user || {};
+        const wh = item.work || {};
+        const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : "Late";
+        return {
+          "Staff ID": u.id || "",
+          "Name": u.fullname || "",
+          "Position": u.position || "",
+          "Check In": wh.check_in || "",
+          "Check Out": wh.check_out || "",
+          "Date": wh.date || "",
+          "Status": status,
+          "Diff": item.diffText || ""
+        };
       });
-      showSuccessToast(lang.csv_prepared);
-    } catch (err) {
-      console.warn("Share error", err);
-      // fallback: just open share with message (some platforms prefer message)
-      try {
-        await Share.share({ title: filename, message: csv });
-        showSuccessToast(lang.csv_prepared);
-      } catch (e) {
-        console.warn("Second share fallback failed", e);
-        showErrorToast("Unable to share CSV on this device");
+
+      // create workbook + worksheet
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+
+      // prefer writing binary then converting via Buffer (more robust)
+      const wboutBinary = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
+
+      // convert binary string to base64 using Buffer
+      const buf = Buffer.from(wboutBinary, "binary");
+      const wboutBase64 = buf.toString("base64");
+
+      // filename
+      let filename = "attendance.xlsx";
+      if (selectedRange.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
+      else if (selectedRange.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
+      else filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
+
+      const fileUri = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + filename;
+
+      // DEBUG: log EncodingType if available
+      console.log("FileSystem.EncodingType (debug):", (FileSystem as any).EncodingType);
+
+      // choose encoding fallback (legacy import should have EncodingType)
+      const enc: any =
+        (FileSystem as any).EncodingType && (FileSystem as any).EncodingType.Base64
+          ? (FileSystem as any).EncodingType.Base64
+          : "base64";
+
+      // write file
+      await FileSystem.writeAsStringAsync(fileUri, wboutBase64, { encoding: enc });
+
+      // share
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          dialogTitle: filename,
+        });
+        showSuccessToast(lang.csv_prepared || "Excel prepared");
+      } else {
+        showSuccessToast("File saved to: " + fileUri);
       }
+    } catch (err) {
+      console.warn("XLSX/Expo error", err);
+      showErrorToast("Failed to prepare Excel file");
     }
   };
 
+
+  //---------------------------------------------------------------//
   // Search filtering for entries (optional)
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return entries;
     return entries.filter(({ user }) => {
       if (!user) return false;
-      const full = `${user.firstname} ${user.lastname} ${user.position}`.toLowerCase();
+      const full = `${user.fullname}  ${user.position}`.toLowerCase();
       return full.includes(q);
     });
   }, [entries, query]);
+
+  // toggle handlers
+  const onSelectNow = () => {
+    setMode("day");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setSelectedDateObj(today);
+    const fmt = `${WEEKDAYS[today.getDay()]}, ${MONTHS[today.getMonth()]} ${today.getDate()}`;
+    setDateInput(fmt);
+    setDateError("");
+    setVersion(v => v + 1);
+  };
+
+  const onSelectWeek = () => {
+    setMode("week");
+    // if a date is selected, use it; otherwise use today
+    const dt = selectedDateObj ?? new Date();
+    const fmt = formatWeekDisplayFromDate(dt);
+    setDateInput(fmt);
+    setDateError("");
+    setVersion(v => v + 1);
+  };
+
+  const onSelectMonth = () => {
+    setMode("month");
+    const dt = selectedDateObj ?? new Date();
+    const fmt = formatMonthDisplayFromDate(dt);
+    setDateInput(fmt);
+    setDateError("");
+    setVersion(v => v + 1);
+  };
+
+  // button background logic (active = primary, inactive = background)
+  const nowBg = mode === "day" ? undefined : colors.background;
+  const weekBg = mode === "week" ? undefined : colors.background;
+  const monthBg = mode === "month" ? undefined : colors.background;
+
+  // text color for each toggle: active -> colors.secondary, inactive -> colors.subtext
+  const nowTextColor = mode === "day" ? colors.secondary : colors.subtext;
+  const weekTextColor = mode === "week" ? colors.secondary : colors.subtext;
+  const monthTextColor = mode === "month" ? colors.secondary : colors.subtext;
 
   return (
     <View style={styles.outer}>
@@ -351,43 +566,115 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
-            onPress: () => {
+          onPress: () => {
             console.log("Navigate -> NotificationScreen", { userId, langId: langId });
-            navigation.navigate("NotificationScreen" as any, { userId, langId: langId});
-         },
+            navigation.navigate("NotificationScreen" as any, { userId, langId: langId });
+          },
         }}
       />
 
       <View style={styles.container}>
         <View style={styles.body}>
+          <View style={styles.Date_control_Buttons}>
+            <Button1 text={lang.Now}
+              onPress={onSelectNow}
+              width={'30%'}
+              backgroundColor={nowBg}
+              textStyle={{ color: nowTextColor }} />
+
+            <Button1 text={lang.Week}
+              onPress={onSelectWeek}
+              width={'30%'}
+              backgroundColor={weekBg}
+              textStyle={{ color: weekTextColor }} />
+
+            <Button1 text={lang.Month}
+              onPress={onSelectMonth}
+              width={'30%'}
+              backgroundColor={monthBg}
+              textStyle={{ color: monthTextColor }} />
+
+          </View>
+
           <View style={styles.searchWrap}>
-            <SearchBar value={query} onChangeText={setQuery} placeholder={lang.search_name_position } />
+            <SearchBar value={query} onChangeText={setQuery} placeholder={lang.search_name_position} />
           </View>
 
           <View style={styles.inputWrap}>
             <InputBox
-              label={lang.date_label}
-              placeholder={"Thu, Aug 18"}
+              label={mode === "day" ? lang.date_label : (mode === "week" ? "Week" : "Month")}
+              placeholder={mode === "day" ? "Thu, Aug 18" : (mode === "week" ? "Sun, Oct 12 - Sat, Oct 18" : "October 2025")}
               value={dateInput}
               setValue={handleDateTextChange}
               onBlur={() => {
+                // validation & set selectedDateObj depending on mode
                 if (!dateInput || dateInput.trim() === "") {
                   setDateError(lang.date_required);
                   return;
                 }
-                const conv = dateInputToYMD(dateInput.trim());
-                if (!conv.ok) {
-                  setDateError(conv.message || "Invalid date");
-                  setDateInput("");
-                  prevDateRef.current = "";
-                  setSelectedDateObj(null);
-                  return;
+                if (mode === "day") {
+                  const conv = dateInputToYMD(dateInput.trim());
+                  if (!conv.ok) {
+                    setDateError(conv.message || "Invalid date");
+                    setDateInput("");
+                    prevDateRef.current = "";
+                    setSelectedDateObj(null);
+                    return;
+                  }
+                  setDateError("");
+                  const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
+                  const dt = new Date(y, m - 1, d);
+                  dt.setHours(0, 0, 0, 0);
+                  setSelectedDateObj(dt);
+                } else if (mode === "week") {
+                  // try to parse a day inside the week
+                  const conv = dateInputToYMD(dateInput.trim());
+                  if (conv.ok) {
+                    const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
+                    const dt = new Date(y, m - 1, d);
+                    dt.setHours(0, 0, 0, 0);
+                    setSelectedDateObj(dt);
+                    setDateError("");
+                    // normalize display
+                    setDateInput(formatWeekDisplayFromDate(dt));
+                    return;
+                  }
+                  // try to parse left side of " - "
+                  const dashIdx = dateInput.indexOf("-");
+                  if (dashIdx !== -1) {
+                    const left = dateInput.slice(0, dashIdx).trim();
+                    const conv2 = dateInputToYMD(left.replace(",", ""));
+                    if (conv2.ok) {
+                      const [y, m, d] = conv2.ymd!.split("-").map(x => parseInt(x, 10));
+                      const dt = new Date(y, m - 1, d);
+                      dt.setHours(0, 0, 0, 0);
+                      setSelectedDateObj(dt);
+                      setDateInput(formatWeekDisplayFromDate(dt));
+                      setDateError("");
+                      return;
+                    }
+                  }
+                  // fallback: set to today-week
+                  const dt = new Date();
+                  dt.setHours(0, 0, 0, 0);
+                  setSelectedDateObj(dt);
+                  setDateInput(formatWeekDisplayFromDate(dt));
+                } else { // month
+                  const pm = parseMonthInput(dateInput.trim());
+                  if (!pm.ok) {
+                    setDateError(pm.message || "Invalid month");
+                    // clear selected date
+                    setSelectedDateObj(null);
+                    return;
+                  }
+                  // set selectedDateObj to first day of month (useful for date picker)
+                  const dt = new Date(pm.year!, pm.monthIndex!, 1);
+                  dt.setHours(0, 0, 0, 0);
+                  setSelectedDateObj(dt);
+                  setDateError("");
+                  // normalize display
+                  setDateInput(formatMonthDisplayFromDate(dt));
                 }
-                setDateError("");
-                const [y,m,d] = conv.ymd!.split("-").map(x => parseInt(x,10));
-                const dt = new Date(y, m-1, d);
-                dt.setHours(0,0,0,0);
-                setSelectedDateObj(dt);
               }}
               rightIcon={require("../../../assets/icons/calender_b.png")}
               onRightIconPress={onShowNativeDatePicker}
@@ -401,49 +688,66 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           </View>
 
           <ScrollView
-            style={{ marginBottom: '15%'  }}
+            style={{ marginBottom: '15%' }}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
           >
             <View style={styles.details}>
               {filteredEntries.length === 0 ? (
-                <Text style={styles.noDataText}>{lang.select_valid_date}</Text>
+                <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? "No records for selected week" : "No records for selected month")}</Text>
               ) : null}
 
               {filteredEntries.map(({ work, user, schedule, status, diffText }) => {
-                const displayName = user ? `${user.firstname} ${user.lastname}` : "Unknown";
+                const displayName = user ? `${user.fullname}` : "Unknown";
                 const position = user?.position ?? "";
                 const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(work.check_out)}`;
                 const dateDisplay = formatYMDDisplay(work.date);
+
+                // Decide whether to show branch header: only when schedule branch exists and differs from admin's branch
+                const schedBranchId = schedule?.branch_id ?? null;
+                const showBranchHeader = schedBranchId && currentBranchId && schedBranchId !== currentBranchId;
+                const schedBranchName = showBranchHeader ? (getBranchById(schedBranchId)?.name || schedBranchId) : "";
+
                 return (
                   <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
-                      <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
-                         <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
-                      <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
-                        {/* placeholder image */}
-                        <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+                    {showBranchHeader ? (
+                      <View style={styles.branchHeader}>
+                        <Image
+                          source={require("../../../assets/icons/branch.png")}
+                          style={styles.branchIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}>{schedBranchName}</Text>
+                      </View>
+                    ) : null}
+
+                    <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
+                      <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
+                        <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
+                          {/* placeholder image */}
+                          <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+                        </View>
+
+                        <View style={styles.name_position}>
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
+                          <Text style={styles.time}>{timeStr}</Text>
+                          <Text style={styles.time}>{dateDisplay}</Text>
+                        </View>
                       </View>
 
-                      <View style={styles.name_position}>
-                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
-                        <Text style={styles.time}>{timeStr}</Text>
-                        <Text style={styles.time}>{dateDisplay}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                        {status === "late" ? (
+                          <Text style={styles.status_late}>{lang.late}</Text>
+                        ) : status === "early" ? (
+                          <Text style={styles.status_early}>{lang.early}</Text>
+                        ) : (
+                          <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
+                        )}
+                        {status !== "noschedule" ? (
+                          <Text style={styles.duration}>{diffText}</Text>
+                        ) : null}
                       </View>
                     </View>
-
-                    <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-                      {status === "late" ? (
-                        <Text style={styles.status_late}>{lang.late}</Text>
-                      ) : status === "early" ? (
-                        <Text style={styles.status_early}>{lang.early}</Text>
-                      ) : (
-                        <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
-                      )}
-                      {status !== "noschedule" ? (
-                        <Text style={styles.duration}>{diffText}</Text>
-                      ) : null}
-                    </View>
-                     </View>
                   </CartBox>
                 );
               })}
@@ -451,10 +755,10 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           </ScrollView>
         </View>
       </View>
-            {showDatePicker && (
+      {showDatePicker && (
         <DateTimePicker
           value={selectedDateObj ?? new Date()}
-          mode="date"
+          mode={mode === "month" ? ("date" as any) : "date"}
           display={Platform.OS === "ios" ? "spinner" : "calendar"}
           onChange={onNativeDateChange}
         />
@@ -467,12 +771,13 @@ const AttendancerecordScreen: React.FC = (props: any) => {
 
 const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: colors.secondary },
-  container: {  marginHorizontal: 20, flex: 1 },
+  container: { marginHorizontal: 20, flex: 1 },
   body: { flex: 1, paddingTop: 20 },
-  searchWrap: { marginBottom: 12 },
-  inputWrap: { paddingBottom: 8 ,  },
-  buttonWrap: { paddingBottom: 20 , },
-  details: { },
+  Date_control_Buttons: { marginBottom: 20, flexDirection: 'row', width: '100%', justifyContent: 'space-between' },
+  searchWrap: { marginBottom: 12, },
+  inputWrap: { paddingBottom: 8, },
+  buttonWrap: { paddingBottom: 20, },
+  details: {},
   detail_cartbox: {
     width: "100%",
     borderRadius: 10,
@@ -481,40 +786,38 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start"
   },
   name_position: { marginLeft: 10, width: "65%" },
-  name: { fontSize: 14, fontWeight: "400" as any, color: colors.text },
-  time: { fontSize: 12, color: colors.subtext, marginTop: 6 },
-  duration: { color: "#2196F3", fontWeight: "500", fontSize: 14, marginLeft: 8 },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
+  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
+  duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8 },
   status_early: {
-    fontWeight: "400",
-    color: "#4CAF50",
-    fontSize: 10,
+    fontWeight: fonts.weight.regular as any,
+    color:colors.status_early,
+    fontSize: fonts.size.xs,
     paddingVertical: 2,
     paddingHorizontal: 12,
-    backgroundColor: "#4CAF501A",
+    backgroundColor: colors.status_early_bg,
     borderRadius: 10,
     marginRight: 7,
     textAlign: "center",
   },
   status_late: {
-    fontWeight: "400",
-    color: "#F59300",
-    fontSize: 10,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.status_late,
+    fontSize: fonts.size.xs,
     paddingVertical: 2,
     paddingHorizontal: 12,
-    backgroundColor: "#F593001A",
+    backgroundColor: colors.status_late_bg,
     borderRadius: 10,
     marginRight: 7,
     textAlign: "center",
   },
   status_noschedule: {
-    fontWeight: "400",
+    fontWeight: fonts.weight.regular as any,
     color: colors.subtext,
-    fontSize: 10,
+    fontSize: fonts.size.xs,
     paddingVertical: 2,
     paddingHorizontal: 12,
     backgroundColor: "#00000006",
@@ -523,8 +826,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
-    profileImage: { width: 40, height: 40, borderRadius: 20, resizeMode: "cover" },
-
+  profileImage: { width: 40, height: 40, borderRadius: 20, resizeMode: "cover" },
+  branchHeader: {
+    flexDirection: "row",
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+    width: '90%'
+  },
+  branchIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 4,
+  },
+  branchName: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+  },
 });
 
 export default AttendancerecordScreen;

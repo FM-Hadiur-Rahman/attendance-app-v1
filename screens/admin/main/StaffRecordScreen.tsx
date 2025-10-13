@@ -23,7 +23,7 @@ import SearchBar from "../../../components/SearchBar";
 
 const StaffRecordScreen: React.FC = (props: any) => {
   const navigation = useNavigation<any>();
-    const route = useRoute<any>();
+  const route = useRoute<any>();
 
   // support prop-based injection (Footer) or fallback to route params
   const propUserId = (props as any)?.userId;
@@ -37,7 +37,6 @@ const StaffRecordScreen: React.FC = (props: any) => {
   // translation dictionary for this screen
   const lang = (translations as any)[langId] || (translations as any)["en"];
 
-
   // local "version" to force re-compute when usersArr mutated
   const [version, setVersion] = useState<number>(0);
 
@@ -47,17 +46,36 @@ const StaffRecordScreen: React.FC = (props: any) => {
   // refresh state
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Compute employee list from users mock, filtered by search
+  // Compute employee list from users mock, filtered by search AND by branch_id of the passed userId (if available)
   const employees = useMemo(() => {
     const q = query.trim().toLowerCase();
+
+    // find branch_id of current userId (if provided)
+    let branchFilter: string | null = null;
+    if (userId) {
+      const currentUser = usersArr.find((u) => u.id === userId);
+      if (currentUser && (currentUser as any).branch_id) {
+        branchFilter = (currentUser as any).branch_id;
+      }
+    }
+
     return usersArr
       .filter((u) => u.role === "employee")
       .filter((u) => {
+        // if branchFilter set, only include employees with same branch_id
+        if (branchFilter && (u as any).branch_id !== branchFilter) return false;
+        return true;
+      })
+      .filter((u) => {
         if (!q) return true;
-        const full = `${u.firstname} ${u.lastname} ${u.position}`.toLowerCase();
+        // build a searchable full string supporting either fullname or firstname+lastname
+        const name =
+          (u as any).fullname ??
+          `${(u as any).firstname ?? ""} ${(u as any).lastname ?? ""}`.trim();
+        const full = `${name} ${u.position ?? ""}`.toLowerCase();
         return full.includes(q);
       });
-  }, [version, query]);
+  }, [version, query, userId]);
 
   const navAndLog = (routeName: string, params?: any) => {
     const allParams = { ...(params || {}), userId, langId };
@@ -65,11 +83,12 @@ const StaffRecordScreen: React.FC = (props: any) => {
     navigation.navigate(routeName as any, allParams);
   };
 
-
   // Floating button -> open AddStaffScreen
   const openAddStaff = () => {
     console.log("Navigate -> AddStaffScreen", { userId, langId, mode: "create" });
-    navigation.navigate("AddStaffScreen" as any, {userId,langId,
+    navigation.navigate("AddStaffScreen" as any, {
+      userId,
+      langId,
       onSave: (newStaff: Partial<User> & { id?: string; firstname: string; lastname: string; position?: string; role?: "employee" | "admin" }) => {
         // if id provided and exists -> update
         if (newStaff.id) {
@@ -95,17 +114,18 @@ const StaffRecordScreen: React.FC = (props: any) => {
         const newId = `U${(usersArr.length + 1).toString().padStart(3, "0")}`;
         const payload: User = {
           id: newId,
-          firstname: newStaff.firstname ?? "New",
-          lastname: newStaff.lastname ?? "Staff",
+          fullname: `${newStaff.firstname ?? "New"} ${newStaff.lastname ?? "Staff"}`,
           phone: newStaff["phone"] ?? "",
           email: newStaff["email"] ?? "",
           username: (newStaff.firstname ?? "user").toLowerCase(),
           password: "Pass@123",
           role: (newStaff.role as any) ?? "employee",
           position: newStaff.position ?? "",
+          branch_id: (newStaff as any).branch_id ?? (usersArr[0] as any)?.branch_id ?? "",
+          schedule_id: (newStaff as any).schedule_id ?? "",
           createDate: new Date().toISOString(),
           updateDate: new Date().toISOString(),
-        };
+        } as any;
         usersArr.push(payload as any);
         setVersion((v) => v + 1);
         showSuccessToast("Staff added");
@@ -114,17 +134,11 @@ const StaffRecordScreen: React.FC = (props: any) => {
     });
   };
 
-  // When clicking on a CartBox -> open StaffProfileScreen with id
-  // const openStaffProfile = (staffId: string) => {
-  //   console.log("CartBox pressed -> StaffProfileScreen", { id: staffId });
-  //   navAndLog("StaffProfileScreen", { id: staffId });
-  // };
-    const openStaffProfile = (staffId: string, userId: string, langId: string) => {
+  const openStaffProfile = (staffId: string, userId: string, langId: string) => {
     const params = { id: staffId, userId, langId };
     console.log("CartBox pressed -> StaffProfileScreen", params);
     navAndLog("StaffProfileScreen", params);
   };
-
 
   // Pull-to-refresh: clear search and refresh view
   const onRefresh = async () => {
@@ -149,7 +163,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
           height: 24,
           onPress: () => {
             console.log("Header right pressed -> NotificationScreen", { userId, langId });
-            navAndLog("NotificationScreen", {userId, langId});
+            navAndLog("NotificationScreen", { userId, langId });
           },
         }}
       />
@@ -162,7 +176,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
           </View>
 
           <ScrollView
-            style={{ marginTop: 12, marginBottom: '15%' }}
+            style={{ marginTop: 12, marginBottom: "15%" }}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
           >
@@ -171,35 +185,35 @@ const StaffRecordScreen: React.FC = (props: any) => {
             ) : null}
 
             {employees.map((u, idx) => {
-  const displayName = u.fullname || `${u.firstname} ${u.lastname}`;
-  const position = u.position ?? "";
-  const staffLabel = `Staff${(idx + 1).toString().padStart(2, "0")}`;
+              const displayName = (u as any).fullname || `${(u as any).firstname ?? ""} ${(u as any).lastname ?? ""}`.trim();
+              const position = u.position ?? "";
+              const staffLabel = `Staff${(idx + 1).toString().padStart(2, "0")}`;
 
-  return (
-    <TouchableOpacity
-      key={u.id}
-      onPress={() => openStaffProfile(u.id, userId, langId)}
-    >
-      <CartBox containerStyle={styles.detail_cartbox}>
-        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-            <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-            <View style={styles.name_position}>
-              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                {displayName}
-              </Text>
-              <Text style={styles.position}>{position}</Text>
-            </View>
-          </View>
+              return (
+                <TouchableOpacity
+                  key={u.id}
+                  onPress={() => openStaffProfile(u.id, userId, langId)}
+                >
+                  <CartBox containerStyle={styles.detail_cartbox}>
+                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+                        <View style={styles.name_position}>
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                            {displayName}
+                          </Text>
+                          <Text style={styles.position}>{position}</Text>
+                        </View>
+                      </View>
 
-          <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-            <Text style={styles.staffLabel}>{staffLabel}</Text>
-          </View>
-        </View>
-      </CartBox>
-    </TouchableOpacity>
-  );
-})}
+                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+                        <Text style={styles.staffLabel}>{staffLabel}</Text>
+                      </View>
+                    </View>
+                  </CartBox>
+                </TouchableOpacity>
+              );
+            })}
 
           </ScrollView>
 
@@ -218,7 +232,6 @@ const StaffRecordScreen: React.FC = (props: any) => {
     </View>
   );
 };
-
 const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: colors.secondary },
   container: { marginTop: 12, marginHorizontal: 20, flex: 1 },
