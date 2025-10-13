@@ -26,7 +26,7 @@ const Stack = createStackNavigator();
 export const StackNavigator: React.FC = () => {
   return (
 
-    <Stack.Navigator initialRouteName="FlashScreen">
+    <Stack.Navigator initialRouteName="LoginScreen">
       <Stack.Screen
         name="FlashScreen"
         component={FlashScreen}
