@@ -18,9 +18,13 @@ import { users } from "../../../api/Users";
 import { schedules } from "../../../api/Schedule";
 import { workHours } from "../../../api/WorkHours";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { getBranchById } from "../../../api/Branch"; // use helper function
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
+
+
+
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -37,6 +41,7 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
+
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
@@ -82,23 +87,23 @@ const formatYMDDisplay = (ymd: string) => {
 
 
 const HomeScreen_A = (props: any) => {
-    const navigation = useNavigation<any>();
-    const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
 
-    // Support prop-based injection from Footer (preferred) or fallback to route params.
- const propUserId = props?.userId;
-    const propLangId = props?.langId;
-    const propSetLangId = props?.setLangId; // if Footer passes a setter
+  // Support prop-based injection from Footer (preferred) or fallback to route params.
+  const propUserId = props?.userId;
+  const propLangId = props?.langId;
+  const propSetLangId = props?.setLangId; // if Footer passes a setter
 
-    const routeUserId = route.params?.userId ?? route.params?.id;
-    const routeLangId = route.params?.langId ?? route.params?.language;
+  const routeUserId = route.params?.userId ?? route.params?.id;
+  const routeLangId = route.params?.langId ?? route.params?.language;
 
-    const userId = propUserId || routeUserId;
-    const langId = propLangId || routeLangId || "en";
+  const userId = propUserId || routeUserId;
+  const langId = propLangId || routeLangId || "en";
 
-    // translation dictionary for this screen
-    const lang = (translations as any)[langId] || (translations as any)["en"];
-    
+  // translation dictionary for this screen
+  const lang = (translations as any)[langId] || (translations as any)["en"];
+
   // today's date in local timezone (Y-M-D)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -210,7 +215,7 @@ const HomeScreen_A = (props: any) => {
             <Text style={styles.shift_count}>{staffOnShiftCount}</Text>
           </CartBox>
         </View>
-  <Text style={styles.heading}>{lang.recent_check_ins}</Text>
+        <Text style={styles.heading}>{lang.recent_check_ins}</Text>
 
         <ScrollView
           style={{ marginBottom: '15%' }}
@@ -220,48 +225,73 @@ const HomeScreen_A = (props: any) => {
           <View style={styles.details}>
 
 
-            {recentCheckins.length === 0 ? (
-              <Text style={styles.noDataText}>No check-ins for today</Text>
-            ) : null}
-
             {recentCheckins.map(({ work, user, schedule, status, diffText }) => {
-              const displayName = user ? `${user.firstname} ${user.lastname}` : "Unknown";
-              const position = user?.position ?? "";
-              const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(
-                work.check_out
-              )}`;
+              if (!user) return null;
+
+              const displayName = user.fullname;
+              const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(work.check_out)}`;
               const dateDisplay = formatYMDDisplay(work.date);
+
+              // Branch where the user checked in
+              const checkinBranch = getBranchById(work.branch_id || schedule?.branch_id);
+              const defaultBranch = getBranchById(user.branch_id);
+
+              // Only show branch name if different from default
+              const branchName =
+                checkinBranch && defaultBranch && checkinBranch.id !== defaultBranch.id
+                  ? checkinBranch.name
+                  : null;
+
               return (
                 <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
+                  {branchName && (
+                    <View style={styles.branchHeader}>
+                      <Image
+                        source={require("../../../assets/icons/branch.png")}
+                        style={styles.branchIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.branchName}>{branchName}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.profileRow}>
                     <Image
                       source={require("../../../assets/images/profile2.png")}
                       style={styles.profileImage}
                     />
-                    <View style={styles.name_position}>
-                      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                        {displayName}
-                      </Text>
-                      <Text style={styles.time}>{timeStr}</Text>
-                      <Text style={styles.time}>{dateDisplay}</Text>
+
+                    {/* Middle + Right grouped together */}
+                    <View style={styles.middleRightContainer}>
+                      {/* Name + Time */}
+                      <View style={styles.name_position}>
+                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                          {displayName}
+                        </Text>
+                        <Text style={styles.time}>{timeStr}</Text>
+                        <Text style={styles.time}>{dateDisplay}</Text>
+                      </View>
+
+                      {/* Status + Duration */}
+                      <View style={styles.statusInline}>
+                        {status === "late" ? (
+                          <Text style={styles.status_late}>{lang.late}</Text>
+                        ) : status === "early" ? (
+                          <Text style={styles.status_early}>{lang.early}</Text>
+                        ) : (
+                          <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
+                        )}
+                        {status !== "noschedule" && (
+                          <Text style={styles.duration}>{diffText}</Text>
+                        )}
+                      </View>
                     </View>
                   </View>
-
-                  <View style={{ flexDirection: 'row', alignItems: "flex-end" }}>
-                    {status === "late" ? (
-                      <Text style={styles.status_late}>{lang.late}</Text>
-                    ) : status === "early" ? (
-                      <Text style={styles.status_early}>{lang.early}</Text>
-                    ) : (
-                      <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
-                    )}
-                    {status !== "noschedule" ? (
-                      <Text style={styles.duration}>{diffText}</Text>
-                    ) : null}
-                  </View>
                 </CartBox>
+
               );
             })}
+
           </View>
         </ScrollView>
       </View>
@@ -292,19 +322,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     alignItems: "flex-start",
     justifyContent: "flex-start",
-    flexDirection: "row",
+
   },
   profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "65%" },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
-  duration: {
-    color: colors.primary,
-    fontWeight: fonts.weight.medium as any,
-    fontSize: fonts.size.m,
-    marginTop: 6,
-    textAlign: "right",
-  },
+
   status_early: {
     fontWeight: fonts.weight.regular as any,
     color: colors.status_early,
@@ -313,8 +337,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
-    marginRight: 7,
     textAlign: "center",
+
   },
   status_late: {
     fontWeight: fonts.weight.regular as any,
@@ -323,8 +347,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 12,
     backgroundColor: colors.status_late_bg,
-    borderRadius: 10,
-    marginRight: 7,
+    borderRadius: 8,
     textAlign: "center",
   },
   status_noschedule: {
@@ -342,7 +365,7 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular as any,
     color: colors.text,
     marginBottom: 12,
-     marginTop: 20,
+    marginTop: 20,
   },
   staff: {
     backgroundColor: colors.secondary,
@@ -353,7 +376,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingLeft: 12,
     alignItems: "flex-start",
-    
+
   },
   icon: {
     width: 30 * base,
@@ -364,7 +387,7 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular as any,
     fontSize: 14,
     marginLeft: 8,
-    width:"75%"
+    width: "75%"
   },
   total_count: {
     fontWeight: fonts.weight.medium as any,
@@ -384,6 +407,53 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
   },
+  branchHeader: {
+    flexDirection: "row", // 👈 icon + text in one line
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  branchIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 6, // space between icon and text
+
+  },
+  branchName: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+  },
+
+  profileRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+
+  middleRightContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  statusInline: {
+    flexDirection: "row", // 👈 side by side now
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginLeft: 8,
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  duration: {
+    color: colors.primary,
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.m,
+    marginLeft: 8, // 👈 spacing between "Early" and "1h 2m"
+    textAlign: "right",
+  },
+
 });
 
 export default HomeScreen_A;

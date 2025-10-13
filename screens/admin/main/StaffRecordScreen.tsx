@@ -171,39 +171,36 @@ const StaffRecordScreen: React.FC = (props: any) => {
             ) : null}
 
             {employees.map((u, idx) => {
-              const displayName = `${u.firstname} ${u.lastname}`;
-              const position = u.position ?? "";
-              const staffLabel = `Staff${(idx + 1).toString().padStart(2, "0")}`; // Staff01, Staff02...
+  const displayName = u.fullname || `${u.firstname} ${u.lastname}`;
+  const position = u.position ?? "";
+  const staffLabel = `Staff${(idx + 1).toString().padStart(2, "0")}`;
 
-              return (
-                <TouchableOpacity
-                  key={u.id}
-                  onPress={() => {
-                    console.log("CartBox pressed -> staffId:", u.id);
-                    openStaffProfile(u.id);
-                  }}
-                >
+  return (
+    <TouchableOpacity
+      key={u.id}
+      onPress={() => openStaffProfile(u.id, userId, langId)}
+    >
+      <CartBox containerStyle={styles.detail_cartbox}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+            <View style={styles.name_position}>
+              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                {displayName}
+              </Text>
+              <Text style={styles.position}>{position}</Text>
+            </View>
+          </View>
 
-                  <CartBox containerStyle={styles.detail_cartbox}>
-                    <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                        <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-                        <View style={styles.name_position}>
-                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                            {displayName}
-                          </Text>
-                          <Text style={styles.position}>{position}</Text>
-                        </View>
-                      </View>
+          <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+            <Text style={styles.staffLabel}>{staffLabel}</Text>
+          </View>
+        </View>
+      </CartBox>
+    </TouchableOpacity>
+  );
+})}
 
-                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                        <Text style={styles.staffLabel}>{staffLabel}</Text>
-                      </View>
-                    </View>
-                  </CartBox>
-                </TouchableOpacity>
-              );
-            })}
           </ScrollView>
 
         </View>

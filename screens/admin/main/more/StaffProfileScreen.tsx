@@ -326,7 +326,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = ({  }) => {
                             />
                             <Text style={styles.infoLabel}>{lang.fullname}</Text>
                         </View>
-                        <Text style={styles.infoValue}> {currentUser?.firstname} {currentUser?.lastname}</Text>
+                        <Text style={styles.infoValue}> {currentUser?.fullname}</Text>
                     </View>
 
                     {/* Position */}

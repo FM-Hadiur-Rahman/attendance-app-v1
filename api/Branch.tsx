@@ -4,10 +4,11 @@ export interface Branch {
   id: string;
   name: string;
   location: {
-    latitude: number;
-    longitude: number;
+  latitude: number;
+  longitude: number;
   };
 }
+export const getBranchById = (id: string) => branches.find(branch => branch.id === id);
 
 export const branches: Branch[] = [
   {
