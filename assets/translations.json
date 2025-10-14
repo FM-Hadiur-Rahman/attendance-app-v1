@@ -199,7 +199,16 @@
     "call": "Call",
     "loginAccountDetails": "Login & Account Details",
     "totalDays": "Total days",
-    "totalWorkingHours": "Total working hours"
+    "totalWorkingHours": "Total working hours",
+    "no_changes_to_save": "No changes to save",
+    "staff_member": "Staff member",
+    "Branch":"Branch",
+    "Start_time": "Start time",
+    "Duration":"Duration",
+    "Add":"Add",
+    "Now": "Now",
+    "Week":"Week",
+    "Month": "Month"
   },
   "de": {
     "profile": "Profil",
@@ -399,6 +408,15 @@
     "call": "Anrufen",
     "loginAccountDetails": "Login- & Kontodetails",
     "totalDays": "Gesamttage",
-    "totalWorkingHours": "Gesamtarbeitsstunden"
+    "totalWorkingHours": "Gesamtarbeitsstunden",
+    "no_changes_to_save": "Keine Änderungen zum Speichern",
+    "staff_member": "Mitarbeiter",
+    "Branch": "Zweig",
+    "Start_time": "Startzeit",
+    "Duration":"Dauer",
+    "Add": "Hinzufügen",
+    "Now": "Jetzt",
+    "Week":"Woche",
+    "Month": "Monat"
   }
 }
