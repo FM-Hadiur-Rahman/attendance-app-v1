@@ -13,6 +13,7 @@ import CartBox from "../../../components/CartBox";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
+import { useNavigation } from "@react-navigation/native";
 
 interface NotificationItem {
   n_id: string;
@@ -25,18 +26,19 @@ interface NotificationItem {
 }
 
 
-const NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ userId, langId }) => {
+const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ userId, langId }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const currentLang = langId || "en";
   const lang = translations[currentLang];
+  const navigation = useNavigation(); // ✅ get the navigation object
 
   const fetchNotifications = async (userId?: string) => {
     const now = new Date();
     const dummy: NotificationItem[] = [
       {
         n_id: "N001",
-        userId: "U004", // user-specific
+        userId: "U004",
         n_type: "Shift Starting soon",
         title: "Shift Starting soon",
         subtitle: "Your shift starts in 15 minutes. Don't forget to check in!",
@@ -161,11 +163,18 @@ const NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ us
 
   return (
     <View style={styles.container}>
-      <Header
-        backgroundColor={colors.secondary}
-        position="relative"
-        center={{ type: "text", value: lang.Notification, color: colors.text }}
-      />
+    <Header
+                backgroundColor={colors.secondary}
+                position="relative"
+                left={{
+                    type: "image",
+                    url: require("../../../assets/icons/back_b.png"),
+                    width: 23,
+                    height: 23,
+                    onPress: () => navigation.goBack(), // ✅ call goBack() on navigation
+                }}
+                center={{ type: "text", value: lang.Notification, color: colors.text }}
+            />
       <View style={styles.body}>
 
         <SectionList
@@ -219,8 +228,7 @@ const NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ us
     </View>
   );
 };
-
-export default NotificationScreen;
+export default C_NotificationScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },

@@ -71,4 +71,9 @@ export const branches: Branch[] = [
     name: "Matara Branch",
     location: { latitude: 5.9485, longitude: 80.5350 },
   },
+   {
+    id: "B013",
+    name: "meesalai Branch",
+    location: { latitude: 9.676931, longitude: 80.186981 },
+  },
 ];
