@@ -1,5 +1,4 @@
-// screens/customer/main/WorkHistoryScreen.tsx
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,35 +6,39 @@ import {
   StyleSheet,
   Image,
   RefreshControl,
+  Dimensions,
 } from "react-native";
 import Header from "../../../components/Header";
 import CartBox from "../../../components/CartBox";
 import colors from "../../../styles/Colors";
-import { workHours } from "../../../api/WorkHours";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
+import * as Location from "expo-location";
 
+import { workHours, WorkHour } from "../../../api/WorkHours";
+import { users } from "../../../api/Users";
+import { schedules, Schedule } from "../../../api/Schedule";
+import { getBranchById, branches } from "../../../api/Branch";
+
+/* ---------- interfaces ---------- */
 interface Props {
   userId?: string;
   langId?: string;
 }
 
-// 👉 Utility: format time (HH:mm:ss → 11:23 AM)
+/* ---------- utilities ---------- */
 const formatTime = (time: string) => {
   const [h, m, s] = time.split(":").map(Number);
   const d = new Date();
-  d.setHours(h, m, s);
+  d.setHours(h, m, s || 0);
   return d
     .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
     .replace("am", "AM")
     .replace("pm", "PM");
 };
 
-
-// 👉 Utility: format date (YYYY-MM-DD → Thu, Aug 18)
 const formatDate = (dateStr: string) => {
-  const d = new Date(dateStr);
-
+  const d = new Date(dateStr + "T00:00:00");
   const weekday = d.toLocaleDateString(undefined, { weekday: "short" });
   const monthMap = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -43,79 +46,88 @@ const formatDate = (dateStr: string) => {
   ];
   const month = monthMap[d.getMonth()];
   const day = d.getDate();
-
   return `${weekday}, ${month} ${day}`;
 };
 
-
-// 👉 Utility: calculate duration between check_in & check_out
 const calcDuration = (checkIn?: string, checkOut?: string) => {
   if (!checkIn || !checkOut) return { h: 0, m: 0, text: "00h 00m" };
-
-  const [h1, m1, s1 = 0] = checkIn.split(":").map(Number);
-  const [h2, m2, s2 = 0] = checkOut.split(":").map(Number);
-
-  if ([h1, m1, s1, h2, m2, s2].some((v) => isNaN(v))) {
-    return { h: 0, m: 0, text: "00h 00m" };
-  }
+  const [h1, m1, s1 = 0] = checkIn.split(":").map((v) => Number(v) || 0);
+  const [h2, m2, s2 = 0] = checkOut.split(":").map((v) => Number(v) || 0);
 
   const start = new Date(2000, 0, 1, h1, m1, s1);
-  const end = new Date(2000, 0, 1, h2, m2, s2);
-  let diff = (end.getTime() - start.getTime()) / 60000; // in minutes
+  let end = new Date(2000, 0, 1, h2, m2, s2);
+  let diffMinutes = (end.getTime() - start.getTime()) / 60000;
+  if (diffMinutes < 0) diffMinutes += 24 * 60;
 
-  if (diff < 0) diff += 24 * 60; // handle overnight
-
-  const h = Math.floor(diff / 60);
-  const m = Math.floor(diff % 60);
-
-  const hText = h.toString().padStart(2, "0");
-  const mText = m.toString().padStart(2, "0");
-
-  return { h, m, text: `${hText}h ${mText}m` };
+  const h = Math.floor(diffMinutes / 60);
+  const m = Math.floor(diffMinutes % 60);
+  return { h, m, text: `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m` };
 };
 
+const timeToMinutes = (t?: string) => {
+  if (!t) return 0;
+  const [h = 0, m = 0, s = 0] = t.split(":").map((v) => Number(v) || 0);
+  return h * 60 + m;
+};
 
+const findBestScheduleForWork = (entry: WorkHour): Schedule | undefined => {
+  const candidateSchedules = schedules.filter(
+    (s) => s.user_id === entry.user_id && s.date === entry.date
+  );
+  if (candidateSchedules.length === 0) return undefined;
 
-const groupWorkHours = (entries: typeof workHours) => {
+  const workStart = timeToMinutes(entry.check_in);
+  const workEnd = entry.check_out ? timeToMinutes(entry.check_out) : workStart + 1;
+
+  const scored = candidateSchedules.map((s) => {
+    const schedStart = timeToMinutes(s.start_time);
+    const schedEnd = schedStart + (s.duration || 0) * 60;
+    const overlap = Math.max(0, Math.min(schedEnd, workEnd) - Math.max(schedStart, workStart));
+    const startDiff = Math.abs(schedStart - workStart);
+    return { s, overlap, startDiff };
+  });
+
+  scored.sort((a, b) => {
+    if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+    return a.startDiff - b.startDiff;
+  });
+
+  return scored[0]?.s;
+};
+
+/* ---------- group work hours ---------- */
+const groupWorkHours = (entries: WorkHour[]) => {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
-
-  // Current week start (Mon) and end (Sun)
   const currWeekStart = new Date(today);
-  currWeekStart.setDate(today.getDate() - today.getDay() + 1);
+  const day = today.getDay();
+  const offsetToMonday = day === 0 ? -6 : 1 - day;
+  currWeekStart.setDate(today.getDate() + offsetToMonday);
   currWeekStart.setHours(0, 0, 0, 0);
-
   const currWeekEnd = new Date(currWeekStart);
   currWeekEnd.setDate(currWeekStart.getDate() + 6);
   currWeekEnd.setHours(23, 59, 59, 999);
 
-  // Helper: format week range
   const formatWeekRange = (d: Date) => {
     const weekStart = new Date(d);
-    weekStart.setDate(d.getDate() - d.getDay() + 1);
+    const dd = weekStart.getDay();
+    const off = dd === 0 ? -6 : 1 - dd;
+    weekStart.setDate(weekStart.getDate() + off);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
-
     const format = (dt: Date) =>
-      dt.toLocaleDateString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
-
+      dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     return `${format(weekStart)} - ${format(weekEnd)}`;
   };
 
-  // Group entries
-  const groups: Record<string, typeof workHours> = {};
+  const groups: Record<string, WorkHour[]> = {};
 
   entries.forEach((w) => {
     if (w.date === todayStr) {
       groups["Today"] = groups["Today"] || [];
       groups["Today"].push(w);
     } else {
-      const d = new Date(w.date);
-
+      const d = new Date(w.date + "T00:00:00");
       if (d >= currWeekStart && d <= currWeekEnd) {
         groups["This week"] = groups["This week"] || [];
         groups["This week"].push(w);
@@ -127,102 +139,110 @@ const groupWorkHours = (entries: typeof workHours) => {
     }
   });
 
-  // Reorder: Today → This week → older weeks
-  const worked: { title: string; data: typeof workHours }[] = [];
-
-  if (groups["Today"])
-    worked.push({
-      title: "Today",
-      data: groups["Today"].sort((a, b) => {
-        // sort by check_in descending
-        const t1 = a.check_in ? a.check_in.localeCompare(b.check_in) : 0;
-        const t2 = b.check_in ? b.check_in.localeCompare(a.check_in) : 0;
-        return t2 - t1;
-      }),
-    });
-
-  if (groups["This week"])
-    worked.push({
-      title: "This week",
-      data: groups["This week"].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ),
-    });
+  const worked: { title: string; data: WorkHour[] }[] = [];
+  if (groups["Today"]) worked.push({ title: "Today", data: groups["Today"] });
+  if (groups["This week"]) worked.push({ title: "This week", data: groups["This week"] });
 
   Object.keys(groups)
     .filter((k) => k !== "Today" && k !== "This week")
-    .sort(
-      (a, b) =>
-        new Date(groups[b][0].date).getTime() -
-        new Date(groups[a][0].date).getTime()
-    )
-    .forEach((k) =>
-      worked.push({
-        title: k,
-        data: groups[k].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        ),
-      })
-    );
+    .sort((a, b) => {
+      const dateA = new Date(groups[a][0].date).getTime();
+      const dateB = new Date(groups[b][0].date).getTime();
+      return dateB - dateA;
+    })
+    .forEach((k) => worked.push({ title: k, data: groups[k] }));
 
   return worked;
 };
 
+/* ---------- main screen ---------- */
+const screenWidth = Dimensions.get("window").width;
 
-
-
-const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
+const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [refreshing, setRefreshing] = useState(false);
+  const [branchAddresses, setBranchAddresses] = useState<Record<string, string>>({});
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // here you’d call API instead of setTimeout
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
+    setTimeout(() => setRefreshing(false), 1200);
   }, []);
+
+  /* ---------- fetch readable addresses ---------- */
+  useEffect(() => {
+    const fetchAddresses = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        console.warn("Permission to access location denied");
+        return;
+      }
+
+      const newAddresses: Record<string, string> = {};
+      for (const branch of branches) {
+        try {
+          const result = await Location.reverseGeocodeAsync({
+            latitude: branch.location.latitude,
+            longitude: branch.location.longitude,
+          });
+
+          if (result[0]) {
+            const { name, street, city, region, country } = result[0];
+            newAddresses[branch.id] = [name, street, city, region, country]
+              .filter(Boolean)
+              .join(", ");
+          } else {
+            newAddresses[branch.id] = "Unknown location";
+          }
+        } catch (err) {
+          newAddresses[branch.id] = "Location unavailable";
+        }
+      }
+      setBranchAddresses(newAddresses);
+    };
+
+    fetchAddresses();
+  }, []);
+
+  const currentUser = users.find((u) => u.id === userId);
+  const userBranchId = currentUser?.branch_id;
   const userWorkHours = workHours.filter((w) => w.user_id === userId);
 
   const currentLang = langId || "en";
-  const lang = translations[currentLang];
+  const lang = (translations as any)[currentLang] || translations["en"];
 
-  // Summary calculations
-  const today = new Date().toISOString().slice(0, 10);
-  const todayEntries = userWorkHours.filter((w) => w.date === today);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayEntries = userWorkHours.filter((w) => w.date === todayStr);
   const monthPrefix = new Date().toISOString().slice(0, 7);
-  const monthEntries = userWorkHours.filter((w) =>
-    w.date.startsWith(monthPrefix)
-  );
+  const monthEntries = userWorkHours.filter((w) => w.date.startsWith(monthPrefix));
 
-  const sumMinutes = (arr: typeof workHours) =>
+  const sumMinutes = (arr: WorkHour[]) =>
     arr.reduce((acc, w) => {
       const d = calcDuration(w.check_in, w.check_out);
       return acc + d.h * 60 + d.m;
     }, 0);
 
-  const todayTotal = sumMinutes(todayEntries);
-  const monthTotal = sumMinutes(monthEntries);
-
   const totalToText = (mins: number) => {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    const hText = h.toString().padStart(2, "0");
-    const mText = m.toString().padStart(2, "0");
-    return `${hText}h ${mText}m`;
+    return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m`;
   };
 
-
   const sections = useMemo(() => groupWorkHours(userWorkHours), [userWorkHours]);
+
+  const todayTotal = sumMinutes(todayEntries);
+  const monthTotal = sumMinutes(monthEntries);
 
   return (
     <View style={styles.container}>
       <Header
         backgroundColor={colors.secondary}
         position="relative"
-        center={{ type: "text", value: lang.Work_Hours_Log, color: colors.text }}
+        center={{
+          type: "text",
+          value: lang.Work_Hours_Log || "Work Hours Log",
+          color: colors.text,
+        }}
       />
       <View style={styles.body}>
-
-        {/* Summary Cards */}
         <View style={styles.summaryRow}>
           <CartBox
             width="48%"
@@ -237,9 +257,10 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
             paddingBottom={12}
             backgroundColor={colors.secondary}
           >
-            <Text style={styles.summaryLabel}>{lang.Today}</Text>
+            <Text style={styles.summaryLabel}>{lang.Today || "Today"}</Text>
             <Text style={styles.summaryValue}>{totalToText(todayTotal)}</Text>
           </CartBox>
+
           <CartBox
             width="48%"
             height={78}
@@ -253,22 +274,22 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
             paddingBottom={12}
             backgroundColor={colors.secondary}
           >
-            <Text style={styles.summaryLabel}>{lang.This_Month}</Text>
+            <Text style={styles.summaryLabel}>{lang.This_Month || "This Month"}</Text>
             <Text style={styles.summaryValue}>{totalToText(monthTotal)}</Text>
           </CartBox>
         </View>
 
-        {/* Log Summary */}
         <View style={styles.logSummaryRow}>
           <Image
             source={require("../../../assets/icons/calender_black.png")}
             style={styles.icon}
             resizeMode="contain"
           />
-          <Text style={styles.logSummaryText}>{lang.Work_Hours_Log_Summary}</Text>
+          <Text style={styles.logSummaryText}>
+            {lang.Work_Hours_Log_Summary || "Work Hours Log Summary"}
+          </Text>
         </View>
 
-        {/* Work Hours List */}
         <SectionList
           sections={sections}
           showsVerticalScrollIndicator={false}
@@ -281,15 +302,18 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
           }
           renderItem={({ item }) => {
             const duration = calcDuration(item.check_in, item.check_out);
-
             const timeText = item.check_out
               ? `${formatTime(item.check_in)} - ${formatTime(item.check_out)}`
               : `${formatTime(item.check_in)} - Work Process`;
 
+            const matchedSchedule = findBestScheduleForWork(item);
+            const entryBranchId = matchedSchedule?.branch_id || userBranchId;
+            const entryBranch = entryBranchId ? getBranchById(entryBranchId) : undefined;
+            const showBranchInfo = !!entryBranch && entryBranchId !== userBranchId;
+
             return (
               <CartBox
                 marginTop={8}
-                height={62}
                 paddingRight={12}
                 paddingLeft={12}
                 paddingTop={12}
@@ -297,19 +321,42 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
                 borderRadius={10}
                 alignItems="flex-start"
               >
+                {showBranchInfo && (
+                  <View>
+                    <View style={styles.brnamerow}>
+                      <Image
+                        source={require("../../../assets/icons/branch.png")}
+                        style={styles.branchIcon}
+                        resizeMode="contain"
+                      />
+                      <Text numberOfLines={1} style={styles.branchName}>
+                        {entryBranch?.name || ""}
+                      </Text>
+                    </View>
+                    <View style={styles.branchLocationRow}>
+                      <Image
+                        source={require("../../../assets/icons/location_g.png")}
+                        style={styles.locationIcon}
+                        resizeMode="contain"
+                      />
+                      <Text numberOfLines={1} style={styles.branchLocationText} ellipsizeMode="tail">
+                        {branchAddresses[entryBranch?.id || ""]}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.itemRow}>
                   <Text style={styles.timeText}>{timeText}</Text>
-                  {item.check_out ? (
-                    <Text style={styles.durationText}>{duration.text}</Text>
-                  ) : (
-                    <Text style={styles.durationText}>--</Text>
-                  )}
+                  <Text style={styles.durationText}>
+                    {item.check_out ? duration.text : "--"}
+                  </Text>
                 </View>
+
                 <Text style={styles.dateText}>{formatDate(item.date)}</Text>
               </CartBox>
             );
           }}
-
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -317,15 +364,15 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId, langId }) => {
               progressBackgroundColor={colors.secondary}
               colors={[colors.primary]}
               tintColor={colors.primary}
-
             />
           }
         />
       </View>
-
     </View>
   );
 };
+
+export default WorkHistoryScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -403,6 +450,45 @@ const styles = StyleSheet.create({
     fontFamily: fonts.family.regular,
     color: colors.subtext,
   },
+  brnamerow: {
+    flexDirection: "row",
+    marginBottom: 8
+  },
+  branchIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 4
+  },
+  branchInfo: {
+    flexDirection: "row"
+  },
+  branchName: {
+    fontSize: fonts.size.m,
+    fontFamily: fonts.family.regular,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+    lineHeight: 16,
+    maxWidth: "90%"
+  },
+  
+  branchLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  locationIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 4,
+  },
+  branchLocationText: {
+    fontSize: fonts.size.m,
+    fontFamily: fonts.family.regular,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.subtext2,
+    lineHeight: 14,
+    maxWidth: "90%"
+  },
 });
 
-export default WorkHistoryScreen;
+
