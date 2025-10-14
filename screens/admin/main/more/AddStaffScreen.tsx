@@ -77,8 +77,6 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
     const [modalVisible, setModalVisible] = useState(false);
     const [confirmPopupVisible, setConfirmPopupVisible] = useState(false);
 
-    const [localBranches, setLocalBranches] = useState<Array<any>>(() => [...importedBranches]);
-
 
     // Branch selection (typeable)
     const [selectedBranch, setSelectedBranch] = useState<string>("");
@@ -97,11 +95,14 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
     const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
 
 
-    const [schedules, setSchedules] = useState<{ [date: string]: { startTime: string; endTime: string } }>({});
-    const [activeDate, setActiveDate] = useState<string | null>(null);
+    const [schedules, setSchedules] = useState<{ [dayName: string]: { startTime: string; endTime: string; duration?: number } }>({});
+    const [activeDate, setActiveDate] = useState<string | null>(null); // will hold weekday name like "Sunday"
+
+
+    const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 
     const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
     const formatTime12 = (hhmmss: string) => {
@@ -144,13 +145,6 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
         return days;
     };
     const weekDates = getWeekDates();
-    const branchList = localBranches;
-
-
-    const branchSuggestions = branchList.filter((b) =>
-        b.name.toLowerCase().includes((selectedBranch || "").toLowerCase()) ||
-        b.id.toLowerCase().includes((selectedBranch || "").toLowerCase())
-    );
 
     const onShowNativeTimePicker = () => setShowTimePicker(true);
     const onNativeTimeChange = (event: any, selected?: Date) => {
@@ -164,12 +158,30 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
     };
 
 
-    const [staffSchedule, setStaffSchedule] = useState<{
-        startTime: string;
-        endTime: string;
-    } | null>(null);
+    const parseYmdToDate = (ymd: string) => {
+        const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
+        return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+    };
 
-    // 1) Replace your existing onAddSchedule with this:
+    const buildScheduleArray = () => {
+        const result: Array<any> = [];
+
+        FULL_WEEKDAYS.forEach((dayName) => {
+            const s = schedules[dayName];
+            if (s) {
+                result.push({
+                    day: dayName,
+                    start_time: s.startTime,
+                    duration: s.duration ?? 0,
+                    end_time: s.endTime,
+                });
+            }
+        });
+
+        return result;
+    };
+
+
     const onAddSchedule = () => {
         if (!timeFrom || !durationHours) {
             if (!timeFrom) setTimeFromError("Enter valid start time (HH:MM:SS)");
@@ -177,42 +189,47 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
             return;
         }
 
-        // Parse start time
-        const [h, m, s] = timeFrom.split(":").map(Number);
-        const startDate = new Date();
-        startDate.setHours(h, m, s, 0);
-
-        // Add duration in hours
-        const endDate = new Date(startDate.getTime() + Number(durationHours) * 60 * 60 * 1000);
-        const endTime = endDate.toTimeString().split(" ")[0].slice(0, 8); // HH:MM:SS
-
         if (!activeDate) {
-            console.warn("No active date selected for schedule");
+            console.warn("No active day selected for schedule");
             return;
         }
 
-        // Build new schedules object (so we can log the updated version immediately)
+        // parse start time
+        const [h, m, s] = timeFrom.split(":").map(Number);
+        const startDate = new Date();
+        startDate.setHours(h || 0, m || 0, s || 0);
+
+        const durationNum = Number(durationHours);
+        const endDate = new Date(startDate.getTime() + durationNum * 60 * 60 * 1000);
+        const endTime = endDate.toTimeString().split(" ")[0].slice(0, 8); // HH:MM:SS
+
+        const dayName = activeDate; // e.g. "Sunday"
+
         setSchedules(prev => {
             const newSchedules = {
                 ...prev,
-                [activeDate]: {
+                [dayName]: {
                     startTime: timeFrom,
                     endTime: endTime,
+                    duration: durationNum,
                 },
             };
 
-            // LOG the single added schedule and the full schedules map
-            console.log("Schedule added for", activeDate, "=>", newSchedules[activeDate]);
-            console.table(
-                Object.entries(newSchedules).map(([date, sObj]) => ({ date, start: sObj.startTime, end: sObj.endTime }))
-            );
+            console.log("Schedule added for", dayName, "=>", newSchedules[dayName]);
+            console.table(Object.entries(newSchedules).map(([day, sObj]) => ({ day, start: sObj.startTime, end: sObj.endTime, duration: sObj.duration })));
 
             return newSchedules;
         });
 
-        // Close modal
         setAddScheduleModalVisible(false);
+        // optional: clear inputs
+        setTimeFrom("");
+        setDurationHours("");
+        setTimeFromError("");
+        setDurationError("");
     };
+
+
 
 
 
@@ -239,7 +256,6 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
         if (!result.canceled) {
             setProfileImage(result.assets[0].uri);
 
-            //  clear error if previously set
             setErrors((prev: any) => ({ ...prev, profileImage: "" }));
 
             setModalVisible(false);
@@ -411,7 +427,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
             const finalPhone = `${selectedCountry.code}${phone}`;
 
             const step1_Data = {
-                id: undefined, // let callback create new ID if not editing
+                id: undefined,
                 firstname: fullName.split(" ")[0] ?? "",
                 lastname: fullName.split(" ")[1] ?? "",
                 position,
@@ -426,12 +442,14 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
             // setStep(2);
         }
     };
+
     const handleSave = () => {
         if (validateStep2()) {
             const finalPhone = `${selectedCountry.code}${phone}`;
+            const scheduleArray = buildScheduleArray();
 
             const newStaff = {
-                id: undefined, // let callback create new ID if not editing
+                id: undefined,
                 firstname: fullName.split(" ")[0] ?? "",
                 lastname: fullName.split(" ")[1] ?? "",
                 position,
@@ -441,12 +459,12 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                 password,
                 role: "employee",
                 userId,
-                langId
+                langId,
+                schedule: scheduleArray,
             };
 
             console.log("Staff saved (before callback):", newStaff);
 
-            // 🔥 Call parent callback if provided
             if (onSave) {
                 onSave(newStaff);
             }
@@ -455,6 +473,8 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
             navigation.goBack();
         }
     };
+
+
     const onRefresh = useCallback(() => {
         setRefreshing(true);
 
@@ -506,10 +526,13 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
         setBranchInputLayout({ x, y, width, height });
     };
 
-    const openAddModalForDate = (date: string) => {
-        setActiveDate(date); // 👈 store which date's box was tapped
+    const openAddModalForDate = (ymd: string) => {
+        // convert YMD to weekday name
+        const d = new Date(ymd);
+        const dayName = FULL_WEEKDAYS[d.getDay()];
+        setActiveDate(dayName);
 
-        // If no branch selected yet, default to the logged-in user's branch
+        // default branch selection as before...
         if (!selectedBranch && user?.branch_id) {
             const defaultBranch = importedBranches.find((b) => b.id === user.branch_id);
             if (defaultBranch) {
@@ -521,13 +544,12 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
         setAddScheduleModalVisible(true);
     };
 
+
     const screenH = Dimensions.get("window").height;
     const screenW = Dimensions.get("window").width;
-    // compute if any schedule exists (place near top of component, e.g. before return)
-    // detect if any of the upcoming week dates has a schedule
     const hasWeeklySchedule = React.useMemo(() => {
-        return weekDates.some(d => !!schedules[dateToYMD(d)]);
-    }, [schedules]); // weekDates is derived each render; schedules changes trigger recompute
+        return FULL_WEEKDAYS.some((d) => !!schedules[d]);
+    }, [schedules]);
 
     // Reset all Step-2 schedule related fields
     const resetStep2Fields = () => {
@@ -554,7 +576,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                 Object.entries(schedules).map(([date, sObj]) => ({ start: sObj.startTime, end: sObj.endTime }))
             );
         }
-        goToStep3(); 
+        goToStep3();
     };
 
 
@@ -768,57 +790,49 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                             <>
                                 {/* STEP 2 UI */}
                                 <View style={styles.contentBox}>
-                                    <Text style={styles.title}>schedule_details</Text>
-                                    <Text style={styles.subtitle}>create_new_schedule</Text>
+                                    <Text style={styles.title}>{lang.schedule_details}</Text>
+                                    <Text style={styles.subtitle}>{lang.create_new_work_schedule}</Text>
                                 </View>
 
                                 <View style={{ marginTop: 0 }}>
                                     {weekDates.map((d) => {
                                         const ymd = dateToYMD(d);
-                                        const wk = WEEKDAYS[d.getDay()];
+                                        const dayName = FULL_WEEKDAYS[d.getDay()];
+                                        const wk = WEEKDAYS[d.getDay()]; // short label like "Sun","Mon" — keep UI same
                                         return (
-                                            <View key={ymd} style={styles.each_day}>
-                                                <CartBox
-                                                    width="auto"
-                                                    height={52}
-                                                    containerStyle={styles.day}
-                                                >
+                                            <View key={dayName} style={styles.each_day}>
+                                                <CartBox width="auto" height={52} containerStyle={styles.day}>
                                                     <Text style={styles.day_text}>{`${wk}`}</Text>
                                                 </CartBox>
                                                 <TouchableOpacity
                                                     style={{ flex: 1 }}
                                                     activeOpacity={0.8}
                                                     onPress={() => {
-                                                        openAddModalForDate(ymd);
+                                                        openAddModalForDate(ymd); // still pass ymd here; openAddModalForDate converts to dayName internally
                                                     }}
                                                 >
-                                                    <CartBox
-                                                        width="auto"
-                                                        containerStyle={styles.time}
-                                                    >
-                                                        {schedules[ymd] ? ( // ✅ Only show time if that date has schedule
+                                                    <CartBox width="auto" containerStyle={styles.time}>
+                                                        {schedules[dayName] ? (
                                                             <View style={{ alignItems: "center" }}>
                                                                 <View style={{ flexDirection: "row" }}>
-                                                                    <Image
-                                                                        source={require("../../../../assets/icons/clock_b.png")}
-                                                                        style={styles.clock}
-                                                                    />
+                                                                    <Image source={require("../../../../assets/icons/clock_b.png")} style={styles.clock} />
                                                                     <Text style={styles.time_text}>
-                                                                        {`${schedules[ymd].startTime} - ${schedules[ymd].endTime}`}
+                                                                        {schedules[dayName]
+                                                                            ? `${formatTime12(schedules[dayName].startTime)} - ${formatTime12(schedules[dayName].endTime)}`
+                                                                            : ''}
                                                                     </Text>
+
                                                                 </View>
                                                             </View>
                                                         ) : (
-                                                            <Image
-                                                                source={require("../../../../assets/icons/plus_b.png")}
-                                                                style={styles.plus}
-                                                            />
+                                                            <Image source={require("../../../../assets/icons/plus_b.png")} style={styles.plus} />
                                                         )}
                                                     </CartBox>
                                                 </TouchableOpacity>
                                             </View>
                                         );
                                     })}
+
                                 </View>
 
                             </>
@@ -861,7 +875,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                                     ref={passwordRef}
                                     label={lang.password_label}
                                     placeholder="********"
-                                    // secureTextEntry={!showPassword}
+                                    secureTextEntry={!showPassword}
                                     value={password}
                                     setValue={(text) => {
                                         setPassword(text);
@@ -1061,7 +1075,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                 <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); }}>
                     <View style={styles.modalContainer}>
                         <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>Add schedule</Text>
+                        <Text style={styles.modalTitle}>{lang.Add_Schedule}</Text>
 
                         {/* We render branch overlay inside modal container (so it sits above modal content) */}
                         <View>
@@ -1072,7 +1086,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                                     onLayout={onBranchLayout}
                                 >
                                     <InputBox
-                                        label={"Branch"}
+                                        label={lang.branch}
                                         placeholder={""}
                                         value={selectedBranch}
                                         editable={false}
@@ -1088,7 +1102,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
 
                                 {/* Start time */}
                                 <InputBox
-                                    label={"Start time"}
+                                    label={lang.set_time_from}
                                     placeholder={"00:00:00"}
                                     value={timeFrom}
                                     setValue={(v: string) => {
@@ -1105,7 +1119,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
 
                                 {/* Duration */}
                                 <InputBox
-                                    label={"Duration"}
+                                    label={lang.Duration}
                                     placeholder={"Eg: 8"}
                                     value={durationHours}
                                     setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
@@ -1115,7 +1129,7 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
 
                                 <View style={{ height: 18 }} />
 
-                                <Button1 text="Add" width={"100%"} onPress={onAddSchedule} />
+                                <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
                                 <View style={{ height: 20 }} />
                             </ScrollView>
 
