@@ -208,7 +208,13 @@
     "Add":"Add",
     "Now": "Now",
     "Week":"Week",
-    "Month": "Month"
+    "Month": "Month",
+    "skip": "Skip",
+    "schedule_details": "Schedule details",
+    "create_new_work_schedule": "Create a new work schedule",
+    "branch": "Branch",
+    "set_time_from": "Set time from:"
+
   },
   "de": {
     "profile": "Profil",
@@ -417,6 +423,12 @@
     "Add": "Hinzufügen",
     "Now": "Jetzt",
     "Week":"Woche",
-    "Month": "Monat"
+    "Month": "Monat",
+    "skip": "Überspringen",
+    "schedule_details": "Zeitplandetails",
+    "create_new_work_schedule": "Neuen Arbeitsplan erstellen",
+    "branch": "Filiale",
+    "set_time_from": "Zeit einstellen ab:"
+
   }
 }

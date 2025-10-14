@@ -370,6 +370,24 @@ export let workHours: WorkHour[] = [
     date: "2025-10-16",
     createDate: "2025-10-10T08:10:00Z",
     updateDate: "2025-10-10T08:10:00Z"
+  },
+    {
+    id: "WH041",
+    user_id: "U003",
+    check_in: "07:20:00",
+    check_out: "15:30:00",
+    date: "2025-10-14",
+    createDate: "2025-10-10T08:10:00Z",
+    updateDate: "2025-10-10T08:10:00Z"
+  },
+      {
+    id: "WH042",
+    user_id: "U003",
+    check_in: "08:10:00",
+    check_out: "15:15:00",
+    date: "2025-10-02",
+    createDate: "2025-10-02T08:10:00Z",
+    updateDate: "2025-10-02T08:10:00Z"
   }
   
 ];
