@@ -13,9 +13,11 @@ import LanguageScreen from '../screens/LanguageScreen';
 import OpenScreen from '../screens/OpenScreen';
 import Code from '../components/Code';
 import AddScheduleScreen from '../screens/admin/main/more/AddScheduleScreen';
-import NotificationScreen from '../screens/admin/main/more/NotificationScreen';
+//import NotificationScreen from '../screens/admin/main/more/NotificationScreen';
 import AddStaffScreen from '../screens/admin/main/more/AddStaffScreen';
 import StaffProfileScreen from '../screens/admin/main/more/StaffProfileScreen';
+import NotificationScreen from '../screens/customer/main/NotificationScreen';
+import C_NotificationScreen from '../screens/customer/main/NotificationScreen';
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -87,9 +89,16 @@ export const StackNavigator: React.FC = () => {
         component={AddScheduleScreen}
         options={{ headerShown: false }}
       />
+
       <Stack.Screen
         name="NotificationScreen"
         component={NotificationScreen}
+        options={{ headerShown: false }}
+      />
+
+        <Stack.Screen
+        name="C_NotificationScreen"
+        component={C_NotificationScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
