@@ -13,11 +13,14 @@ import LanguageScreen from '../screens/LanguageScreen';
 import OpenScreen from '../screens/OpenScreen';
 import Code from '../components/Code';
 import AddScheduleScreen from '../screens/admin/main/more/AddScheduleScreen';
-//import NotificationScreen from '../screens/admin/main/more/NotificationScreen';
+import NotificationScreen from '../screens/admin/main/more/NotificationScreen';
 import AddStaffScreen from '../screens/admin/main/more/AddStaffScreen';
 import StaffProfileScreen from '../screens/admin/main/more/StaffProfileScreen';
-import NotificationScreen from '../screens/customer/main/NotificationScreen';
+import DashboardScreen from '../screens/superadmin/main/DashboardScreen';
+import AttendanceScreen from '../screens/superadmin/main/AttendanceScreen';
+//import NotificationScreen from '../screens/customer/main/NotificationScreen';
 import C_NotificationScreen from '../screens/customer/main/NotificationScreen';
+
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -28,7 +31,7 @@ const Stack = createStackNavigator();
 export const StackNavigator: React.FC = () => {
   return (
 
-    <Stack.Navigator initialRouteName="LoginScreen">
+    <Stack.Navigator initialRouteName="FlashScreen">
       <Stack.Screen
         name="FlashScreen"
         component={FlashScreen}
@@ -109,6 +112,16 @@ export const StackNavigator: React.FC = () => {
        <Stack.Screen
         name="StaffProfileScreen"
         component={StaffProfileScreen}
+        options={{ headerShown: false }}
+      />
+       <Stack.Screen
+        name="DashboardScreen"
+        component={DashboardScreen}
+        options={{ headerShown: false }}
+      />
+       <Stack.Screen
+        name="AttendanceScreen"
+        component={AttendanceScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

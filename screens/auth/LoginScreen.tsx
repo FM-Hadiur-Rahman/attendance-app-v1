@@ -190,11 +190,32 @@ export default function LoginScreen() {
     setEmailError('');
     setPasswordError('');
 
-    // --- navigate to appropriate Footer based on role and pass params ---
-    const routeName = found.role === 'admin' ? 'Footer_A' : 'Footer_C';
+    //   // --- navigate to appropriate Footer based on role and pass params ---
+    //   const routeName = found.role === 'admin' ? 'Footer_A' : 'Footer_C';
+    //   const params = { userId: found.id, langId, role: found.role };
+
+    //   console.log('LoginScreen -> navigating to', routeName, 'with params:', params);
+    //   navigation.navigate(routeName as never, params as never);
+    // };
+    // --- navigate to appropriate screen based on role and pass params ---
+    let routeName: string;
+    if (found.role === 'admin') {
+      routeName = 'Footer_A';
+    } else if (found.role === 'employee') {
+      routeName = 'Footer_C';
+    } else if (found.role === 'superadmin') {
+      // route for superadmin -> DashboardScreen
+      routeName = 'DashboardScreen';
+    } else {
+      // fallback
+      routeName = 'Footer_C';
+    }
+
     const params = { userId: found.id, langId, role: found.role };
 
-    console.log('LoginScreen -> navigating to', routeName, 'with params:', params);
+    // explicit console log showing destination and params
+    console.log(`LoginScreen -> navigating to ${routeName} with params:`, params);
+
     navigation.navigate(routeName as never, params as never);
   };
 

@@ -7,10 +7,10 @@ export interface User {
   email: string;
   username: string;
   password: string;
-  role: "admin" | "employee";
+  role: "admin" | "employee" | "superadmin";
   position: string;
-  branch_id: string;
-  schedule_id: string;
+  branch_id?: string;
+  schedule_id?: string;
   createDate: string;
   updateDate: string;
 }
@@ -715,5 +715,17 @@ export const users: User[] = [
     schedule_id: "S050",
     createDate: "2025-09-29T12:15:00Z",
     updateDate: "2025-09-29T12:15:00Z",
+  },
+    {
+    id: "U051",
+    fullname: "Sanjeevan Admin",
+    phone: "+94761234567",
+    email: "superadmin@gmail.com",
+    username: "Superadmin",
+    password: "Pass@123",
+    role: "superadmin",
+    position: "Branch Manager",
+    createDate: "2025-09-29T08:10:00Z",
+    updateDate: "2025-09-29T08:10:00Z",
   },
 ];
