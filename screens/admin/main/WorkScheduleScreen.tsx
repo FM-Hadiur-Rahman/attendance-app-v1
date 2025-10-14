@@ -280,7 +280,25 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
   const displayName = user.fullname;
   const position = user.position ?? "";
-  const timeStr = `${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`;
+  // ✅ Compute end time using duration (in hours)
+// ✅ Compute end time based on start_time + duration (in hours)
+const computeEndTime = (startTime: string, durationHours: number) => {
+  if (!startTime) return "";
+  const [hh, mm, ss] = startTime.split(":").map(Number);
+  const start = new Date();
+  start.setHours(hh, mm, ss || 0);
+  start.setMinutes(start.getMinutes() + (durationHours || 0) * 60);
+
+  const endHH = String(start.getHours()).padStart(2, "0");
+  const endMM = String(start.getMinutes()).padStart(2, "0");
+  const endSS = String(start.getSeconds()).padStart(2, "0");
+  return `${endHH}:${endMM}:${endSS}`;
+};
+
+const endTime = computeEndTime(schedule.start_time, schedule.duration);
+const timeStr = `${formatTime12(schedule.start_time)} - ${formatTime12(endTime)}`;
+
+
 
   // ✅ Find branch details
   const getBranchById = (id: string) => {

@@ -18,6 +18,9 @@ import AddStaffScreen from '../screens/admin/main/more/AddStaffScreen';
 import StaffProfileScreen from '../screens/admin/main/more/StaffProfileScreen';
 import DashboardScreen from '../screens/superadmin/main/DashboardScreen';
 import AttendanceScreen from '../screens/superadmin/main/AttendanceScreen';
+//import NotificationScreen from '../screens/customer/main/NotificationScreen';
+import C_NotificationScreen from '../screens/customer/main/NotificationScreen';
+
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -89,9 +92,16 @@ export const StackNavigator: React.FC = () => {
         component={AddScheduleScreen}
         options={{ headerShown: false }}
       />
+
       <Stack.Screen
         name="NotificationScreen"
         component={NotificationScreen}
+        options={{ headerShown: false }}
+      />
+
+        <Stack.Screen
+        name="C_NotificationScreen"
+        component={C_NotificationScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
