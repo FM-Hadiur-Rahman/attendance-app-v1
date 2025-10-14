@@ -216,7 +216,9 @@
     "set_time_from": "Set time from:",
     "Dashboard":"Dashboard",
     "Logout": "Logout?",
-    "logout_confirm": "Confirm the logging out by clicking 'yes.'"
+    "logout_confirm": "Confirm the logging out by clicking 'yes.'",
+    "Attendance":"Attendance",
+    "Schedule":"Schedule"
 
   },
   "de": {
@@ -434,7 +436,9 @@
     "set_time_from": "Zeit einstellen ab:",
     "Dashboard":"Armaturenbrett",
     "Logout": "Abmelden?",
-    "logout_confirm": "Bestätigen Sie die Abmeldung mit einem Klick auf „Ja“."
+    "logout_confirm": "Bestätigen Sie die Abmeldung mit einem Klick auf „Ja“.",
+    "Attendance":"Teilnahme",
+    "Schedule":"Zeitplan"
 
   }
 }

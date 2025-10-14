@@ -66,8 +66,8 @@ export default function ProfileScreen(props: any) {
 
   // NEW: fullname modal / state
   // const [fullnameModalVisible, setFullnameModalVisible] = useState(false);
-  const [fullnameInput, setFullnameInput] = useState(`${user.firstname} ${user.lastname}`);
-  const [fullName, setFullName] = useState(`${user.firstname} ${user.lastname}`);
+  const [fullnameInput, setFullnameInput] = useState(`${user.fullname}`);
+  const [fullName, setFullName] = useState(`${user.fullname}`);
 
   const languages = [
     {

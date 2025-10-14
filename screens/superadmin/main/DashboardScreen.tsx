@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Text, Image, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, Image, Dimensions, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import colors from '../../../styles/Colors';
 import Header from '../../../components/Header';
 import Popup from '../../../components/Popup';
@@ -37,6 +37,32 @@ const DashboardScreen = (props: any) => {
     const [logoutPopupVisible, setLogoutPopupVisible] = useState(false);
 
     const lang = translations[selectedLanguage];
+
+    const [refreshing, setRefreshing] = useState<boolean>(false);
+
+    const refreshFromServer = async () => {
+        // TODO: replace with real API calls that fetch latest users, branches, workHours, etc.
+        await new Promise((res) => setTimeout(res, 700));
+    };
+
+    const onRefresh = async () => {
+        try {
+            setRefreshing(true);
+            // If parent supplied a refresh function, prefer that
+            if (typeof (props as any).onRefreshData === "function") {
+                await (props as any).onRefreshData();
+            } else {
+                // run the placeholder server-refresh logic (replace with real fetches)
+                await refreshFromServer();
+            }
+            // Force recalculation of useMemo dependents
+            setVersion((v) => v + 1);
+        } catch (err) {
+            console.warn("Refresh failed:", err);
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
     useEffect(() => {
         if (propLangId && propLangId !== selectedLanguage) {
@@ -137,11 +163,18 @@ const DashboardScreen = (props: any) => {
                 </View>
 
                 <ScrollView
-                    style={{ marginBottom: 0}}
+                    style={{ marginBottom: 0 }}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
+                        />
+                    }
                 >
                     <View style={styles.all_branches}>
-
 
                         {/* Render each branch's CartBox with real data */}
                         {branchCounts.map((b) => (
@@ -159,7 +192,7 @@ const DashboardScreen = (props: any) => {
                                 }}
                             >
                                 <CartBox containerStyle={styles.branch}>
-                                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                    <View style={{ flexDirection: "row", alignItems: "center", width: '90%' }}>
                                         <Image
                                             source={require("../../../assets/icons/branch_b_withbg.png")}
                                             style={styles.icon}

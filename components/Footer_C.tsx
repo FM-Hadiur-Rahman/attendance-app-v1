@@ -15,6 +15,7 @@ import NotificationScreen from '../screens/customer/main/NotificationScreen';
 import ProfileScreen from '../screens/customer/main/ProfileScreen';
 import WorkHistoryScreen from '../screens/customer/main/WorkHistoryScreen';
 import colors from '../styles/Colors';
+import ScheduleScreen from '../screens/customer/main/ScheduleScreen';
 
 const Footer_C = () => {
   const [selectedTab, setSelectedTab] = useState<string>('Home');
@@ -43,10 +44,10 @@ const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId 
       activeIcon: require('../assets/icons/f_clock_b.png'),
     },
     {
-      key: 'Notification',
-      component: NotificationScreen,
-      icon: require('../assets/icons/f_notification_g.png'),
-      activeIcon: require('../assets/icons/f_notification_b.png'),
+      key: 'ScheduleScreen',
+      component: ScheduleScreen,
+      icon: require('../assets/icons/f_schedule_g.png'),
+      activeIcon: require('../assets/icons/f_schedule_b.png'),
     },
     {
       key: 'Profile',
