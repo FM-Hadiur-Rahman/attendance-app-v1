@@ -13,6 +13,7 @@ import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
+import { users } from "../../../api/Users";
 import { users as usersArr, User } from "../../../api/Users";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
@@ -33,6 +34,12 @@ const StaffRecordScreen: React.FC = (props: any) => {
 
   const userId = propUserId || routeUserId || null;
   const langId = propLangId || routeLangId || "en";
+
+    // get branch id passed in params (superadmin may pass this)
+  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  // fallback: admin's default branch from users list
+  const currentAdmin = users.find((u) => u.id === userId) || null;
+  const activeBranchId = passedBranchId || currentAdmin?.branch_id || null;
 
   // translation dictionary for this screen
   const lang = (translations as any)[langId] || (translations as any)["en"];
@@ -162,8 +169,8 @@ const StaffRecordScreen: React.FC = (props: any) => {
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Header right pressed -> NotificationScreen", { userId, langId });
-            navAndLog("NotificationScreen", { userId, langId });
+            console.log("Header right pressed -> NotificationScreen", { userId, langId, activeBranchId });
+            navAndLog("NotificationScreen", { userId, langId, activeBranchId });
           },
         }}
       />
