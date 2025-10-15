@@ -212,7 +212,7 @@ export const schedules: Schedule[] = [
     createDate: "2025-10-10T11:00:00Z",
     updateDate: "2025-10-10T11:00:00Z",
   },
-    {
+  {
     id: "S021",
     user_id: "U005",
     start_time: "07:00:00",
@@ -412,7 +412,7 @@ export const schedules: Schedule[] = [
     createDate: "2025-10-10T14:20:00Z",
     updateDate: "2025-10-10T14:20:00Z",
   },
-    {
+  {
     id: "S041",
     user_id: "U047",
     start_time: "08:15:00",
@@ -612,7 +612,7 @@ export const schedules: Schedule[] = [
     createDate: "2025-10-10T17:40:00Z",
     updateDate: "2025-10-10T17:40:00Z",
   },
-    {
+  {
     id: "S061",
     user_id: "U003",
     start_time: "07:30:00",
@@ -622,7 +622,7 @@ export const schedules: Schedule[] = [
     createDate: "2025-10-10T08:10:00Z",
     updateDate: "2025-10-10T08:10:00Z",
   },
-      {
+  {
     id: "S062",
     user_id: "U003",
     start_time: "07:30:00",
@@ -631,5 +631,35 @@ export const schedules: Schedule[] = [
     branch_id: "B004",
     createDate: "2025-10-01T08:10:00Z",
     updateDate: "2025-10-01T08:10:00Z",
+  },
+  {
+    id: "S063",
+    user_id: "U007",
+    start_time: "09:00:00",
+    duration: 6,
+    date: "2025-10-13",
+    branch_id: "B001",
+    createDate: "2025-10-10T11:30:00Z",
+    updateDate: "2025-10-10T11:30:00Z",
+  },
+  {
+    id: "S063",
+    user_id: "U007",
+    start_time: "09:00:00",
+    duration: 6,
+    date: "2025-10-12",
+    branch_id: "B005",
+    createDate: "2025-10-10T11:30:00Z",
+    updateDate: "2025-10-10T11:30:00Z",
+  },
+  {
+    id: "S064",
+    user_id: "U007",
+    start_time: "09:00:00",
+    duration: 6,
+    date: "2025-10-17",
+    branch_id: "B002",
+    createDate: "2025-10-10T11:30:00Z",
+    updateDate: "2025-10-10T11:30:00Z",
   },
 ];

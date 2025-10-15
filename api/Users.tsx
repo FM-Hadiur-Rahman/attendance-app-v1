@@ -52,7 +52,7 @@ export const users: User[] = [
     username: "pavi",
     password: "Pass@123",
     role: "employee",
-    position: "Assistant Manager",
+    position: "Cleaner",
     branch_id: "B001",
     schedule_id: "S002",
     createDate: "2025-09-29T08:15:00Z",
