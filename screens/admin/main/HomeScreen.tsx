@@ -14,17 +14,14 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json"
-import { users } from "../../../api/Users";
+import { users, users as usersArr } from "../../../api/Users";
 import { schedules } from "../../../api/Schedule";
-import { workHours } from "../../../api/WorkHours";
+import { workHours, workHours as workHoursArr } from "../../../api/WorkHours";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { getBranchById } from "../../../api/Branch"; // use helper function
+import { getBranchById } from "../../../api/Branch"; 
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
-
-
-
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -41,7 +38,6 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
-
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
@@ -85,7 +81,6 @@ const formatYMDDisplay = (ymd: string) => {
   return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
 };
 
-
 const HomeScreen_A = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -124,11 +119,22 @@ const HomeScreen_A = (props: any) => {
     setVersion((v) => v + 1);
     setRefreshing(false);
   };
+  const currentUser = usersArr.find(u => u.id === userId) || null;
+    const currentBranchId = currentUser?.branch_id ?? null;
+
+
+      // ---------- NEW: use passed branch params (superadmin passes branch_id & branch_name) ----------
+  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
+    const activeBranchId = passedBranchId || currentBranchId || null;
 
   // total employees
   const totalStaff = useMemo(
-    () => users.filter((u) => u.role === "employee").length,
-    [version]
+    () => {
+      if (!activeBranchId) return 0;
+      return usersArr.filter(u => u.role === "employee" && u.branch_id === activeBranchId).length;
+    },
+    [version, activeBranchId]
   );
 
   // staff on shift (based on workHours entries for today)
@@ -137,40 +143,75 @@ const HomeScreen_A = (props: any) => {
     [todayYMD, version]
   );
 
-  const staffOnShiftCount = todaysWorkHours.length;
+    // today's unique working employees for this branch (filter workHours for today's date and this branch)
+    const staffOnShiftCount = useMemo(() => {
+      if (!activeBranchId) return 0;
+  
+      // compute today's Y-M-D locally (avoids ordering issues)
+      const t = new Date();
+      t.setHours(0, 0, 0, 0);
+      const y = t.getFullYear();
+      const m = (t.getMonth() + 1).toString().padStart(2, "0");
+      const d = t.getDate().toString().padStart(2, "0");
+      const todaysYMD = `${y}-${m}-${d}`;
+  
+      const set = new Set<string>();
+      workHoursArr.forEach(w => {
+        if (w.date === todaysYMD) {
+          const u = usersArr.find(us => us.id === w.user_id);
+          if (u && u.branch_id === activeBranchId) set.add(w.user_id);
+        }
+      });
+      return set.size;
+    }, [version, activeBranchId]);
+  
 
   // recent check-ins: today's workHours sorted by check_in descending (most recent first)
-  const recentCheckins = useMemo(() => {
-    return todaysWorkHours
-      .slice()
-      .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
-      .map((wh) => {
-        const user = users.find((u) => u.id === wh.user_id) || null;
-        // find schedule for this user for today (if any)
-        const sched = schedules.find(
-          (s) => s.user_id === wh.user_id && s.date === wh.date
-        );
-        // compute early/late compared to schedule
-        let status: "early" | "late" | "noschedule" = "noschedule";
-        let diffText = "";
-        if (sched) {
-          const schedMin = timeToMinutes(sched.start_time);
-          const checkMin = timeToMinutes(wh.check_in);
-          const diff = checkMin - schedMin;
-          if (diff > 0) {
-            status = "late";
-            diffText = formatMinutesDiff(diff);
-          } else {
-            status = "early";
-            diffText = formatMinutesDiff(diff); // positive magnitude
-          }
-        } else {
-          status = "noschedule";
-        }
+// recent check-ins: today's workHours for the active branch, sorted by check_in desc
+const recentCheckins = useMemo(() => {
+  if (!activeBranchId) return [];
 
-        return { work: wh, user, schedule: sched ?? null, status, diffText };
-      });
-  }, [todaysWorkHours, version]);
+  // get today's Y-M-D (use same local computation as staffOnShiftCount to avoid timezone mismatches)
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  const y = t.getFullYear();
+  const m = (t.getMonth() + 1).toString().padStart(2, "0");
+  const d = t.getDate().toString().padStart(2, "0");
+  const todaysYMD = `${y}-${m}-${d}`;
+
+  return workHoursArr
+    .filter((w) => w.date === todaysYMD)
+    .filter((w) => {
+      // include if the work record was for this branch OR the user's default branch is this branch
+      const u = usersArr.find((us) => us.id === w.user_id);
+      return (w.branch_id && w.branch_id === activeBranchId) || (u && u.branch_id === activeBranchId);
+    })
+    .slice()
+    .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
+    .map((wh) => {
+      const user = users.find((u) => u.id === wh.user_id) || null;
+      const sched = schedules.find((s) => s.user_id === wh.user_id && s.date === wh.date);
+      let status: "early" | "late" | "noschedule" = "noschedule";
+      let diffText = "";
+      if (sched) {
+        const schedMin = timeToMinutes(sched.start_time);
+        const checkMin = timeToMinutes(wh.check_in);
+        const diff = checkMin - schedMin;
+        if (diff > 0) {
+          status = "late";
+          diffText = formatMinutesDiff(diff);
+        } else {
+          status = "early";
+          diffText = formatMinutesDiff(diff);
+        }
+      } else {
+        status = "noschedule";
+      }
+
+      return { work: wh, user, schedule: sched ?? null, status, diffText };
+    });
+}, [version, activeBranchId]);
+
 
   return (
     <View style={styles.container}>
@@ -184,8 +225,8 @@ const HomeScreen_A = (props: any) => {
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Navigate -> NotificationScreen", { userId, langId: langId });
-            navigation.navigate("NotificationScreen" as any, { userId, langId: langId });
+            console.log("Navigate -> NotificationScreen", { userId, langId: langId, activeBranchId: activeBranchId });
+            navigation.navigate("NotificationScreen" as any, { userId, langId: langId, activeBranchId });
           },
         }}
       />
@@ -408,7 +449,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   branchHeader: {
-    flexDirection: "row", // 👈 icon + text in one line
+    flexDirection: "row", 
     alignItems: "center",
     marginBottom: 8,
   },
@@ -416,7 +457,7 @@ const styles = StyleSheet.create({
   branchIcon: {
     width: 16,
     height: 16,
-    marginRight: 6, // space between icon and text
+    marginRight: 6, 
 
   },
   branchName: {
@@ -439,7 +480,7 @@ const styles = StyleSheet.create({
   },
 
   statusInline: {
-    flexDirection: "row", // 👈 side by side now
+    flexDirection: "row", 
     alignItems: "center",
     justifyContent: "flex-end",
     marginLeft: 8,
@@ -450,7 +491,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: fonts.weight.medium as any,
     fontSize: fonts.size.m,
-    marginLeft: 8, // 👈 spacing between "Early" and "1h 2m"
+    marginLeft: 8,
     textAlign: "right",
   },
 

@@ -61,7 +61,7 @@ export let workHours: WorkHour[] = [
     user_id: "U006",
     check_in: "08:15:00",
     check_out: "15:20:00",
-    date: "2025-10-14",
+    date: "2025-10-15",
     createDate: "2025-10-10T08:15:00Z",
     updateDate: "2025-10-10T08:15:00Z"
   },
@@ -70,7 +70,7 @@ export let workHours: WorkHour[] = [
     user_id: "U007",
     check_in: "09:05:00",
     check_out: "15:10:00",
-    date: "2025-10-18",
+    date: "2025-10-15",
     createDate: "2025-10-10T09:05:00Z",
     updateDate: "2025-10-10T09:05:00Z"
   },
@@ -232,7 +232,7 @@ export let workHours: WorkHour[] = [
     user_id: "U025",
     check_in: "07:45:00",
     check_out: "15:00:00",
-    date: "2025-10-14",
+    date: "2025-10-15",
     createDate: "2025-10-10T07:45:00Z",
     updateDate: "2025-10-10T07:45:00Z"
   },
@@ -268,7 +268,7 @@ export let workHours: WorkHour[] = [
     user_id: "U029",
     check_in: "09:00:00",
     check_out: "15:55:00",
-    date: "2025-10-19",
+    date: "2025-10-15",
     createDate: "2025-10-10T09:00:00Z",
     updateDate: "2025-10-10T09:00:00Z"
   },
@@ -286,7 +286,7 @@ export let workHours: WorkHour[] = [
     user_id: "U031",
     check_in: "08:05:00",
     check_out: "15:10:00",
-    date: "2025-10-14",
+    date: "2025-10-15",
     createDate: "2025-10-10T08:05:00Z",
     updateDate: "2025-10-10T08:05:00Z"
   },
@@ -376,7 +376,7 @@ export let workHours: WorkHour[] = [
     user_id: "U003",
     check_in: "07:20:00",
     check_out: "15:30:00",
-    date: "2025-10-14",
+    date: "2025-10-15",
     createDate: "2025-10-10T08:10:00Z",
     updateDate: "2025-10-10T08:10:00Z"
   },

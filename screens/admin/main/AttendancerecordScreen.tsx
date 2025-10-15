@@ -567,8 +567,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Navigate -> NotificationScreen", { userId, langId: langId });
-            navigation.navigate("NotificationScreen" as any, { userId, langId: langId });
+            console.log("Navigate -> NotificationScreen", { userId, langId: langId, currentBranchId: currentBranchId });
+            navigation.navigate("NotificationScreen" as any, { userId, langId: langId, currentBranchId });
           },
         }}
       />
