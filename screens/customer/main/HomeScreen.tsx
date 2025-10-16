@@ -18,7 +18,7 @@ import { User, users } from "../../../api/Users";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import { workHours, WorkHour, } from "../../../api/WorkHours";
-import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
+import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 import CartBox from "../../../components/CartBox";
 import { branches, getBranchById } from "../../../api/Branch";
 import { schedules } from "../../../api/Schedule";
@@ -55,9 +55,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const SHOP_LAT = userBranchObj?.location.latitude || 0;
   const SHOP_LON = userBranchObj?.location.longitude || 0;
 
-  const CHECKIN_RADIUS = 8932038.875483155 // keep radius same (meters)
-
-
+  const CHECKIN_RADIUS = 8932039.537701556 // keep radius same (meters)
 
   const userBranchName = userBranchObj?.name || "No Branch";
 
@@ -67,6 +65,27 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
   const navigation = useNavigation();
 
+  const [canCheckOut, setCanCheckOut] = useState(false);
+const [checkedOut, setCheckedOut] = useState(false);
+
+const handleCheckoutConfirm = () => {
+  const now = new Date();
+  setCheckOutTime(now);
+
+  if (checkInTime) {
+    const diffMs = now.getTime() - checkInTime.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    setDuration(`${diffHours} hrs ${diffMinutes} mins`);
+  }
+
+  setShowCheckoutPopup(false);
+  showSuccessToast("Checked out successfully!");
+};
+
+
+
+
 
   let todaySchedule = schedules
     .filter(s => s.user_id === userId)
@@ -74,6 +93,99 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     .find(s => new Date(s.date) >= new Date());
 
   console.log("Next available schedule:", todaySchedule);
+
+  useEffect(() => {
+  if (!checkInTime || !todaySchedule) return;
+
+  const parseTime = (timeStr: string) => {
+    const [h, m, s] = timeStr.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, s || 0, 0);
+    return d;
+  };
+
+  const startTime = parseTime(checkInTime);
+  const endTime = new Date(startTime.getTime() + todaySchedule.duration * 60 * 60 * 1000);
+
+  const interval = setInterval(() => {
+    const now = new Date();
+    // ✅ Allow checkout immediately once duration ends
+    setCanCheckOut(now >= endTime);
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, [checkInTime, todaySchedule]);
+
+
+
+useEffect(() => {
+  if (!checkInTime || checkOutTime) return;
+
+  const interval = setInterval(() => {
+    const now = new Date();
+    const diffMs = now.getTime() - checkInTime.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    setDuration(`${diffHours} hrs ${diffMinutes} mins`);
+  }, 60000); // update every minute
+
+  return () => clearInterval(interval);
+}, [checkInTime, checkOutTime]);
+
+
+
+
+useEffect(() => {
+  if (!checkedIn || !checkInTime || !todaySchedule) return;
+
+  const [h, m, s] = checkInTime
+    .replace(/[^0-9:]/g, "")
+    .split(":")
+    .map(Number);
+
+  const checkInDate = new Date();
+  checkInDate.setHours(h, m, s || 0, 0);
+
+  // ⏰ Duration in milliseconds + 1 minute buffer
+  const durationMs = todaySchedule.duration * 60 * 60 * 1000 + 60 * 1000;
+  const allowedCheckoutTime = new Date(checkInDate.getTime() + durationMs);
+
+  const timer = setInterval(() => {
+    const now = new Date();
+    setCanCheckOut(now >= allowedCheckoutTime);
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, [checkedIn, checkInTime, todaySchedule]);
+
+
+
+// 🔧 Convert HH:MM:SS or locale time to 12h format like "02:30 PM"
+// 🕒 Format time as "hh:mm AM/PM" (no seconds)
+const formatDisplayTime = (date: Date) => {
+  return date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
+// 🧮 Given checkInTime + duration, calculate end time
+const getActualEndTime = (checkInTime: string, duration: number) => {
+  const now = new Date();
+
+  // Parse checkInTime (works for both 12h or 24h strings)
+  let h = 0, m = 0, s = 0;
+  const timeStr = checkInTime.replace(/[^0-9:]/g, "");
+  [h, m, s] = timeStr.split(":").map(Number);
+  now.setHours(h, m, s || 0, 0);
+
+  // Add duration (in hours → milliseconds)
+  const endTime = new Date(now.getTime() + duration * 60 * 60 * 1000);
+  return formatDisplayTime(endTime);
+};
+
+
 
 
 
@@ -204,6 +316,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     const hour12 = hour % 12 === 0 ? 12 : hour % 12;
     return `${hour12.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")} ${ampm}`;
   };
+
+
   // 🔥 Use props.userId to get user
   useEffect(() => {
     const user = users.find((u) => u.id === userId);
@@ -551,10 +665,21 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                   </Text>
                 </View>
               )}
+
+{/* {todaySchedule && checkInTime && (
+  <View style={styles.addressLine}>
+    <Image
+      source={require("../../../assets/icons/clock.png")}
+      style={styles.addressIcon}
+    />
+    <Text style={[styles.addressText, { fontSize: 14, color: "#333" }]}>
+      {checkInTime} - {getActualEndTime(checkInTime, todaySchedule.duration)}
+    </Text>
+  </View>
+)} */}
             </View>
           </CartBox>
         )}
-
         {!checkedIn ? (
           <>
             <View style={styles.middle}>
@@ -586,49 +711,45 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
             </View>
 
             {/* Info Box */}
-            <View style={styles.infoBox}>
-              {/* Checked In */}
-              {checkInTime && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>{lang.checkedInAt}</Text>
-                  <Text style={styles.infoValue}>{checkInTime}</Text>
-                </View>
-              )}
+<View style={styles.infoBox}>
+  {checkInTime && (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>Checked In At</Text>
+      <Text style={styles.infoValue}>{formatTime(checkInTime)}</Text>
+    </View>
+  )}
 
-              {/* Checked Out */}
-              {checkOutTime ? (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>{lang.checkedOutAt}</Text>
-                  <Text style={styles.infoValue}>{checkOutTime}</Text>
-                </View>
-              ) : (
-                // Show live duration if not yet checked out
-                checkInTime && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>{lang.duration}</Text>
-                    <Text style={styles.durationValue}>{duration}</Text>
-                  </View>
-                )
-              )}
+  {checkOutTime && (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>Checked Out At</Text>
+      <Text style={styles.infoValue}>{formatTime(checkOutTime)}</Text>
+    </View>
+  )}
 
-              {/* If checked out, show final duration */}
-              {checkInTime && checkOutTime && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>{lang.duration}</Text>
-                  <Text style={styles.durationValue}>{duration}</Text>
-                </View>
-              )}
-            </View>
-            {!checkOutTime && (
-              <Button1
-                text={lang.checkOut}
-                backgroundColor={colors.primary}
-                textStyle={{ color: colors.secondary }}
-                containerStyle={styles.checkinBtn}
-                onPress={() => setShowCheckoutPopup(true)}
-              />
+  {checkInTime && (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>Duration</Text>
+      <Text style={styles.durationValue}>{duration}</Text>
+    </View>
+  )}
+</View>
 
-            )}
+{!checkedOut && (
+  <Button1
+    text={lang.checkOut}
+    backgroundColor={colors.primary}
+    textStyle={{ color: colors.secondary }}
+    containerStyle={styles.checkinBtn}
+    onPress={() => {
+      if (canCheckOut) {
+        setShowCheckoutPopup(true);
+      } else {
+        showErrorToast("You can’t check out yet. Please wait until your shift ends.");
+      }
+    }}
+  />
+)}
+
 
             {/* Checkout Popup */}
             <Popup
@@ -649,20 +770,21 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                   width="45%"
                   onPress={() => {
                     const now = new Date();
-                    const outTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-                    setCheckOutTime(outTime);
+                    setCheckedIn(true);
+                    setCanCheckOut(false); // 🔥 immediately disable checkout
+                    const inTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+                    setCheckInTime(inTime);
+                    setCheckOutTime(null);
+                    setDuration("--");
 
-                    if (checkInTime) {
-                      setDuration(calculateDuration(checkInTime, outTime));
-                    }
+                    const saved = addWorkHour(userId, now);
+                    setTodayRecord(saved);
+                    console.log("✅ WorkHour saved:", saved);
 
-                    const updated = updateWorkHour(userId, now);
-                    if (updated) setTodayRecord(updated);
-                    console.log("✅ WorkHour updated:", updated);
-
-                    setShowCheckoutPopup(false);
-                    showSuccessToast(lang.checkOutSuccess); // ✅ toast
+                    setShowPopup(false);
+                    showSuccessToast(lang.checkInSuccess);
                   }}
+
                 />
 
                 <Button1
@@ -693,21 +815,24 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               text={lang.yes}
               backgroundColor={colors.primary}
               width="45%"
-              onPress={() => {
-                const now = new Date();
-                setCheckedIn(true);
-                const inTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-                setCheckInTime(inTime);
-                setCheckOutTime(null);
-                setDuration("--");
+onPress={() => {
+  const now = new Date();
+  setCheckedIn(true);
+  setCanCheckOut(false); // 🔥 Disable checkout immediately after check-in
+  const inTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  setCheckInTime(inTime);
+  setCheckOutTime(null);
+  setDuration("--");
 
-                const saved = addWorkHour(userId, now);
-                setTodayRecord(saved);
-                console.log("✅ WorkHour saved:", saved);
+  const saved = addWorkHour(userId, now);
+  setTodayRecord(saved);
+  console.log("✅ WorkHour saved:", saved);
 
-                setShowPopup(false);
-                showSuccessToast(lang.checkInSuccess);
-              }}
+  setShowPopup(false);
+  showSuccessToast(lang.checkInSuccess);
+}}
+
+
             />
             <Button1
               text={lang.no}
