@@ -88,10 +88,10 @@ export const users: User[] = [
   },
   {
     id: "U006",
-    fullname: "Siva Rajan",
+    fullname: "Siva",
     phone: "+94761234572",
     email: "siva.rajan@bakery.com",
-    username: "sivarajan",
+    username: "Siva",
     password: "Siva@123",
     role: "employee",
     position: "Delivery Staff",
