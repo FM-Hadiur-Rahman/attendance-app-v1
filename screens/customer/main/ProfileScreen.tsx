@@ -18,13 +18,16 @@ import CartBox from "../../../components/CartBox";
 import Popup from "../../../components/Popup";
 import { Button1 } from "../../../components/Button";
 import InputBox from "../../../components/InputBox";
-import { users, User } from '../../../api/Users';
 import translations from "../../../assets/translations.json"
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
 
-export default function ProfileScreen(props: any) {
+import { getProfile,ProfileUser } from "../../../api/profile"; 
+import { logout as apiLogout } from "../../../api/auth/authService";
+import { clearAllAuthData } from "../../../api/auth/authToken"; 
+
+export default function MoreScreen(props: any) {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
@@ -37,8 +40,6 @@ export default function ProfileScreen(props: any) {
   const routeUserId = route.params?.userId ?? route.params?.id;
   const userId = propUserId || routeUserId ;
 
-  const user = users.find((u) => u.id === userId) || users[0];
-
   // initial language from prop or route param (route param name might be langId)
   const routeLangId = route.params?.langId ?? route.params?.language;
   const initialLang = propLangId || routeLangId || "en";
@@ -46,7 +47,6 @@ export default function ProfileScreen(props: any) {
   const [selectedLanguage, setSelectedLanguage] = useState(initialLang);
   const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
 
-  // keep local selectedLanguage in sync if parent prop changes
   useEffect(() => {
     if (propLangId && propLangId !== selectedLanguage) {
       setSelectedLanguage(propLangId);
@@ -55,19 +55,19 @@ export default function ProfileScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  // recompute language dictionary whenever selectedLanguage changes
   const lang = translations[selectedLanguage];
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [profileImage, setProfileImage] = useState((user as any).image || "");
+  const [profileImage, setProfileImage] = useState<string>(""); // no change to UI
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [logoutPopupVisible, setLogoutPopupVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // NEW: fullname modal / state
-  // const [fullnameModalVisible, setFullnameModalVisible] = useState(false);
-  const [fullnameInput, setFullnameInput] = useState(`${user.fullname}`);
-  const [fullName, setFullName] = useState(`${user.fullname}`);
+  const [fullName, setFullName] = useState(""); // will be loaded from API
+
+  // user object loaded from API
+  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
   const languages = [
     {
@@ -90,9 +90,7 @@ export default function ProfileScreen(props: any) {
       title: "General",
       items: [
         { label: "Fullname", labelname: lang.fullName, icon: require("../../../assets/icons/p_profile_b.png"), screen: null },
-        { label: "Position", labelname: "Position", icon: require("../../../assets/icons/p_position_b.png"), screen: null },
         { label: "Email", labelname: lang.email, icon: require("../../../assets/icons/p_email_b.png"), screen: null },
-        { label: "Phone number", labelname: lang.phoneNumber, icon: require("../../../assets/icons/p_phone_b.png"), screen: null }
       ],
     },
     {
@@ -113,6 +111,36 @@ export default function ProfileScreen(props: any) {
       ],
     },
   ];
+
+  // ---------- API Integration ----------
+  const loadProfile = async (showErrors = true) => {
+    try {
+      setLoadingProfile(true);
+      const profile = await getProfile();
+      setUser(profile);
+      setFullName(profile.fullname ?? "");
+      // If your API returns an image field, setProfileImage(profile.image) here
+    } catch (err: any) {
+      console.error('loadProfile error', err);
+      if (showErrors) {
+        Alert.alert('Profile load failed', err?.toString?.() ?? 'Could not load profile');
+      }
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    // fetch profile on mount
+    loadProfile(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadProfile();
+    setRefreshing(false);
+  };
 
   // open device camera
   const openCamera = async () => {
@@ -155,11 +183,25 @@ export default function ProfileScreen(props: any) {
       setModalVisible(false);
     }
   };
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    setRefreshing(false);
+  const handleLogout = async () => {
+    try {
+      // try informing backend and clearing local storage via AuthService
+      await apiLogout();
+    } catch (err) {
+      console.warn("Backend logout failed (ignored):", err);
+      // ensure tokens are removed locally even if backend fails
+      await clearAllAuthData();
+    } finally {
+      // final guard: ensure local data is cleared
+      await clearAllAuthData();
+  
+      // navigate to login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+      });
+    }
   };
 
 
@@ -233,11 +275,7 @@ export default function ProfileScreen(props: any) {
                   onPress={() => {
                     if (item.label === "Language") {
                       setLanguageModalVisible(true);
-                    } else if (item.label === "Fullname") {
-                      // NEW: open fullname edit modal
-                      setFullnameInput(fullName); // set current value
-                      // setFullnameModalVisible(true);
-                    } else if (item.screen) {
+                    }  else if (item.screen) {
                       navigation.navigate(item.screen, {
                         id: userId,
                         langId: selectedLanguage, // pass langId
@@ -260,9 +298,9 @@ export default function ProfileScreen(props: any) {
                       {section.name === lang.personal_information && (
                         <Text style={styles.labelValue}>
                           {item.label === "Fullname" && fullName}
-                          {item.label === "Position" && user.position}
-                          {item.label === "Email" && user.email}
-                          {item.label === "Phone number" && user.phone}
+                          {item.label === "Position" && user?.position}
+                          {item.label === "Email" && user?.email}
+                          {item.label === "Phone number" && user?.phone}
                         </Text>
                       )}
                     </View>
@@ -356,44 +394,6 @@ export default function ProfileScreen(props: any) {
           </View>
         </Pressable>
       </Modal>
-
-      {/* Fullname Edit Modal (NEW) */}
-      {/* <Modal
-        animationType="slide"
-        transparent={true}
-        visible={fullnameModalVisible}
-        onRequestClose={() => setFullnameModalVisible(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setFullnameModalVisible(false)}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Fullname</Text>
-
-            <InputBox
-              label="fullname"
-              value={fullnameInput}
-              setValue={setFullnameInput}
-              placeholder="Enter full name"
-              inputStyle={{ marginTop: 0 }}
-            />
-
-            <Button1
-              text="Save"
-              width={"100%"}
-              onPress={() => {
-                // save the new full name to local state
-                setFullName(fullnameInput.trim() === "" ? fullName : fullnameInput);
-                setFullnameModalVisible(false);
-              }}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
-        </Pressable>
-      </Modal> */}
-
       {/* Language Modal */}
       <Modal
         animationType="slide"
@@ -471,13 +471,7 @@ export default function ProfileScreen(props: any) {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
           <Button1
             text={lang.yes}
-            onPress={() => {
-              setLogoutPopupVisible(false); 
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }], 
-              });
-            }}
+            onPress={handleLogout}
             backgroundColor={colors.primary}
             width={'48%'}
             textStyle={{ color: colors.secondary }}

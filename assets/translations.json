@@ -218,7 +218,12 @@
     "Logout": "Logout?",
     "logout_confirm": "Confirm the logging out by clicking 'yes.'",
     "Attendance":"Attendance",
-    "Schedule":"Schedule"
+    "Schedule":"Schedule",
+    "input_fullname":"Fullname",
+    "Edit_Fullname":"Edit Fullname",
+    "Enter_full_name":"Enter full name",
+    "Fullname_updated_successfully":"Fullname updated successfully",
+     "Fullname_cannot_be_empty":"Fullname cannot be empty"
 
   },
   "de": {
@@ -438,7 +443,12 @@
     "Logout": "Abmelden?",
     "logout_confirm": "Bestätigen Sie die Abmeldung mit einem Klick auf „Ja“.",
     "Attendance":"Teilnahme",
-    "Schedule":"Zeitplan"
+    "Schedule":"Zeitplan",
+    "input_fullname":"Vollständiger Name",
+    "Edit_Fullname":"Vollständigen Namen bearbeiten",
+    "Enter_full_name":"Geben Sie den vollständigen Namen ein",
+    "Fullname_updated_successfully":"Vollständiger Name erfolgreich aktualisiert",
+    "Fullname_cannot_be_empty":"Der vollständige Name darf nicht leer sein"
 
   }
 }

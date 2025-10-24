@@ -21,6 +21,8 @@ import AttendanceScreen from '../screens/superadmin/main/AttendanceScreen';
 //import NotificationScreen from '../screens/customer/main/NotificationScreen';
 import C_NotificationScreen from '../screens/customer/main/NotificationScreen';
 import StaffRecordScreen from '../screens/admin/main/StaffRecordScreen';
+import Footer_S from '../components/Footer_S';
+import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
 
 
 
@@ -32,7 +34,7 @@ const Stack = createStackNavigator();
 export const StackNavigator: React.FC = () => {
   return (
 
-    <Stack.Navigator initialRouteName="StaffRecordScreen">
+    <Stack.Navigator initialRouteName="LoginScreen">
       <Stack.Screen
         name="FlashScreen"
         component={FlashScreen}
@@ -128,6 +130,16 @@ export const StackNavigator: React.FC = () => {
       <Stack.Screen
         name="StaffRecordScreen"
         component={StaffRecordScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Footer_S"
+        component={Footer_S}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="AddBranchScreen"
+        component={AddBranchScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
