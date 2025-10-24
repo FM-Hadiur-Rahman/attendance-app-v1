@@ -30,6 +30,7 @@ interface InputBoxProps extends TextInputProps {
   rightIconStyle?: any;
   borderColor?: string;
   errorMessage?: string;
+  forceBlueBorder?: boolean; // NEW PROP
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -60,12 +61,17 @@ const InputBox = forwardRef<TextInput, InputBoxProps>(
       editable = true,
       errorMessage,
       inputStyle,
+      forceBlueBorder = false, // default false
       ...rest
     },
     ref
   ) => {
-    // Use red border if error exists
-    const currentBorderColor = errorMessage ? colors.error_text : borderColor;
+    // Use blue border if forced, otherwise red if error exists, otherwise custom borderColor
+    const currentBorderColor = forceBlueBorder
+      ? colors.primary
+      : errorMessage
+      ? colors.error_text
+      : borderColor;
 
     return (
       <View style={styles.wrapper}>
@@ -74,21 +80,25 @@ const InputBox = forwardRef<TextInput, InputBoxProps>(
           onPress={onPress}
           disabled={!onPress}
         >
-          <View style={[styles.container, { borderColor: currentBorderColor }]}> 
-            {/* Label (inside input container, first line) */}
+          <View style={[styles.container, { borderColor: currentBorderColor }]}>
             {label ? (
               <Text style={styles.label}>{label}</Text>
             ) : null}
 
             <View style={styles.inputRow}>
-              {/* left icon optional (kept for flexibility) */}
               {leftIcon ? (
-                <TouchableOpacity onPress={onLeftIconPress} style={[styles.iconTouch, leftIconStyle]}>
+                <TouchableOpacity
+                  onPress={onLeftIconPress}
+                  style={[styles.iconTouch, leftIconStyle]}
+                >
                   <Image source={leftIcon} style={[styles.icon, leftIconStyle]} />
                 </TouchableOpacity>
               ) : null}
               {leftIcon2 ? (
-                <TouchableOpacity onPress={onLeftIcon2Press} style={[styles.iconTouch, leftIcon2Style]}>
+                <TouchableOpacity
+                  onPress={onLeftIcon2Press}
+                  style={[styles.iconTouch, leftIcon2Style]}
+                >
                   <Image source={leftIcon2} style={[styles.icon, leftIcon2Style]} />
                 </TouchableOpacity>
               ) : null}
@@ -115,7 +125,10 @@ const InputBox = forwardRef<TextInput, InputBoxProps>(
               />
 
               {rightIcon ? (
-                <TouchableOpacity onPress={onRightIconPress} style={[styles.iconTouch, rightIconStyle]}>
+                <TouchableOpacity
+                  onPress={onRightIconPress}
+                  style={[styles.iconTouch, rightIconStyle]}
+                >
                   <Image source={rightIcon} style={[styles.icon, rightIconStyle]} />
                 </TouchableOpacity>
               ) : null}
@@ -156,7 +169,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     padding: 0,
     margin: 0,
-    // no fixed height — lets paddingVertical control the size
     fontFamily: fonts.family.regular,
   },
   multilineInput: {
@@ -171,7 +183,6 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     resizeMode: 'contain',
-    //tintColor: colors.subtext3,
     marginLeft: 0,
     marginRight: 0,
   },
