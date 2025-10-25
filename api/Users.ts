@@ -1,111 +1,856 @@
-// src/api/Users.ts
-import axiosInstance from "./axiosInstance";
+// // src/api/Users.ts
+// import axiosInstance from "./axiosInstance";
 
-export interface Branch {
-  _id: string;
-  name?: string;
-}
+// export interface Branch {
+//   _id: string;
+//   name?: string;
+// }
 
-export interface ApiUser {
-  _id: string;
-  username?: string;
-  fullname?: string;
-  firstname?: string;
-  lastname?: string;
-  position?: string;
-  phone?: string;
-  email?: string;
-  role?: string;
-  branch?: Branch | null;
-  [key: string]: any;
-}
+// export interface ApiUser {
+//   _id: string;
+//   username?: string;
+//   fullname?: string;
+//   firstname?: string;
+//   lastname?: string;
+//   position?: string;
+//   phone?: string;
+//   email?: string;
+//   role?: string;
+//   branch?: Branch | null;
+//   [key: string]: any;
+// }
 
-/**
- * Normalized user type used in the app
- */
+// /**
+//  * Normalized user type used in the app
+//  */
+// export interface User {
+//   id: string;
+//   username?: string;
+//   fullname?: string;
+//   firstname?: string;
+//   lastname?: string;
+//   position?: string;
+//   phone?: string;
+//   email?: string;
+//   role?: string;
+//   branch?: Branch | null;
+//   branch_id?: string | null;
+//   raw?: ApiUser;
+// }
+
+// type FetchUsersParams = {
+//   page?: number;
+//   limit?: number;
+//   // other filters can be added
+// };
+
+// export async function fetchUsers(params: FetchUsersParams = {}): Promise<User[]> {
+//   const { page = 1, limit = 100 } = params;
+//   try {
+//     const res = await axiosInstance.get("/users", { params: { page, limit } });
+//     const data = res?.data ?? {};
+//     const apiUsers: ApiUser[] = Array.isArray(data.users) ? data.users : [];
+
+//     const users: User[] = apiUsers.map((u) => ({
+//       id: u._id,
+//       username: u.username,
+//       fullname: u.fullname,
+//       position: u.position,
+//       phone: u.phone,
+//       email: u.email,
+//       role: u.role,
+//       branch: u.branch ?? null,
+//       branch_id: u.branch ? u.branch._id : (u as any).branch_id ?? null,
+//       raw: u,
+//     }));
+
+//     return users;
+//   } catch (err) {
+//     console.error("fetchUsers error:", err);
+//     // return empty array instead of throwing so callers can safely operate
+//     return [];
+//   }
+// }
+
+// /**
+//  * get single user by id (tries API then normalizes)
+//  */
+// export async function getUserById(id: string): Promise<User | null> {
+//   try {
+//     const res = await axiosInstance.get(`/users/${id}`);
+//     const u: ApiUser = res.data?.user ?? res.data ?? null;
+//     if (!u) return null;
+//     return {
+//       id: u._id,
+//       username: u.username,
+//       fullname: u.fullname,
+//       firstname: u.firstname,
+//       lastname: u.lastname,
+//       position: u.position,
+//       phone: u.phone,
+//       email: u.email,
+//       role: u.role,
+//       branch: u.branch ?? null,
+//       branch_id: u.branch ? u.branch._id : (u as any).branch_id ?? null,
+//       raw: u,
+//     };
+//   } catch (err) {
+//     return null;
+//   }
+// }
+
+// /**
+//  * createUser / updateUser helpers if you want to call API
+//  * NOTE: API endpoints for create/update assumed to be POST /users and PUT /users/:id; adjust if different
+//  */
+// export async function createUser(payload: Partial<ApiUser>) {
+//   return axiosInstance.post("/users", payload);
+// }
+// export async function updateUser(id: string, payload: Partial<ApiUser>) {
+//   return axiosInstance.put(`/users/${id}`, payload);
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// api/User.tsx
+
 export interface User {
   id: string;
-  username?: string;
-  fullname?: string;
-  firstname?: string;
-  lastname?: string;
-  position?: string;
-  phone?: string;
-  email?: string;
-  role?: string;
-  branch?: Branch | null;
-  branch_id?: string | null;
-  raw?: ApiUser;
+  fullname: string;
+  phone: string;
+  email: string;
+  username: string;
+  password: string;
+  role: "admin" | "employee" | "superadmin";
+  position: string;
+  branch_id?: string;
+  schedule_id?: string;
+  createDate: string;
+  updateDate: string;
 }
 
-type FetchUsersParams = {
-  page?: number;
-  limit?: number;
-  // other filters can be added
-};
-
-export async function fetchUsers(params: FetchUsersParams = {}): Promise<User[]> {
-  const { page = 1, limit = 100 } = params;
-  try {
-    const res = await axiosInstance.get("/users", { params: { page, limit } });
-    const data = res?.data ?? {};
-    const apiUsers: ApiUser[] = Array.isArray(data.users) ? data.users : [];
-
-    const users: User[] = apiUsers.map((u) => ({
-      id: u._id,
-      username: u.username,
-      fullname: u.fullname,
-      position: u.position,
-      phone: u.phone,
-      email: u.email,
-      role: u.role,
-      branch: u.branch ?? null,
-      branch_id: u.branch ? u.branch._id : (u as any).branch_id ?? null,
-      raw: u,
-    }));
-
-    return users;
-  } catch (err) {
-    console.error("fetchUsers error:", err);
-    // return empty array instead of throwing so callers can safely operate
-    return [];
-  }
-}
-
-/**
- * get single user by id (tries API then normalizes)
- */
-export async function getUserById(id: string): Promise<User | null> {
-  try {
-    const res = await axiosInstance.get(`/users/${id}`);
-    const u: ApiUser = res.data?.user ?? res.data ?? null;
-    if (!u) return null;
-    return {
-      id: u._id,
-      username: u.username,
-      fullname: u.fullname,
-      firstname: u.firstname,
-      lastname: u.lastname,
-      position: u.position,
-      phone: u.phone,
-      email: u.email,
-      role: u.role,
-      branch: u.branch ?? null,
-      branch_id: u.branch ? u.branch._id : (u as any).branch_id ?? null,
-      raw: u,
-    };
-  } catch (err) {
-    return null;
-  }
-}
-
-/**
- * createUser / updateUser helpers if you want to call API
- * NOTE: API endpoints for create/update assumed to be POST /users and PUT /users/:id; adjust if different
- */
-export async function createUser(payload: Partial<ApiUser>) {
-  return axiosInstance.post("/users", payload);
-}
-export async function updateUser(id: string, payload: Partial<ApiUser>) {
-  return axiosInstance.put(`/users/${id}`, payload);
-}
+export const users: User[] = [
+  {
+    id: "U001",
+    fullname: "Sanjeevan Yogaratnam",
+    phone: "+94761234567",
+    email: "sanjeevan@gmail.com",
+    username: "Sanjeevan",
+    password: "Pass@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B001",
+    schedule_id: "S001",
+    createDate: "2025-09-29T08:10:00Z",
+    updateDate: "2025-09-29T08:10:00Z",
+  },
+  {
+    id: "U002",
+    fullname: "pavitra suthakaran",
+    phone: "+94761234568",
+    email: "pavitra@gmail.com",
+    username: "pavitra",
+    password: "Pass@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B001",
+    schedule_id: "S002",
+    createDate: "2025-09-29T08:15:00Z",
+    updateDate: "2025-09-29T08:15:00Z",
+  },
+  {
+    id: "U003",
+    fullname: "pavitra ",
+    phone: "+94761234578",
+    email: "pavitra1@gmail.com",
+    username: "pavi",
+    password: "Pass@123",
+    role: "employee",
+    position: "Cleaner",
+    branch_id: "B001",
+    schedule_id: "S003",
+    createDate: "2025-09-29T08:15:00Z",
+    updateDate: "2025-09-29T08:15:00Z",
+  },
+  {
+    id: "U004",
+    fullname: "Danu Krish",
+    phone: "+94761234570",
+    email: "nilan.kumar@bakery.com",
+    username: "danu",
+    password: "Pass@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B002",
+    schedule_id: "S004",
+    createDate: "2025-09-29T08:25:00Z",
+    updateDate: "2025-09-29T08:25:00Z",
+  },
+  {
+    id: "U005",
+    fullname: "Vino Haran",
+    phone: "+94761234571",
+    email: "vino.haran@bakery.com",
+    username: "vinoharan",
+    password: "Vino@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B012",
+    schedule_id: "S005",
+    createDate: "2025-09-29T08:30:00Z",
+    updateDate: "2025-09-29T08:30:00Z",
+  },
+  {
+    id: "U006",
+    fullname: "Siva",
+    phone: "+94761234572",
+    email: "siva.rajan@bakery.com",
+    username: "Siva",
+    password: "Siva@123",
+    role: "employee",
+    position: "Delivery Staff",
+    branch_id: "B003",
+    schedule_id: "S006",
+    createDate: "2025-09-29T08:35:00Z",
+    updateDate: "2025-09-29T08:35:00Z",
+  },
+  {
+    id: "U007",
+    fullname: "Kavi Pran",
+    phone: "+94761234573",
+    email: "kavi.pran@bakery.com",
+    username: "kavipran",
+    password: "Kavi@123",
+    role: "employee",
+    position: "Cleaner",
+    branch_id: "B004",
+    schedule_id: "S007",
+    createDate: "2025-09-29T08:40:00Z",
+    updateDate: "2025-09-29T08:40:00Z",
+  },
+  {
+    id: "U008",
+    fullname: "Nirojan Bala",
+    phone: "+94761234574",
+    email: "nirojan.bala@bakery.com",
+    username: "nirojanbala",
+    password: "Nirojan@123",
+    role: "employee",
+    position: "Helper",
+    branch_id: "B001",
+    schedule_id: "S008",
+    createDate: "2025-09-29T08:45:00Z",
+    updateDate: "2025-09-29T08:45:00Z",
+  },
+  {
+    id: "U009",
+    fullname: "Saran Vin",
+    phone: "+94761234575",
+    email: "saran.vin@bakery.com",
+    username: "saranvin",
+    password: "Saran@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B001",
+    schedule_id: "S009",
+    createDate: "2025-09-29T08:50:00Z",
+    updateDate: "2025-09-29T08:50:00Z",
+  },
+  {
+    id: "U010",
+    fullname: "Dilan Pavi",
+    phone: "+94761234576",
+    email: "dilan.pavi@bakery.com",
+    username: "dilanpavi",
+    password: "Dilan@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B001",
+    schedule_id: "S010",
+    createDate: "2025-09-29T08:55:00Z",
+    updateDate: "2025-09-29T08:55:00Z",
+  },
+  {
+    id: "U011",
+    fullname: "Ravi Deva",
+    phone: "+94762234567",
+    email: "ravi.deva@bakery.com",
+    username: "ravideva",
+    password: "Ravi@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B002",
+    schedule_id: "S011",
+    createDate: "2025-09-29T09:00:00Z",
+    updateDate: "2025-09-29T09:00:00Z",
+  },
+  {
+    id: "U012",
+    fullname: "Mano Perera",
+    phone: "+94762234568",
+    email: "mano.perera@bakery.com",
+    username: "manoperera",
+    password: "Mano@123",
+    role: "employee",
+    position: "Assistant Manager",
+    branch_id: "B002",
+    schedule_id: "S012",
+    createDate: "2025-09-29T09:05:00Z",
+    updateDate: "2025-09-29T09:05:00Z",
+  },
+  {
+    id: "U013",
+    fullname: "Ruwan Silva",
+    phone: "+94762234569",
+    email: "ruwan.silva@bakery.com",
+    username: "ruwansilva",
+    password: "Ruwan@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B002",
+    schedule_id: "S013",
+    createDate: "2025-09-29T09:10:00Z",
+    updateDate: "2025-09-29T09:10:00Z",
+  },
+  {
+    id: "U014",
+    fullname: "Nadeesha Fernando",
+    phone: "+94762234570",
+    email: "nadeesha.fernando@bakery.com",
+    username: "nadeeshafernando",
+    password: "Nadeesha@123",
+    role: "employee",
+    position: "Cashier",
+    branch_id: "B002",
+    schedule_id: "S014",
+    createDate: "2025-09-29T09:15:00Z",
+    updateDate: "2025-09-29T09:15:00Z",
+  },
+  {
+    id: "U015",
+    fullname: "Charith Jayasuriya",
+    phone: "+94762234571",
+    email: "charith.jayasuriya@bakery.com",
+    username: "charithjayasuriya",
+    password: "Charith@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B002",
+    schedule_id: "S015",
+    createDate: "2025-09-29T09:20:00Z",
+    updateDate: "2025-09-29T09:20:00Z",
+  },
+  {
+    id: "U016",
+    fullname: "Kasun Hettiarachchi",
+    phone: "+94762234572",
+    email: "kasun.hettiarachchi@bakery.com",
+    username: "kasunhettiarachchi",
+    password: "Kasun@123",
+    role: "employee",
+    position: "Delivery Staff",
+    branch_id: "B002",
+    schedule_id: "S016",
+    createDate: "2025-09-29T09:25:00Z",
+    updateDate: "2025-09-29T09:25:00Z",
+  },
+  {
+    id: "U017",
+    fullname: "Supun Abeywardena",
+    phone: "+94762234573",
+    email: "supun.abeywardena@bakery.com",
+    username: "supunabeywardena",
+    password: "Supun@123",
+    role: "employee",
+    position: "Cleaner",
+    branch_id: "B002",
+    schedule_id: "S017",
+    createDate: "2025-09-29T09:30:00Z",
+    updateDate: "2025-09-29T09:30:00Z",
+  },
+  {
+    id: "U018",
+    fullname: "Malith Ranasinghe",
+    phone: "+94762234574",
+    email: "malith.ranasinghe@bakery.com",
+    username: "malithranasinghe",
+    password: "Malith@123",
+    role: "employee",
+    position: "Helper",
+    branch_id: "B002",
+    schedule_id: "S018",
+    createDate: "2025-09-29T09:35:00Z",
+    updateDate: "2025-09-29T09:35:00Z",
+  },
+  {
+    id: "U019",
+    fullname: "Kavindu Dias",
+    phone: "+94762234575",
+    email: "kavindu.dias@bakery.com",
+    username: "kavindudias",
+    password: "Kavindu@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B002",
+    schedule_id: "S019",
+    createDate: "2025-09-29T09:40:00Z",
+    updateDate: "2025-09-29T09:40:00Z",
+  },
+  {
+    id: "U020",
+    fullname: "Sanduni Perera",
+    phone: "+94762234576",
+    email: "sanduni.perera@bakery.com",
+    username: "sununip",
+    password: "Sanduni@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B002",
+    schedule_id: "S020",
+    createDate: "2025-09-29T09:45:00Z",
+    updateDate: "2025-09-29T09:45:00Z",
+  },
+  {
+    id: "U021",
+    fullname: "john doe",
+    phone: "+94763234567",
+    email: "johndoe@bakery.com",
+    username: "Johndoe",
+    password: "Pass@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B003",
+    schedule_id: "S021",
+    createDate: "2025-09-29T09:50:00Z",
+    updateDate: "2025-09-29T09:50:00Z",
+  },
+  {
+    id: "U022",
+    fullname: "Nimali Rodrigo",
+    phone: "+94763234568",
+    email: "nimali.rodrigo@bakery.com",
+    username: "nimalirodrigo",
+    password: "Nimali@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B003",
+    schedule_id: "S022",
+    createDate: "2025-09-29T09:55:00Z",
+    updateDate: "2025-09-29T09:55:00Z",
+  },
+  {
+    id: "U023",
+    fullname: "Thisara Peiris",
+    phone: "+94763234569",
+    email: "thisara.peiris@bakery.com",
+    username: "thisarapeiris",
+    password: "Thisara@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B003",
+    schedule_id: "S023",
+    createDate: "2025-09-29T10:00:00Z",
+    updateDate: "2025-09-29T10:00:00Z",
+  },
+  {
+    id: "U024",
+    fullname: "Shanika Silva",
+    phone: "+94763234570",
+    email: "shanika.silva@bakery.com",
+    username: "shanikas",
+    password: "Shanika@123",
+    role: "employee",
+    position: "Cashier",
+    branch_id: "B003",
+    schedule_id: "S024",
+    createDate: "2025-09-29T10:05:00Z",
+    updateDate: "2025-09-29T10:05:00Z",
+  },
+  {
+    id: "U025",
+    fullname: "Roshan Madusanka",
+    phone: "+94763234571",
+    email: "roshan.madusanka@bakery.com",
+    username: "roshanmadusanka",
+    password: "Roshan@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B002",
+    schedule_id: "S025",
+    createDate: "2025-09-29T10:10:00Z",
+    updateDate: "2025-09-29T10:10:00Z",
+  },
+  {
+    id: "U026",
+    fullname: "Lakshan Jayawardena",
+    phone: "+94763234572",
+    email: "lakshan.jayawardena@bakery.com",
+    username: "lakshanjayawardena",
+    password: "Lakshan@123",
+    role: "employee",
+    position: "Delivery Staff",
+    branch_id: "B003",
+    schedule_id: "S026",
+    createDate: "2025-09-29T10:15:00Z",
+    updateDate: "2025-09-29T10:15:00Z",
+  },
+  {
+    id: "U027",
+    fullname: "Dulmini Dissanayake",
+    phone: "+94763234573",
+    email: "dulmini.dissanayake@bakery.com",
+    username: "dulminidissanayake",
+    password: "Dulmini@123",
+    role: "employee",
+    position: "Cleaner",
+    branch_id: "B003",
+    schedule_id: "S027",
+    createDate: "2025-09-29T10:20:00Z",
+    updateDate: "2025-09-29T10:20:00Z",
+  },
+  {
+    id: "U028",
+    fullname: "Chamod Karunaratne",
+    phone: "+94763234574",
+    email: "chamod.karunaratne@bakery.com",
+    username: "chamodkarunaratne",
+    password: "Chamod@123",
+    role: "employee",
+    position: "Helper",
+    branch_id: "B003",
+    schedule_id: "S028",
+    createDate: "2025-09-29T10:25:00Z",
+    updateDate: "2025-09-29T10:25:00Z",
+  },
+  {
+    id: "U029",
+    fullname: "Tharindu Jayasooriya",
+    phone: "+94763234575",
+    email: "tharindu.jayasooriya@bakery.com",
+    username: "tharindujayasooriya",
+    password: "Tharindu@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B003",
+    schedule_id: "S029",
+    createDate: "2025-09-29T10:30:00Z",
+    updateDate: "2025-09-29T10:30:00Z",
+  },
+  {
+    id: "U030",
+    fullname: "Ishara Gamage",
+    phone: "+94763234576",
+    email: "ishara.gamage@bakery.com",
+    username: "isharagamage",
+    password: "Ishara@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B003",
+    schedule_id: "S030",
+    createDate: "2025-09-29T10:35:00Z",
+    updateDate: "2025-09-29T10:35:00Z",
+  },
+  {
+    id: "U031",
+    fullname: "Nishan Perera",
+    phone: "+94764234567",
+    email: "nishan.perera@bakery.com",
+    username: "nishanperera",
+    password: "Nishan@123",
+    role: "employee",
+    position: "Branch Manager",
+    branch_id: "B004",
+    schedule_id: "S031",
+    createDate: "2025-09-29T10:40:00Z",
+    updateDate: "2025-09-29T10:40:00Z",
+  },
+  {
+    id: "U032",
+    fullname: "Heshan Silva",
+    phone: "+94764234568",
+    email: "heshan.silva@bakery.com",
+    username: "heshansilva",
+    password: "Heshan@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B004",
+    schedule_id: "S032",
+    createDate: "2025-09-29T10:45:00Z",
+    updateDate: "2025-09-29T10:45:00Z",
+  },
+  {
+    id: "U033",
+    fullname: "Chamara Fernando",
+    phone: "+94764234569",
+    email: "chamara.fernando@bakery.com",
+    username: "chamarafernando",
+    password: "Chamara@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B004",
+    schedule_id: "S033",
+    createDate: "2025-09-29T10:50:00Z",
+    updateDate: "2025-09-29T10:50:00Z",
+  },
+  {
+    id: "U034",
+    fullname: "Sujith Perera",
+    phone: "+94764234570",
+    email: "sujith.perera@bakery.com",
+    username: "sujithperera",
+    password: "Sujith@123",
+    role: "employee",
+    position: "Cashier",
+    branch_id: "B004",
+    schedule_id: "S034",
+    createDate: "2025-09-29T10:55:00Z",
+    updateDate: "2025-09-29T10:55:00Z",
+  },
+  {
+    id: "U035",
+    fullname: "Dulani Jayawardena",
+    phone: "+94764234571",
+    email: "dulani.jayawardena@bakery.com",
+    username: "dulanijayawardena",
+    password: "Dulani@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B004",
+    schedule_id: "S035",
+    createDate: "2025-09-29T11:00:00Z",
+    updateDate: "2025-09-29T11:00:00Z",
+  },
+  {
+    id: "U036",
+    fullname: "Kasun Nadeera",
+    phone: "+94764234572",
+    email: "kasun.nadeera@bakery.com",
+    username: "kasunnadeera",
+    password: "Kasun@123",
+    role: "employee",
+    position: "Delivery Staff",
+    branch_id: "B004",
+    schedule_id: "S036",
+    createDate: "2025-09-29T11:05:00Z",
+    updateDate: "2025-09-29T11:05:00Z",
+  },
+  {
+    id: "U037",
+    fullname: "Ramesh Kumar",
+    phone: "+94765234567",
+    email: "ramesh.kumar@bakery.com",
+    username: "rameshkumar",
+    password: "Ramesh@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B005",
+    schedule_id: "S037",
+    createDate: "2025-09-29T11:10:00Z",
+    updateDate: "2025-09-29T11:10:00Z",
+  },
+  {
+    id: "U038",
+    fullname: "Santhush Perera",
+    phone: "+94765234568",
+    email: "santhush.perera@bakery.com",
+    username: "santhushperera",
+    password: "Santhush@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B005",
+    schedule_id: "S038",
+    createDate: "2025-09-29T11:15:00Z",
+    updateDate: "2025-09-29T11:15:00Z",
+  },
+  {
+    id: "U039",
+    fullname: "Nishan Silva",
+    phone: "+94765234569",
+    email: "nishan.silva@bakery.com",
+    username: "nishansilva",
+    password: "Nishan@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B005",
+    schedule_id: "S039",
+    createDate: "2025-09-29T11:20:00Z",
+    updateDate: "2025-09-29T11:20:00Z",
+  },
+  {
+    id: "U040",
+    fullname: "Malsha Perera",
+    phone: "+94765234570",
+    email: "malsha.perera@bakery.com",
+    username: "malshap",
+    password: "Malsha@123",
+    role: "employee",
+    position: "Cashier",
+    branch_id: "B005",
+    schedule_id: "S040",
+    createDate: "2025-09-29T11:25:00Z",
+    updateDate: "2025-09-29T11:25:00Z",
+  },
+  {
+    id: "U041",
+    fullname: "Chamila Fernando",
+    phone: "+94765234571",
+    email: "chamila.fernando@bakery.com",
+    username: "chamilafernando",
+    password: "Chamila@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B005",
+    schedule_id: "S041",
+    createDate: "2025-09-29T11:30:00Z",
+    updateDate: "2025-09-29T11:30:00Z",
+  },
+  {
+    id: "U042",
+    fullname: "Roshan Silva",
+    phone: "+94765234572",
+    email: "roshan.silva@bakery.com",
+    username: "roshansilva",
+    password: "Roshan@123",
+    role: "employee",
+    position: "Delivery Staff",
+    branch_id: "B005",
+    schedule_id: "S042",
+    createDate: "2025-09-29T11:35:00Z",
+    updateDate: "2025-09-29T11:35:00Z",
+  },
+  {
+    id: "U043",
+    fullname: "Hiran Jayasuriya",
+    phone: "+94766234567",
+    email: "hiran.jayasuriya@bakery.com",
+    username: "hiranjayasuriya",
+    password: "Hiran@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B006",
+    schedule_id: "S043",
+    createDate: "2025-09-29T11:40:00Z",
+    updateDate: "2025-09-29T11:40:00Z",
+  },
+  {
+    id: "U044",
+    fullname: "Pradeep Fernando",
+    phone: "+94766234568",
+    email: "pradeep.fernando@bakery.com",
+    username: "pradeepfernando",
+    password: "Pradeep@123",
+    role: "admin",
+    position: "Assistant Manager",
+    branch_id: "B006",
+    schedule_id: "S044",
+    createDate: "2025-09-29T11:45:00Z",
+    updateDate: "2025-09-29T11:45:00Z",
+  },
+  {
+    id: "U045",
+    fullname: "Chamod Silva",
+    phone: "+94766234569",
+    email: "chamod.silva@bakery.com",
+    username: "chamodsilva",
+    password: "Chamod@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B006",
+    schedule_id: "S045",
+    createDate: "2025-09-29T11:50:00Z",
+    updateDate: "2025-09-29T11:50:00Z",
+  },
+  {
+    id: "U046",
+    fullname: "Dulani Perera",
+    phone: "+94766234570",
+    email: "dulani.perera@bakery.com",
+    username: "dulanip",
+    password: "Dulani@123",
+    role: "employee",
+    position: "Cashier",
+    branch_id: "B006",
+    schedule_id: "S046",
+    createDate: "2025-09-29T11:55:00Z",
+    updateDate: "2025-09-29T11:55:00Z",
+  },
+  {
+    id: "U047",
+    fullname: "Tharindu Silva",
+    phone: "+94766234571",
+    email: "tharindu.silva@bakery.com",
+    username: "tharindusilva",
+    password: "Tharindu@123",
+    role: "employee",
+    position: "Sales Assistant",
+    branch_id: "B006",
+    schedule_id: "S047",
+    createDate: "2025-09-29T12:00:00Z",
+    updateDate: "2025-09-29T12:00:00Z",
+  },
+  {
+    id: "U048",
+    fullname: "Roshan Perera",
+    phone: "+94767234567",
+    email: "roshan.perera@bakery.com",
+    username: "roshanperera",
+    password: "Roshan@123",
+    role: "admin",
+    position: "Branch Manager",
+    branch_id: "B007",
+    schedule_id: "S048",
+    createDate: "2025-09-29T12:05:00Z",
+    updateDate: "2025-09-29T12:05:00Z",
+  },
+  {
+    id: "U049",
+    fullname: "Nimesh Fernando",
+    phone: "+94767234568",
+    email: "nimesh.fernando@bakery.com",
+    username: "nimeshfernando",
+    password: "Nimesh@123",
+    role: "employee",
+    position: "Assistant Manager",
+    branch_id: "B007",
+    schedule_id: "S049",
+    createDate: "2025-09-29T12:10:00Z",
+    updateDate: "2025-09-29T12:10:00Z",
+  },
+  {
+    id: "U050",
+    fullname: "Kasun Silva",
+    phone: "+94767234569",
+    email: "kasun.silva@bakery.com",
+    username: "kasunsilva",
+    password: "Kasun@123",
+    role: "employee",
+    position: "Baker",
+    branch_id: "B007",
+    schedule_id: "S050",
+    createDate: "2025-09-29T12:15:00Z",
+    updateDate: "2025-09-29T12:15:00Z",
+  },
+    {
+    id: "U051",
+    fullname: "Sanjeevan Admin",
+    phone: "+94761234567",
+    email: "superadmin@gmail.com",
+    username: "Superadmin",
+    password: "Pass@123",
+    role: "superadmin",
+    position: "Branch Manager",
+    createDate: "2025-09-29T08:10:00Z",
+    updateDate: "2025-09-29T08:10:00Z",
+  },
+];

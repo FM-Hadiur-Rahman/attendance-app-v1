@@ -247,7 +247,7 @@ if (resp.status === 200 || resp.status === 201) {
   const routeMap: Record<string, string> = {
     admin: 'Footer_A',
     employee: 'Footer_C',
-    superadmin: 'DashboardScreen',
+    superadmin: 'Footer_S',
   };
   const routeName = routeMap[role] || 'Footer_C';
   const params = { userId, langId, role };

@@ -18,11 +18,15 @@ import CartBox from "../../../components/CartBox";
 import Popup from "../../../components/Popup";
 import { Button1 } from "../../../components/Button";
 import InputBox from "../../../components/InputBox";
-import { users, User } from '../../../api/Users';
 import translations from "../../../assets/translations.json"
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
+import Toast, { showSuccessToast, showErrorToast, toastConfig } from "../../../components/Toast";
+
+import { getProfile, updateProfile, ProfileUser } from "../../../api/profile";
+import { logout as apiLogout } from "../../../api/auth/authService";
+import { clearAllAuthData } from "../../../api/auth/authToken"; 
 
 export default function MoreScreen(props: any) {
   const navigation = useNavigation<any>();
@@ -35,9 +39,7 @@ export default function MoreScreen(props: any) {
 
   // fallback to route params (some places use `id`, others `userId`)
   const routeUserId = route.params?.userId ?? route.params?.id;
-  const userId = propUserId || routeUserId ;
-
-  const user = users.find((u) => u.id === userId) || users[0];
+  const userId = propUserId || routeUserId;
 
   // initial language from prop or route param (route param name might be langId)
   const routeLangId = route.params?.langId ?? route.params?.language;
@@ -46,7 +48,6 @@ export default function MoreScreen(props: any) {
   const [selectedLanguage, setSelectedLanguage] = useState(initialLang);
   const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
 
-  // keep local selectedLanguage in sync if parent prop changes
   useEffect(() => {
     if (propLangId && propLangId !== selectedLanguage) {
       setSelectedLanguage(propLangId);
@@ -55,19 +56,22 @@ export default function MoreScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  // recompute language dictionary whenever selectedLanguage changes
   const lang = translations[selectedLanguage];
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [profileImage, setProfileImage] = useState((user as any).image || "");
+  const [profileImage, setProfileImage] = useState<string>(""); // no change to UI
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [logoutPopupVisible, setLogoutPopupVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // NEW: fullname modal / state
   const [fullnameModalVisible, setFullnameModalVisible] = useState(false);
-  const [fullnameInput, setFullnameInput] = useState(`${user.fullname}`);
-  const [fullName, setFullName] = useState(`${user.fullname}`);
+  const [fullnameInput, setFullnameInput] = useState("");
+  const [fullName, setFullName] = useState(""); // will be loaded from API
+
+  // user object loaded from API
+  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
   const languages = [
     {
@@ -112,6 +116,37 @@ export default function MoreScreen(props: any) {
     },
   ];
 
+  // ---------- API Integration ----------
+  const loadProfile = async (showErrors = true) => {
+    try {
+      setLoadingProfile(true);
+      const profile = await getProfile();
+      setUser(profile);
+      setFullName(profile.fullname ?? "");
+      setFullnameInput(profile.fullname ?? "");
+      // If your API returns an image field, setProfileImage(profile.image) here
+    } catch (err: any) {
+      console.error('loadProfile error', err);
+      if (showErrors) {
+        Alert.alert('Profile load failed', err?.toString?.() ?? 'Could not load profile');
+      }
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    // fetch profile on mount
+    loadProfile(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadProfile();
+    setRefreshing(false);
+  };
+
   // open device camera
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -153,13 +188,26 @@ export default function MoreScreen(props: any) {
       setModalVisible(false);
     }
   };
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    setRefreshing(false);
-  };
+const handleLogout = async () => {
+  try {
+    // try informing backend and clearing local storage via AuthService
+    await apiLogout();
+  } catch (err) {
+    console.warn("Backend logout failed (ignored):", err);
+    // ensure tokens are removed locally even if backend fails
+    await clearAllAuthData();
+  } finally {
+    // final guard: ensure local data is cleared
+    await clearAllAuthData();
 
+    // navigate to login screen   
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+    });
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -176,7 +224,6 @@ export default function MoreScreen(props: any) {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={[colors.primary]}
-
           />
         }
       >
@@ -222,7 +269,6 @@ export default function MoreScreen(props: any) {
               paddingLeft={20}
               paddingRight={20}
               paddingTop={13}
-              // paddingBottom={12}
             >
               <Text style={styles.sectionTitle}>{section.name}</Text>
               {section.items.map((item, i) => (
@@ -248,7 +294,6 @@ export default function MoreScreen(props: any) {
                   borderRadius={0}
                   paddingTop={12}
                   paddingBottom={12}
-                
                 >
                   <View style={styles.itemLeft}>
                     <Image source={item.icon} style={styles.itemIcon} />
@@ -258,9 +303,9 @@ export default function MoreScreen(props: any) {
                       {section.name === lang.personal_information && (
                         <Text style={styles.labelValue}>
                           {item.label === "Fullname" && fullName}
-                          {item.label === "Position" && user.position}
-                          {item.label === "Email" && user.email}
-                          {item.label === "Phone number" && user.phone}
+                          {item.label === "Position" && user?.position}
+                          {item.label === "Email" && user?.email}
+                          {item.label === "Phone number" && user?.phone}
                         </Text>
                       )}
                     </View>
@@ -368,24 +413,45 @@ export default function MoreScreen(props: any) {
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Fullname</Text>
+            <Text style={styles.modalTitle}>{lang.Edit_Fullname}</Text>
 
             <InputBox
-              label="fullname"
+              label={lang.input_fullname}
               value={fullnameInput}
               setValue={setFullnameInput}
-              placeholder="Enter full name"
+              placeholder={lang.Enter_full_name}
               inputStyle={{ marginTop: 0 }}
             />
 
             <Button1
-              text="Save"
+              text={lang.save}
               width={"100%"}
-              onPress={() => {
-                // save the new full name to local state
-                setFullName(fullnameInput.trim() === "" ? fullName : fullnameInput);
-                setFullnameModalVisible(false);
+              onPress={async () => {
+                const newName = fullnameInput.trim();
+                if (!newName) {
+                  //setFullnameModalVisible(false);
+                  showErrorToast(lang.Fullname_cannot_be_empty);
+                  return;
+                }
+                try {
+                  // Pass user._id if available; updateProfile will fallback to stored userId if not
+                  const idToUpdate = user?._id || userId;
+                  const updated = await updateProfile({ fullname: newName }, idToUpdate);
+                  // update local UI
+                  setFullName(updated.fullname ?? newName);
+                  setUser(prev => ({ ...(prev ?? {}), ...updated }));
+                  setFullnameModalVisible(false);
+                  showSuccessToast(lang.Fullname_updated_successfully);
+
+                  // Optionally refresh to be safe:
+                  // await loadProfile(false);
+                } catch (err: any) {
+                  console.error('Failed to update fullname', err);
+                  //Alert.alert('Update failed', err?.toString?.() ?? 'Could not update fullname');
+                  showErrorToast(err?.message ?? "Could not update fullname");
+                }
               }}
+
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
@@ -441,7 +507,6 @@ export default function MoreScreen(props: any) {
               width={"100%"}
               onPress={() => {
                 setSelectedLanguage(tempLanguage); // update actual language
-                // inform parent (Footer_C) if available
                 if (typeof setLangIdProp === "function") {
                   setLangIdProp(tempLanguage);
                 }
@@ -464,20 +529,12 @@ export default function MoreScreen(props: any) {
         titleStyle={{ color: colors.error_text }}
       >
         <Text style={styles.popupsubtext}>
-            Confirm the logging out by clicking "yes."
-          </Text>
+          Confirm the logging out by clicking "yes."
+        </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
           <Button1
             text={lang.yes}
-            onPress={() => {
-              setLogoutPopupVisible(false); 
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }], 
-                
-              });
-              console.log('when logout -> received params:', { userId, langId: selectedLanguage  });
-            }}
+            onPress={handleLogout}
             backgroundColor={colors.primary}
             width={'48%'}
             textStyle={{ color: colors.secondary }}
@@ -487,14 +544,14 @@ export default function MoreScreen(props: any) {
             onPress={() => setLogoutPopupVisible(false)}
             backgroundColor={colors.error_text}
             width={'48%'}
-            textStyle={{ color: colors.secondary}}
+            textStyle={{ color: colors.secondary }}
           />
         </View>
       </Popup>
+      <Toast config={toastConfig} />
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
@@ -518,7 +575,7 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any, color: colors.subtext,
     marginBottom: 14,
   },
-  itemLeft: { flexDirection: "row"},
+  itemLeft: { flexDirection: "row" },
   itemIcon: { width: 17, height: 17, resizeMode: "contain", marginRight: 8 },
   itemText: { fontSize: fonts.size.m, color: colors.text, fontWeight: fonts.weight.medium as any, fontFamily: fonts.family.regular, },
   logout: { flexDirection: "row", },
@@ -558,12 +615,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.family.regular,
     lineHeight: 16,
   },
-  popupsubtext:{
-    color:colors.subtext,
-    fontSize: fonts.size.s, 
-    fontWeight: fonts.weight.regular as any, 
-    marginBottom:30, 
-    alignSelf:'center' 
+  popupsubtext: {
+    color: colors.subtext,
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.regular as any,
+    marginBottom: 30,
+    alignSelf: 'center'
   },
 
 });

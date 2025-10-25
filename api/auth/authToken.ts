@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'userToken';
 const USER_ID_KEY = 'userId';
+const TOKEN_META_KEY = `${TOKEN_KEY}_meta`;
 
 // internal shape when we store token as JSON
 type StoredToken = {
@@ -10,20 +11,35 @@ type StoredToken = {
   savedAt: number; // epoch ms
 };
 
+type StoredTokenMeta = {
+  savedAt: number;
+};
 /**
  * Save token.
  * - Stores as JSON { token, savedAt } to allow future metadata (expiry, refresh, etc).
  * - Backward compatible: if other code expects raw string, getToken() will return raw token.
  */
+// export const saveToken = async (token: string): Promise<void> => {
+//   try {
+//     const payload: StoredToken = { token, savedAt: Date.now() };
+//     await AsyncStorage.setItem(TOKEN_KEY, JSON.stringify(payload));
+//   } catch (e) {
+//     console.error('Failed to save token', e);
+//   }
+// };
+
 export const saveToken = async (token: string): Promise<void> => {
   try {
-    const payload: StoredToken = { token, savedAt: Date.now() };
-    await AsyncStorage.setItem(TOKEN_KEY, JSON.stringify(payload));
+    // Store the raw token where axiosInstance expects it
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+
+    // Also store meta separately (you can extend this later, safe to read if needed)
+    const meta: StoredTokenMeta = { savedAt: Date.now() };
+    await AsyncStorage.setItem(TOKEN_META_KEY, JSON.stringify(meta));
   } catch (e) {
     console.error('Failed to save token', e);
   }
 };
-
 /**
  * Get token string or null.
  * - Handles both JSON-stored token and legacy raw string token.
