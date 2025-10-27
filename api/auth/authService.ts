@@ -1,4 +1,4 @@
-// AuthService.ts
+//api/auth/ AuthService.ts
 import axiosInstance from '../axiosInstance';
 import {
   saveToken,
@@ -56,6 +56,31 @@ export interface AuthResponse {
 export const register = async (data: RegisterPayload): Promise<AuthResponse> => {
   try {
     const response = await axiosInstance.post('/register', data);
+
+    // Save token if provided
+    if (response.data?.token) await saveToken(response.data.token);
+
+    // Support both response.data.user.id and response.data.user._id
+    const userId = response.data?.user?.id ?? response.data?.user?._id;
+    if (userId) await saveUserId(userId);
+
+    return response.data as AuthResponse;
+  } catch (error: any) {
+    console.error('register() failed:', error?.response?.data ?? error);
+    throw (
+      error?.response?.data?.message ||
+      error?.response?.data?.error ||
+      'Registration failed'
+    );
+  }
+};
+
+/**
+ * Register a new user as admin.
+ */
+export const register1 = async (data: RegisterPayload): Promise<AuthResponse> => {
+  try {
+    const response = await axiosInstance.post('/users', data);
 
     // Save token if provided
     if (response.data?.token) await saveToken(response.data.token);

@@ -23,6 +23,7 @@ import C_NotificationScreen from '../screens/customer/main/NotificationScreen';
 import StaffRecordScreen from '../screens/admin/main/StaffRecordScreen';
 import Footer_S from '../components/Footer_S';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
+import BranchScreen from '../screens/superadmin/main/BranchScreen';
 
 
 
@@ -140,6 +141,11 @@ export const StackNavigator: React.FC = () => {
       <Stack.Screen
         name="AddBranchScreen"
         component={AddBranchScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BranchScreen"
+        component={BranchScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
