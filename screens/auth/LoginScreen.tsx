@@ -190,7 +190,7 @@ export default function LoginScreen() {
       }
 
       if (hasError) {
-         Keyboard.dismiss(); // ✅ hide keyboard when showing error
+        Keyboard.dismiss(); // ✅ hide keyboard when showing error
         showErrorToast(lang.toast_fill_fields);
         return;
       }
@@ -211,55 +211,55 @@ export default function LoginScreen() {
 
       // success path
       // success path
-if (resp.status === 200 || resp.status === 201) {
-  const token: string | undefined = data.token || data.accessToken || data.access_token;
-  const user: User | undefined = data.user || data.data?.user;
+      if (resp.status === 200 || resp.status === 201) {
+        const token: string | undefined = data.token || data.accessToken || data.access_token;
+        const user: User | undefined = data.user || data.data?.user;
 
-  if (!token || !user) {
-    setEmailOrUsername('');
-    setPassword('');
-    setEmailError('');
-    setPasswordError('');
-    emailRef.current?.focus();
-    showErrorToast(lang.toast_incorrect_credentials);
-    setSkipNextValidation(true);
-    return;
-  }
+        if (!token || !user) {
+          setEmailOrUsername('');
+          setPassword('');
+          setEmailError('');
+          setPasswordError('');
+          emailRef.current?.focus();
+          showErrorToast(lang.toast_incorrect_credentials);
+          setSkipNextValidation(true);
+          return;
+        }
 
-  // Save token + userId
-  const userId = user.id ?? (user as any)._id ?? null;
-  await saveToken(token);
-  if (userId) await saveUserId(userId);
+        // Save token + userId
+        const userId = user.id ?? (user as any)._id ?? null;
+        await saveToken(token);
+        if (userId) await saveUserId(userId);
 
-  // Save full user object locally
-  try {
-    await AsyncStorage.setItem('userObj', JSON.stringify(user));
-  } catch (e) {
-    console.warn('Failed to save full user object locally', e);
-  }
+        // Save full user object locally
+        try {
+          await AsyncStorage.setItem('userObj', JSON.stringify(user));
+        } catch (e) {
+          console.warn('Failed to save full user object locally', e);
+        }
 
-  // ✅ Extract username from user object
-  const username = user.username ?? '';
+        // ✅ Extract username from user object
+        const username = user.username ?? '';
 
-  showSuccessToast(lang.toast_login_success || 'Signed in');
+        showSuccessToast(lang.toast_login_success || 'Signed in');
 
-  const role = user.role ?? data.role ?? 'employee';
-  const routeMap: Record<string, string> = {
-    admin: 'Footer_A',
-    employee: 'Footer_C',
-    superadmin: 'Footer_S',
-  };
-  const routeName = routeMap[role] || 'Footer_C';
-  const params = { userId, langId, role };
+        const role = user.role ?? data.role ?? 'employee';
+        const routeMap: Record<string, string> = {
+          admin: 'Footer_A',
+          employee: 'Footer_C',
+          superadmin: 'Footer_S',
+        };
+        const routeName = routeMap[role] || 'Footer_C';
+        const params = { userId, langId, role };
 
-  // ✅ Log token, userId, role, username
-  console.log('Login success:', { token, userId, role, username });
+        // ✅ Log token, userId, role, username
+        console.log('Login success:', { token, userId, role, username });
 
-  setEmailOrUsername('');
-  setPassword('');
-  navigation.navigate(routeName as never, params as never);
-  return;
-}
+        setEmailOrUsername('');
+        setPassword('');
+        navigation.navigate(routeName as never, params as never);
+        return;
+      }
 
 
       // Backend failure handling
@@ -268,19 +268,20 @@ if (resp.status === 200 || resp.status === 201) {
 
       // If it looks like auth failure, clear both inputs and skip next validation
       if (looksLikeAuthFailure(resp.status, errsArray, rawMessage)) {
-         Keyboard.dismiss(); // ✅ hide keyboard when showing error
+        Keyboard.dismiss(); // ✅ hide keyboard when showing error
         setEmailOrUsername('');
         setPassword('');
         setEmailError('');
         setPasswordError('');
-        emailRef.current?.focus();
         setSkipNextValidation(true);
 
-        const errMsg = errsArray.length > 0 ? errsArray[0] : (rawMessage || lang.toast_incorrect_credentials);
-        showErrorToast(errMsg || lang.toast_incorrect_credentials);
+        const errMsg =
+          errsArray.length > 0 ? errsArray[0] : rawMessage || lang.toast_incorrect_credentials;
+        showErrorToast(errMsg);
         console.warn('Auth failure on login', { status: resp.status, data: resp.data });
         return;
       }
+
 
       // Otherwise, handle field-specific messages where possible
       if (errsArray.length > 0) {
@@ -289,7 +290,7 @@ if (resp.status === 200 || resp.status === 201) {
 
           if (lower.includes('password') || lower.includes('wrong password') || lower.includes('incorrect password')) {
             // Password error → clear password
-             Keyboard.dismiss(); // ✅ hide keyboard for error toast
+            Keyboard.dismiss(); // ✅ hide keyboard for error toast
             setPassword('');
             setPasswordError(err);
             setEmailError('');
@@ -301,16 +302,16 @@ if (resp.status === 200 || resp.status === 201) {
             lower.includes('username') ||
             lower.includes('email')
           ) {
-               Keyboard.dismiss(); // ✅ hide keyboard for error toast
+            Keyboard.dismiss(); // ✅ hide keyboard for error toast
             // Email/username error → clear email
             setEmailOrUsername('');
             setEmailError(err);
             setPasswordError('');
             emailRef.current?.focus();
           } else {
-               Keyboard.dismiss(); // ✅ hide keyboard for unknown error toast
+            Keyboard.dismiss(); // ✅ hide keyboard for unknown error toast
             // Unknown error → toast
-              Keyboard.dismiss(); // ✅ hide keyboard for toast
+            Keyboard.dismiss(); // ✅ hide keyboard for toast
             showErrorToast(err);
           }
         });
@@ -349,7 +350,7 @@ if (resp.status === 200 || resp.status === 201) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
-        
+
         <View style={styles.body}>
           <Image source={require('../../assets/icons/logo.png')} style={styles.logo} />
 
@@ -371,8 +372,6 @@ if (resp.status === 200 || resp.status === 201) {
               onSubmitEditing={() => passwordRef.current?.focus()}
               forceBlueBorder={showBlueBorder} // <-- new prop
             />
-
-
             <InputBox
               label={lang.password_label}
               placeholder={lang.password_placeholder}
@@ -393,7 +392,6 @@ if (resp.status === 200 || resp.status === 201) {
             <Button1 text={lang.sign_in_button} width={'90%'} onPress={handleSignIn} />
           </View>
         </View>
-
         <Toast config={toastConfig} />
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>

@@ -14,11 +14,11 @@ export interface Schedule {
 export const schedules: Schedule[] = [
   {
     id: "S001",
-    user_id: "U001",
-    start_time: "08:00:00",
-    duration: 7,
-    date: "2025-10-10",
-    branch_id: "B001",
+    user_id: "68f8aa05f22b67a44fbd3f07",
+    start_time: "13:00:00",
+    duration: 0.02,
+    date: "2025-10-27",
+    branch_id: "68f8a8e7f22b67a44fbd3ef4",
     createDate: "2025-10-10T07:50:00Z",
     updateDate: "2025-10-10T07:50:00Z",
   },

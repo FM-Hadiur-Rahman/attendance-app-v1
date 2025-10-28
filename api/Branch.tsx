@@ -72,7 +72,7 @@ export const branches: Branch[] = [
     location: { latitude: 5.9485, longitude: 80.5350 },
   },
    {
-    id: "B013",
+    id: "68ff0965bc7c653e0d3ca48c",
     name: "meesalai Branch",
     location: { latitude: 9.676931, longitude: 80.186981 },
   },
