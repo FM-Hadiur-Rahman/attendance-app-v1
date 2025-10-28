@@ -1,6 +1,7 @@
-// src/api/profile.ts
+// api/profile.ts
 import axiosInstance from './axiosInstance';
-import { getUserId } from './auth/authToken'; // <- your existing helper that returns stored userId
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserId } from './auth/authToken'; // only userId from authToken
 
 export interface ProfileUser {
   _id: string;
@@ -14,16 +15,63 @@ export interface ProfileUser {
   [key: string]: any;
 }
 
+// ============================================================
+// ✅ Branch ID handling (moved inside profile.ts)
+// ============================================================
+const USER_BRANCH_KEY = 'userBranchId';
+
+export const saveBranchId = async (branchId: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(USER_BRANCH_KEY, branchId);
+    console.log('✅ Branch ID saved:', branchId);
+  } catch (e) {
+    console.error('Failed to save branch ID', e);
+  }
+};
+
+export const getBranchId = async (): Promise<string | null> => {
+  try {
+    const branchId = await AsyncStorage.getItem(USER_BRANCH_KEY);
+    if (branchId) console.log('ℹ️ Loaded branch ID:', branchId);
+    else console.log('⚠️ No branch ID found');
+    return branchId;
+  } catch (e) {
+    console.error('Failed to get branch ID', e);
+    return null;
+  }
+};
+
+// ============================================================
+// ✅ Profile API
+// ============================================================
+
 /**
  * GET /profile
+ * Fetches logged-in user's profile and saves their branch ID.
  */
 export const getProfile = async (): Promise<ProfileUser> => {
   try {
     const res = await axiosInstance.get('/profile');
+
     if (!res?.data?.user) {
       throw new Error('Profile response missing user');
     }
-    return res.data.user as ProfileUser;
+
+    const user = res.data.user as ProfileUser;
+
+    // Extract and save branch ID
+    const branchId =
+      typeof user.branch === 'string'
+        ? user.branch
+        : user.branch?._id ?? null;
+
+    if (branchId) {
+      await saveBranchId(branchId);
+    } else {
+      console.log('⚠️ No branch ID found in profile');
+    }
+
+    return user;
   } catch (error: any) {
     console.error('getProfile() failed:', error?.response?.data ?? error);
     throw error?.response?.data?.message || error?.message || 'Failed to fetch profile';
@@ -32,10 +80,7 @@ export const getProfile = async (): Promise<ProfileUser> => {
 
 /**
  * PUT /users/:id
- * - payload: partial user fields to update (e.g. { fullname: "..." })
- * - id (optional): if not provided, we try to read saved userId from AsyncStorage via getUserId()
- *
- * Returns the updated user object (backend returns either { success: true, data: user } or { user }).
+ * Updates the user's profile.
  */
 export const updateProfile = async (
   payload: Partial<ProfileUser>,
@@ -52,11 +97,10 @@ export const updateProfile = async (
 
     const res = await axiosInstance.put(`/users/${userId}`, payload);
 
-    // backend shape from your example:
-    // { success: true, data: { ...user... } }
-    // but handle other possible shapes: res.data.data, res.data.user, or res.data
     const updated =
-      res?.data?.data ?? res?.data?.user ?? (res?.data && typeof res.data === 'object' ? res.data : null);
+      res?.data?.data ??
+      res?.data?.user ??
+      (res?.data && typeof res.data === 'object' ? res.data : null);
 
     if (!updated) {
       throw new Error('Unexpected update response');
@@ -65,11 +109,41 @@ export const updateProfile = async (
     return updated as ProfileUser;
   } catch (error: any) {
     console.error('updateProfile() failed:', error?.response?.data ?? error);
-    // If axios error, try to return a useful message
-    if (error?.response) {
-      const serverMsg = error.response.data?.message ?? error.response.data ?? error.response.statusText;
-      throw serverMsg || 'Failed to update profile';
+    const serverMsg =
+      error?.response?.data?.message ??
+      error?.response?.data ??
+      error?.response?.statusText;
+    throw serverMsg || error?.message || 'Failed to update profile';
+  }
+};
+
+/**
+ * GET /users
+ * Fetch users filtered by branch or role.
+ * Automatically includes saved branch ID if not provided.
+ */
+export const fetchUsers = async (params?: { branchId?: string; role?: string }) => {
+  try {
+    // Use saved branch ID if not manually passed
+    let branchId = params?.branchId;
+    if (!branchId) {
+      branchId = await getBranchId();
     }
-    throw error?.message || 'Failed to update profile';
+
+    // Build query params
+    const queryParams: string[] = [];
+    if (branchId) queryParams.push(`branch=${branchId}`);
+    if (params?.role) queryParams.push(`role=${params.role}`);
+
+    const query = queryParams.length ? `?${queryParams.join('&')}` : '';
+
+    const res = await axiosInstance.get(`/users${query}`);
+    if (!res?.data) throw new Error('Users response missing data');
+
+    const users = res.data.users ?? res.data;
+    return Array.isArray(users) ? users : [];
+  } catch (error: any) {
+    console.error('fetchUsers() failed:', error?.response?.data ?? error);
+    throw error?.response?.data?.message || error?.message || 'Failed to fetch users';
   }
 };

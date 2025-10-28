@@ -223,7 +223,12 @@
     "Edit_Fullname":"Edit Fullname",
     "Enter_full_name":"Enter full name",
     "Fullname_updated_successfully":"Fullname updated successfully",
-     "Fullname_cannot_be_empty":"Fullname cannot be empty"
+     "Fullname_cannot_be_empty":"Fullname cannot be empty",
+       "todaySchedule": "Today’s Schedule",
+           "checkinTooEarly": "You can only check in 15 minutes before {time}.",
+    "noScheduleToday": "No schedule found for today.",
+    "notCheckedIn": "You haven't checked in yet!",
+    "genericNoSchedule": "No schedule found for today."
 
   },
   "de": {
@@ -448,7 +453,12 @@
     "Edit_Fullname":"Vollständigen Namen bearbeiten",
     "Enter_full_name":"Geben Sie den vollständigen Namen ein",
     "Fullname_updated_successfully":"Vollständiger Name erfolgreich aktualisiert",
-    "Fullname_cannot_be_empty":"Der vollständige Name darf nicht leer sein"
+    "Fullname_cannot_be_empty":"Der vollständige Name darf nicht leer sein",
+      "todaySchedule": "Heutiger Zeitplan",
+      "checkinTooEarly": "Sie können sich erst 15 Minuten vor Schichtbeginn ({time}) einchecken.",
+    "noScheduleToday": "Für heute wurde kein Dienstplan gefunden.",
+    "notCheckedIn": "Sie haben sich noch nicht eingecheckt!",
+    "genericNoSchedule": "Für heute wurde kein Dienstplan gefunden."
 
   }
 }
