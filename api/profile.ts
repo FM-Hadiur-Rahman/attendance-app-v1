@@ -15,7 +15,9 @@ export interface ProfileUser {
   [key: string]: any;
 }
 
-
+// ============================================================
+// ✅ Branch ID handling (moved inside profile.ts)
+// ============================================================
 const USER_BRANCH_KEY = 'userBranchId';
 
 export const saveBranchId = async (branchId: string): Promise<void> => {
@@ -115,6 +117,7 @@ export const updateProfile = async (
   }
 };
 
+
 export const updateUser = async (id: string, payload: Partial<ProfileUser>): Promise<ProfileUser> => {
   try {
     if (!id) throw new Error('updateUser: missing id');
@@ -137,6 +140,36 @@ export const updateUser = async (id: string, payload: Partial<ProfileUser>): Pro
       error?.response?.data ??
       error?.response?.statusText;
     throw serverMsg || error?.message || 'Failed to update user';
+
+/**
+ * GET /users
+ * Fetch users filtered by branch or role.
+ * Automatically includes saved branch ID if not provided.
+ */
+export const fetchUsers = async (params?: { branchId?: string; role?: string }) => {
+  try {
+    // Use saved branch ID if not manually passed
+    let branchId = params?.branchId;
+    if (!branchId) {
+      branchId = await getBranchId();
+    }
+
+    // Build query params
+    const queryParams: string[] = [];
+    if (branchId) queryParams.push(`branch=${branchId}`);
+    if (params?.role) queryParams.push(`role=${params.role}`);
+
+    const query = queryParams.length ? `?${queryParams.join('&')}` : '';
+
+    const res = await axiosInstance.get(`/users${query}`);
+    if (!res?.data) throw new Error('Users response missing data');
+
+    const users = res.data.users ?? res.data;
+    return Array.isArray(users) ? users : [];
+  } catch (error: any) {
+    console.error('fetchUsers() failed:', error?.response?.data ?? error);
+    throw error?.response?.data?.message || error?.message || 'Failed to fetch users';
+
   }
 };
 
