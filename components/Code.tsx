@@ -32,7 +32,7 @@ export interface CodesCProps {
   initialSelectedId?: number;
 }
 
-const countryList: CountryItem[] = [
+export const countryList: CountryItem[] = [
   { id: 1, name: 'Deutsch', code: '49', flag: require('../assets/icons/de.png') },
   { id: 2, name: 'Français', code: '33', flag: require('../assets/icons/c_French.png') },
   { id: 3, name: 'English', code: '44', flag: require('../assets/icons/en.png') },
@@ -69,25 +69,11 @@ const Code: React.FC<CodesCProps> = (props) => {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
-//   const choose = (item: CountryItem) => {
-//   setSelectedId(item.id); // update state so radio button updates immediately
-
-//   if (typeof onSelect === 'function') {
-//     onSelect(item);
-//   }
-
-//   // Delay closing slightly so UI shows change before navigation
-//   setTimeout(() => {
-//     if (typeof onClose === 'function') {
-//       onClose();
-//     }
-//   }, 50);
-// };
 const choose = (item: CountryItem) => {
   setSelectedId(item.id);
 
   if (typeof onSelect === "function") {
-    onSelect(item);  // 👈 This updates selectedCountry in AddStaffScreen
+    onSelect(item);
   }
 
   setTimeout(() => {
