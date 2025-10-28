@@ -35,9 +35,18 @@ import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 import { branches as importedBranches } from "../../../../api/Branch";
 
+const PHONE_RULES: Record<string, { min: number; max: number; example?: string }> = {
+    '94': { min: 9, max: 9, example: '7XXXXXXXX' },
+    '49': { min: 7, max: 11, example: 'variable (up to 11)' },
+    '33': { min: 9, max: 9, example: '9 digits after +33' },
+    '44': { min: 10, max: 10, example: '10 digits after +44' },
+    '966': { min: 9, max: 9, example: '9 digits after +966' },
+    '7': { min: 10, max: 10, example: '10 digits after +7' },
+    '90': { min: 10, max: 10, example: '10 digits after +90' },
+};
+const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 
-
-const AddStaffScreen: React.FC<Props> = ({ }) => {
+const AddStaffScreen: React.FC = (props: any) => {
 
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
@@ -69,6 +78,15 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
     const [position, setPosition] = useState("");
     const [email, setEmail] = useState("");
     const [phone, setPhone] = useState("");
+    const [phoneRaw, setPhoneRaw] = useState('');
+    const [longitude, setLongitude] = useState('');
+    const [latitude, setLatitude] = useState('');
+    const [selectedCountry, setSelectedCountry] = useState({
+        id: 1,
+        name: "Deutsch",
+        code: "49",
+        flag: require("../../../../assets/icons/de.png"),
+    });
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -229,16 +247,49 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
         setDurationError("");
     };
 
+    const getPhoneRuleForSelected = () => {
+        const codeDigits = (selectedCountry?.code || '').replace(/\D/g, '');
+        return PHONE_RULES[codeDigits] || DEFAULT_PHONE_RULE;
+    };
 
+    const formatPhoneForDisplay = (digitsOnly: string) => {
+        if (!digitsOnly) return '';
+        return digitsOnly.replace(/(.{3})/g, '$1 ').trim();
+    };
 
+    // on change for phone field (UI input)
+    const onPhoneChange = (val: string) => {
+        const rule = getPhoneRuleForSelected();
 
+        let raw = val.replace(/\D/g, '');
+        const hasLeadingZero = raw.startsWith('0');
+        const maxAllowedForDisplay = rule.max + (hasLeadingZero ? 1 : 0);
+        raw = raw.slice(0, maxAllowedForDisplay);
+        let normalized = raw.startsWith('0') ? raw.slice(1) : raw;
+        normalized = normalized.slice(0, rule.max);
 
-    const [selectedCountry, setSelectedCountry] = useState({
-        id: 1,
-        name: "Deutsch",
-        code: "49",
-        flag: require("../../../../assets/icons/de.png"), // 🇩🇪 default German
-    });
+        setPhone(formatPhoneForDisplay(raw));
+        setPhoneRaw(normalized);
+
+        // live validation
+        if (!normalized || normalized.length === 0) {
+            setErrors(prev => ({ ...prev, phone: lang.phone_required }));
+            return;
+        }
+        if (normalized.length < rule.min) {
+            if (rule.min === rule.max) {
+                setErrors(prev => ({ ...prev, phone: `${lang.Please_complete_all} ${rule.max} ${lang.digits}` }));
+            } else {
+                setErrors(prev => ({ ...prev, phone: `${lang.Enter_at_least} ${rule.min} ${lang.digits}` }));
+            }
+            return;
+        }
+        setErrors(prev => ({ ...prev, phone: '' }));
+    };
+
+    const setFieldTouched = (field: string) => {
+        setTouched(prev => ({ ...prev, [field]: true }));
+    };
 
     // Camera & gallery functions
     const openCamera = async () => {
@@ -287,15 +338,44 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
 
     // error states
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const [touched, setTouched] = useState<{ [key: string]: boolean }>({});
+
+    const validateFieldp = (field: string) => {
+        let error = '';
+        switch (field) {
+            case 'phone':
+                {
+                    const normalized = phoneRaw || '';
+                    const phoneRule = getPhoneRuleForSelected();
+                    if (!normalized) error = lang.phone_required;
+                    else if (normalized.length < phoneRule.min) error = `${lang.Enter_at_least} ${phoneRule.min} ${lang.digits}`;
+                    else if (normalized.length > phoneRule.max) error = `${lang.Maximum} ${phoneRule.max} ${lang.digits}`;
+                }
+                break;
+        }
+        setErrors(prev => ({ ...prev, [field]: error }));
+        return error === '';
+    };
+
+    const validateAllStep1 = () => {
+        const fields = ['phone'];
+        const newTouched: any = {};
+        fields.forEach(f => (newTouched[f] = true));
+        setTouched(prev => ({ ...prev, ...newTouched }));
+
+        const results = fields.map(f => validateFieldp(f));
+        return results.every(Boolean);
+    };
 
     const validateEmail = (email: string): boolean => {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return re.test(String(email).toLowerCase());
     };
 
-    const validatePhone = (phone: string): boolean => {
-        const re = /^[0-9]{7,15}$/; // only digits, 7–15 characters
-        return re.test(phone);
+    const validatePhone = (phoneValue: string): boolean => {
+        const digits = (phoneValue || "").replace(/\D/g, "");
+        const rule = getPhoneRuleForSelected();
+        return digits.length >= rule.min && digits.length <= rule.max;
     };
     const validatePassword = (password: string): boolean => {
         const re = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -330,11 +410,22 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
             valid = false;
         }
 
-        if (!phone) {
+        // phone: use phoneRaw (digits-only) for validation
+        const rule = getPhoneRuleForSelected();
+        const digits = (phoneRaw || "").replace(/\D/g, "");
+
+        if (!digits) {
             newErrors.phone = lang.phone_required;
             valid = false;
-        } else if (!validatePhone(phone)) {
-            newErrors.phone = lang.invalid_phone;
+        } else if (digits.length < rule.min) {
+            if (rule.min === rule.max) {
+                newErrors.phone = `${lang.Please_complete_all || 'Please complete all'} ${rule.max} ${lang.digits || 'digits'}`;
+            } else {
+                newErrors.phone = `${lang.Enter_at_least || 'Enter at least'} ${rule.min} ${lang.digits || 'digits'}`;
+            }
+            valid = false;
+        } else if (digits.length > rule.max) {
+            newErrors.phone = `${lang.Maximum || 'Maximum'} ${rule.max} ${lang.digits || 'digits'}`;
             valid = false;
         }
 
@@ -421,10 +512,12 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
     };
 
 
+
     // handlers
     const handleNext = () => {
         if (validateStep1()) {
-            const finalPhone = `${selectedCountry.code}${phone}`;
+            // use digits-only phoneRaw when constructing finalPhone
+            const finalPhone = `${selectedCountry.code}${phoneRaw}`;
 
             const step1_Data = {
                 id: undefined,
@@ -437,15 +530,17 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                 langId
             };
 
-            console.log("Step! data:", step1_Data);
+            console.log("Step1 data:", step1_Data);
             goToStep2();
-            // setStep(2);
+        } else {
+            // ensure phone field shows touched error if step validation fails
+            setTouched(prev => ({ ...prev, phone: true }));
         }
     };
-
     const handleSave = () => {
         if (validateStep2()) {
-            const finalPhone = `${selectedCountry.code}${phone}`;
+            // use phoneRaw here as well
+            const finalPhone = `${selectedCountry.code}${phoneRaw}`;
             const scheduleArray = buildScheduleArray();
 
             const newStaff = {
@@ -748,26 +843,13 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                                         phoneRef.current?.focus();
                                     }}
                                 />
-
-
                                 <InputBox
                                     ref={phoneRef}
                                     label="Phone"
                                     placeholder={`123 456 789`}
                                     value={phone}
-                                    setValue={(text) => {
-                                        const digitsOnly = text.replace(/[^0-9]/g, "");
-                                        setPhone(digitsOnly);
-
-                                        if (!digitsOnly) {
-                                            setErrors((prev) => ({ ...prev, phone: lang.phone_required }));
-                                        } else if (!validatePhone(digitsOnly)) {
-                                            setErrors((prev) => ({ ...prev, phone: lang.invalid_phone }));
-                                        } else {
-                                            setErrors((prev) => ({ ...prev, phone: "" }));
-                                        }
-                                    }}
-                                    errorMessage={errors.phone}
+                                    setValue={(text: string) => onPhoneChange(text)}
+                                    errorMessage={touched.phone ? errors.phone : ''}
                                     leftIcon={selectedCountry.flag}
                                     leftIcon2={require("../../../../assets/icons/down_b.png")}
                                     onLeftIcon2Press={() =>
@@ -775,10 +857,37 @@ const AddStaffScreen: React.FC<Props> = ({ }) => {
                                             initialSelectedId: selectedCountry.id,
                                             onSelect: (item: any) => {
                                                 setSelectedCountry(item);
+                                                const newRule = PHONE_RULES[(item.code || '').replace(/\D/g, '')] || DEFAULT_PHONE_RULE;
+
+                                                let currentRaw = (phone || '').replace(/\D/g, '');
+                                                const hasLeadingZero = currentRaw.startsWith('0');
+                                                const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
+                                                currentRaw = currentRaw.slice(0, maxDisplay);
+
+                                                let normalized = currentRaw.startsWith('0') ? currentRaw.slice(1) : currentRaw;
+                                                normalized = normalized.slice(0, newRule.max);
+
+                                                setPhone(formatPhoneForDisplay(currentRaw));
+                                                setPhoneRaw(normalized);
+
+                                                if (!normalized || normalized.length === 0) {
+                                                    setErrors(prev => ({ ...prev, phone: lang.phone_required }));
+                                                } else if (normalized.length < newRule.min) {
+                                                    if (newRule.min === newRule.max) {
+                                                        setErrors(prev => ({ ...prev, phone: `Please complete all ${newRule.max} digits` }));
+                                                    } else {
+                                                        setErrors(prev => ({ ...prev, phone: `${lang.enterAtLeast || 'Enter at least'} ${newRule.min} ${lang.digits || 'digits'}` }));
+                                                    }
+                                                } else {
+                                                    setErrors(prev => ({ ...prev, phone: '' }));
+                                                }
                                             },
                                         })
                                     }
                                     returnKeyType="done"
+                                    onFocus={() => { setFieldTouched('phone'); }}
+                                    onBlur={() => validateFieldp('phone')}
+                                    keyboardType="phone-pad"
                                     onSubmitEditing={() => {
                                         validateField("phone", phone);
                                         Keyboard.dismiss();

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// components/Footer_A.tsx
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,72 +19,68 @@ import colors from '../styles/Colors';
 import fonts from '../styles/Fonts';
 
 const Footer_A = () => {
+  // default tab
   const [selectedTab, setSelectedTab] = useState<string>('Home');
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
   const route = useRoute<any>();
 
-  const userId = route.params?.userId;
-  const langId = route.params?.langId ?? 'de';
+  // states that we'll pass down to screens
+  const [userIdState, setUserIdState] = useState<string | null>(route.params?.userId ?? null);
+  const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'de');
+  const [routeRefreshFlag, setRouteRefreshFlag] = useState<boolean>(!!route.params?.refresh);
+  const [toastMessage, setToastMessage] = useState<string | null>(route.params?.toastMessage ?? null);
 
-const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
-//const lang = translations[currentLangId];
-
-  // Now tabConfig is inside Footer and uses lang dynamically
+  // keep tab config as before
   const tabConfig = [
-    {
-      key: 'Home',
-      component: HomeScreen,
-      icon: require('../assets/icons/a_home_g.png'),
-      activeIcon: require('../assets/icons/a_home_b.png'),
-    },
-    {
-      key: 'Attendancerecord',
-      component: AttendancerecordScreen,
-      icon: require('../assets/icons/a_attendance_g.png'),
-      activeIcon: require('../assets/icons/a_attendance_b.png'),
-    },
-    {
-      key: 'WorkSchedule',
-      component: WorkScheduleScreen,
-      icon: require('../assets/icons/a_workschedule_g.png'),
-      activeIcon: require('../assets/icons/a_workschedule_b.png'),
-    },
-    {
-      key: 'StaffRecord',
-      component: StaffRecordScreen,
-      icon: require('../assets/icons/a_staffrecord_g.png'),
-      activeIcon: require('../assets/icons/a_staffrecord_b.png'),
-    },
-    {
-      key: 'More',
-      component: MoreScreen,
-      icon: require('../assets/icons/a_more_g.png'),
-      activeIcon: require('../assets/icons/a_more_b.png'),
-    },
+    { key: 'Home', component: HomeScreen, icon: require('../assets/icons/a_home_g.png'), activeIcon: require('../assets/icons/a_home_b.png') },
+    { key: 'Attendancerecord', component: AttendancerecordScreen, icon: require('../assets/icons/a_attendance_g.png'), activeIcon: require('../assets/icons/a_attendance_b.png') },
+    { key: 'WorkSchedule', component: WorkScheduleScreen, icon: require('../assets/icons/a_workschedule_g.png'), activeIcon: require('../assets/icons/a_workschedule_b.png') },
+    { key: 'StaffRecord', component: StaffRecordScreen, icon: require('../assets/icons/a_staffrecord_g.png'), activeIcon: require('../assets/icons/a_staffrecord_b.png') },
+    { key: 'More', component: MoreScreen, icon: require('../assets/icons/a_more_g.png'), activeIcon: require('../assets/icons/a_more_b.png') },
   ];
 
+  // When route.params changes (navigation.navigate(...) from other screens), react and update states
+  useEffect(() => {
+    const p = route.params ?? {};
+    if (p.selectedTab && typeof p.selectedTab === 'string') {
+      setSelectedTab(p.selectedTab);
+    }
+    if (p.userId) {
+      setUserIdState(p.userId);
+    }
+    if (p.langId) {
+      setCurrentLangId(p.langId);
+    }
+    if (p.refresh) {
+      setRouteRefreshFlag(true);
+    }
+    // new: accept external toastMessage and store it
+    if (p.toastMessage) {
+      setToastMessage(p.toastMessage);
+    }
+  }, [route.params]);
+
+  // find active screen component
   const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab)?.component;
 
   return (
     <View style={styles.safeArea}>
       <View style={styles.content}>
         {ActiveScreen ? (
-        <ActiveScreen
-          userId={userId}
-          langId={currentLangId}              
-          setLangId={setCurrentLangId}      
-        />
-      ) : null}
+          // Pass userId, langId and refresh flag down as props
+          <ActiveScreen
+            userId={userIdState}
+            langId={currentLangId}
+            routeRefresh={routeRefreshFlag}
+            onConsumedRefresh={() => setRouteRefreshFlag(false)}
+            toastMessage={toastMessage}
+            onConsumedToast={() => setToastMessage(null)}
+          />
+        ) : null}
       </View>
 
-      <View
-        style={[
-          styles.tabBar,
-          isTablet ? styles.tabBarTablet : styles.tabBarMobile,
-          styles.footerFixed,
-        ]}
-      >
+      <View style={[styles.tabBar, isTablet ? styles.tabBarTablet : styles.tabBarMobile, styles.footerFixed]}>
         {tabConfig.map((tab, index) => {
           const focused = selectedTab === tab.key;
           return (
@@ -91,17 +88,13 @@ const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId 
               key={index}
               style={styles.tabItem}
               onPress={() => {
-                console.log('Footer -> tab press:', tab.key, { userId, langId: currentLangId });
+                console.log('Footer -> tab press:', tab.key, { userId: userIdState, langId: currentLangId });
                 setSelectedTab(tab.key);
               }}
               activeOpacity={0.7}
             >
               <View style={{ width: 28, height: 28, justifyContent: 'center', alignItems: 'center' }}>
-                <Image
-                  source={focused ? tab.activeIcon : tab.icon}
-                  style={[styles.icon, isTablet && styles.tabletIcon]}
-                  resizeMode="contain"
-                />
+                <Image source={focused ? tab.activeIcon : tab.icon} style={[styles.icon, isTablet && styles.tabletIcon]} resizeMode="contain" />
               </View>
             </TouchableOpacity>
           );
@@ -110,9 +103,7 @@ const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId 
     </View>
   );
 };
-
 export default Footer_A;
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -126,16 +117,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     backgroundColor: colors.secondary,
     borderTopColor: colors.border,
-    borderTopWidth:1,
+    borderTopWidth: 1,
     overflow: 'hidden',
   },
   tabBarMobile: {
-    height: 60,          
-    paddingTop: 12,     
+    height: 60,
+    paddingTop: 12,
     paddingBottom: 0,
   },
   tabBarTablet: {
-    height: 80,         
+    height: 80,
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 6 : 8,
   },
