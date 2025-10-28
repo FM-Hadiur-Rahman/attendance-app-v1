@@ -265,6 +265,52 @@ export const getUserById = async (id: string): Promise<ProfileUser | null> => {
     throw error?.response?.data?.message || error?.message || 'Failed to fetch user';
   }
 };
+
+/**
+ * GET /users
+ * - returns the raw response `.data.users` (or an empty array)
+ * - accepts optional params object (page, limit, search)
+ */
+export const getUsers = async (params: Record<string, any> = {}): Promise<ProfileUser[]> => {
+  try {
+    const res = await axiosInstance.get('/users', { params });
+    // expected: { success: true, users: [...] }
+    const users = res?.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
+    return users as ProfileUser[];
+  } catch (error: any) {
+    console.error('getUsers() failed:', error?.response?.data ?? error);
+    throw error?.response?.data ?? error;
+  }
+};
+
+/**
+ * Utility: returns a map of first admin (manager) found per branch:
+ * { [branchId]: fullname | username | undefined }
+ *
+ * - Fetches all users (up to `limit` if passed)
+ * - Picks first user with role === 'admin' for each branch
+ */
+export const getManagersByBranch = async (params: { limit?: number } = {}): Promise<Record<string, string | undefined>> => {
+  try {
+    const users = await getUsers({ limit: params.limit ?? 1000 });
+    const map: Record<string, string | undefined> = {};
+
+    users.forEach((u: any) => {
+      if (!u) return;
+      if (u.role === 'admin') {
+        const branchId = u.branch?._id ?? (typeof u.branch === 'string' ? u.branch : undefined);
+        if (branchId && !map[branchId]) {
+          map[branchId] = u.fullname ?? u.username ?? undefined;
+        }
+      }
+    });
+
+    return map;
+  } catch (e) {
+    console.warn('getManagersByBranch failed', e);
+    return {};
+  }
+};
 export const deleteUser = async (staffId: string): Promise<any> => {
   try {
     if (!staffId) throw new Error('deleteUser: missing staffId');
@@ -277,3 +323,4 @@ export const deleteUser = async (staffId: string): Promise<any> => {
     throw error?.response?.data?.message ?? error?.response?.data ?? error?.message ?? 'Failed to delete user';
   }
 };
+

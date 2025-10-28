@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   BackHandler,
@@ -13,9 +13,9 @@ import colors from '../styles/Colors';
 import DashboardScreen from '../screens/superadmin/main/DashboardScreen';
 import BranchScreen from '../screens/superadmin/main/BranchScreen';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
+import Toast, { toastConfig } from './Toast';
 
 const Footer_S = () => {
-  const [selectedTab, setSelectedTab] = useState<string>('DashboardScreen');
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
   const route = useRoute<any>();
@@ -23,6 +23,17 @@ const Footer_S = () => {
 
   const userId = route.params?.userId;
   const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
+
+  // Initialize selectedTab from route params if present, otherwise default to DashboardScreen
+  const initialTab = route.params?.selectedTab ?? 'DashboardScreen';
+  const [selectedTab, setSelectedTab] = useState<string>(initialTab);
+
+  // If navigator pushes/updates params later, keep selectedTab in sync
+  useEffect(() => {
+    if (route.params?.selectedTab && route.params.selectedTab !== selectedTab) {
+      setSelectedTab(route.params.selectedTab);
+    }
+  }, [route.params?.selectedTab]);
 
   const TABBAR_HEIGHT_MOBILE = 60;
   const TABBAR_HEIGHT_TABLET = 80;
@@ -52,6 +63,7 @@ const Footer_S = () => {
     },
   ];
 
+  // find component for currently selected tab (do not render 'AddBranch' here)
   const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab && tab.key !== 'AddBranch')?.component;
 
   useFocusEffect(
@@ -67,10 +79,13 @@ const Footer_S = () => {
     <View style={styles.safeArea}>
       <View style={styles.content}>
         {ActiveScreen ? (
+          // Forward branch/createdUser from route.params when rendering child (useful for BranchScreen)
           <ActiveScreen
             userId={userId}
             langId={currentLangId}
             setLangId={setCurrentLangId}
+            branch={route.params?.branch}
+            createdUser={route.params?.createdUser}
           />
         ) : null}
       </View>
@@ -113,7 +128,6 @@ const Footer_S = () => {
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() => {
-          // Navigate to AddBranch screen as a separate route (no footer there)
           navigation.navigate('AddBranchScreen', { userId, langId: currentLangId });
         }}
         style={[
@@ -132,6 +146,7 @@ const Footer_S = () => {
           style={{ width: ADD_BTN_SIZE, height: ADD_BTN_SIZE, resizeMode: 'contain' }}
         />
       </TouchableOpacity>
+      <Toast config={toastConfig} />
     </View>
   );
 };

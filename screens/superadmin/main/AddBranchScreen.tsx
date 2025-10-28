@@ -22,6 +22,7 @@ import { Button1 } from '../../../components/Button';
 import fonts from '../../../styles/Fonts';
 import InputBox from '../../../components/InputBox';
 import Popup from '../../../components/Popup';
+import Toast, { showSuccessToast, toastConfig } from '../../../components/Toast';
 
 import axiosInstance from '../../../api/axiosInstance';
 import { getBranches, createBranch } from '../../../api/Branchs';
@@ -102,6 +103,9 @@ const AddBranchScreen: React.FC = (props: any) => {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [checkingBranchName, setCheckingBranchName] = useState(false);
   const [checkingUsername, setCheckingUsername] = useState(false);
+
+  // store the branch payload locally to create later when user confirms
+  const [pendingBranchPayload, setPendingBranchPayload] = useState<any | null>(null);
 
   const validatePassword = (password: string): boolean => {
     const re = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -260,6 +264,7 @@ const AddBranchScreen: React.FC = (props: any) => {
     setErrors({});
     setTouched({});
     setCreatedBranch(null);
+    setPendingBranchPayload(null);
     setStep(1);
   };
 
@@ -400,111 +405,155 @@ const AddBranchScreen: React.FC = (props: any) => {
     return () => clearTimeout(t);
   }, [username, allUsers]);
 
+  // NOTE: goToStep2 NO LONGER creates the branch. It only validates step1 and stores payload to create later.
   const goToStep2 = async () => {
     Keyboard.dismiss();
 
     // 1) run local validation
-    if (!validateAllStep1()) return;
+     if (!validateAllStep1()) {
+    // no toast — only console so developer can inspect
+    console.warn('goToStep2: validation failed', {
+      errors,
+      branchName,
+      managerName,
+      email,
+      phone,
+      phoneRaw,
+      longitude,
+      latitude,
+    });
+    return;
+  }
 
     // disallow if live errors present for branch name or coords or email/phone
-    if (errors.branchName) return;
-    if (errors.latitudeLongitude) return;
-    if (errors.email) return;
-    if (errors.phone) return;
+    // if (errors.branchName) return;
+    // if (errors.latitudeLongitude) return;
+    // if (errors.email) return;
+    // if (errors.phone) return;
+      if (errors.branchName) {
+    console.warn('goToStep2 blocked: branchName error:', errors.branchName);
+    return;
+  }
+  if (errors.latitudeLongitude) {
+    console.warn('goToStep2 blocked: latitudeLongitude error:', errors.latitudeLongitude);
+    return;
+  }
+  if (errors.email) {
+    console.warn('goToStep2 blocked: email error:', errors.email);
+    return;
+  }
+  if (errors.phone) {
+    console.warn('goToStep2 blocked: phone error:', errors.phone);
+    return;
+  }
 
-    // 2) check branch existence and create
-    try {
-      setCreatingBranch(true);
+    // Prepare branch payload and keep it in state for later creation on confirmation
+    const phoneForApi = `${selectedCountry.code}${phoneRaw}`;
+    const payload = {
+      name: branchName,
+      latitude: latitude || '',
+      longitude: longitude || '',
+      phone: phoneForApi,
+      email: email || '',
+    };
 
-      const existing = (allBranches || []).find(
-        (b) => String(b.name || '').trim().toLowerCase() === branchName.trim().toLowerCase()
-      );
+    setPendingBranchPayload(payload);
 
-      if (existing) {
-        setTouched(prev => ({ ...prev, branchName: true }));
-        setErrors(prev => ({ ...prev, branchName: lang.Branch_already_exists }));
-        setCreatingBranch(false);
-        return;
-      }
-
-      const phoneForApi = `${selectedCountry.code}${phoneRaw}`;
-      const payload = {
-        name: branchName,
-        latitude: latitude || '',
-        longitude: longitude || '',
-        phone: phoneForApi,
-        email: email || '',
-      };
-
-      const created = await createBranch(payload);
-      setCreatedBranch(created);
-      setAllBranches(prev => (created ? [created, ...prev] : prev));
-
-      setStep(2);
-      setTimeout(() => focusNext(usernameRef), 300);
-    } catch (err: any) {
-      console.error('Error checking/creating branch:', err);
-      const msg = err?.message || err?.error || '';
-      if (msg?.toString().toLowerCase().includes('email')) {
-        setTouched(prev => ({ ...prev, email: true }));
-        setErrors(prev => ({ ...prev, email: lang.Email_is_invalid }));
-      } else {
-        setErrors(prev => ({ ...prev, branchName: lang.Failed_to_verifycreate_branch }));
-      }
-    } finally {
-      setCreatingBranch(false);
-    }
+    // move to step 2 (do NOT create branch yet)
+    setStep(2);
+    setTimeout(() => focusNext(usernameRef), 300);
   };
 
   const handleSubmit = () => {
     Keyboard.dismiss();
+
+    // 1) validate step2
     if (!validateAllStep2()) return;
 
-    // do not proceed if username live check shows existing or check still running
+    // disallow if username already flagged or check still running
     if (errors.username) return;
     if (checkingUsername) return;
 
-    if (!createdBranch?._id) {
-      setErrors(prev => ({ ...prev, username: lang.Branch_not_created_yet_please_complete_step_1 }));
-      return;
-    }
-
+    // show confirmation popup; creation will occur when user confirms (Yes)
     setShowPopup(true);
   };
 
-  const createUser = async () => {
-    if (!createdBranch?._id) {
-      setErrors(prev => ({ ...prev, username: lang.Branch_not_available }));
+  // Called when user confirms (Yes) in the popup: create branch -> create user -> navigate
+  const confirmCreateBranchAndUser = async () => {
+    // must have payload prepared by step1
+    if (!pendingBranchPayload) {
+      setErrors(prev => ({ ...prev, branchName: lang.Branch_not_created_yet_please_complete_step_1 }));
       setShowPopup(false);
+      console.warn('confirmCreateBranchAndUser: no pending payload', { pendingBranchPayload });
       return;
     }
 
-    const payloadForUser = {
-      fullname: managerName || username,
-      branch: createdBranch._id,
-      username: username,
-      email: email && !validateEmailValue(email) ? email : `${username}@example.com`,
-      password: password,
-      role: "admin",
-      position: "manager",
-      phone: `${selectedCountry.code}${phoneRaw}`,
-    };
+    setShowPopup(false); // close popup before showing loader
+    setCreatingBranch(true);
 
-    // close popup and clear UI inputs immediately
-    setShowPopup(false);
-    clearAllFields();
+    let newBranch: any = null;
 
+    try {
+      // 1) create branch
+      const created = await createBranch(pendingBranchPayload);
+      newBranch = created;
+      setCreatedBranch(created);
+      setAllBranches(prev => (created ? [created, ...prev] : prev));
+    } catch (err: any) {
+      console.error('Failed to create branch during confirm:', err);
+      // try to extract server message
+      const msg = err?.message || err?.error || JSON.stringify(err);
+      setErrors(prev => ({ ...prev, branchName: msg || lang.Failed_to_verifycreate_branch }));
+      setCreatingBranch(false);
+      return;
+    } finally {
+      setCreatingBranch(false);
+    }
+
+    // 2) create user using branch id
     setCreatingUser(true);
     try {
+      const payloadForUser = {
+        fullname: managerName || username,
+        branch: newBranch._id,
+        username: username,
+        email: email && !validateEmailValue(email) ? email : `${username}@example.com`,
+        password: password,
+        role: "admin",
+        position: "manager",
+        phone: `${selectedCountry.code}${phoneRaw}`,
+      };
+
       console.log('Creating manager user with payload:', payloadForUser);
       const resp = await register1(payloadForUser as any);
       console.log('Manager created:', resp);
 
+      // server may return created user in resp.user or resp
+      const createdUser = resp.user ?? resp;
+
+          // **Only** success toast here (branch + user created)
+    showSuccessToast(lang.Branch_Created_successfully);
+
+      // Navigate, similar to your previous flow
       navigation.navigate('Footer_S', {
-        selectedTab: 'BranchScreen',
-        branch: createdBranch,
-        createdUser: resp.user ?? resp,
+        selectedTab: 'Branch',
+        branch: newBranch,
+        createdUser: createdUser,
+        userId: userId,
+        langId: langId,
+        toastMessage: lang.Branch_Created_successfully,
+        showSuccessToast: lang.Branch_Created_successfully
       });
+
+      console.log('Navigating to Footer_S with', {
+  selectedTab: 'Branch',
+  branchId: newBranch?._id,
+  createdUserId: createdUser?._id ?? createdUser?.id,
+  toastMessage: lang.Branch_Created_successfully,
+});
+
+      // reset UI
+      clearAllFields();
     } catch (err: any) {
       console.error('Failed to create manager user:', err);
       const message = err?.message || err?.error || JSON.stringify(err);
@@ -726,12 +775,12 @@ const AddBranchScreen: React.FC = (props: any) => {
                       />
                     </View>
 
-                    {/* show loader when creating branch */}
-                    {creatingBranch ? (
+                    {/* show loader when creating branch (only relevant if user somehow initiates branch creation here) */}
+                    {/* {creatingBranch ? (
                       <View style={{  alignItems: 'center' }}>
                         <ActivityIndicator size="large" color={colors.primary} />
                       </View>
-                    ) : null}
+                    ) : null} */}
                   </View>
                 </View>
               ) : (
@@ -811,11 +860,11 @@ const AddBranchScreen: React.FC = (props: any) => {
                       />
                     </View>
 
-                    {creatingUser ? (
+                    {/* {creatingUser ? (
                       <View style={{ alignItems: 'center' }}>
                         <ActivityIndicator size="large" color={colors.primary} />
                       </View>
-                    ) : null}
+                    ) : null} */}
                   </View>
                 </View>
               )}
@@ -868,7 +917,7 @@ const AddBranchScreen: React.FC = (props: any) => {
             text={lang.yes}
             backgroundColor={''}
             width={'48%'}
-            onPress={() => createUser()}
+            onPress={() => confirmCreateBranchAndUser()}
           />
           <Button1
             text={lang.no}
@@ -878,6 +927,16 @@ const AddBranchScreen: React.FC = (props: any) => {
           />
         </View>
       </Popup>
+
+      {/* Full screen loading overlay when creating branch/user */}
+      {(creatingBranch || creatingUser) && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        </View>
+      )}
+       <Toast config={toastConfig} />
     </View>
   );
 };
@@ -947,5 +1006,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     width: '100%',
   },
-
+    loadingOverlay: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingBox: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
