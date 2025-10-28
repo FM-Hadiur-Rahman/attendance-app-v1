@@ -3,6 +3,10 @@ import axiosInstance from './axiosInstance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserId } from './auth/authToken'; // only userId from authToken
 
+// ============================================================
+// ✅ Types
+// ============================================================
+
 export interface ProfileUser {
   _id: string;
   username?: string;
@@ -16,8 +20,9 @@ export interface ProfileUser {
 }
 
 // ============================================================
-// ✅ Branch ID handling (moved inside profile.ts)
+// ✅ Branch ID handling (saved in AsyncStorage)
 // ============================================================
+
 const USER_BRANCH_KEY = 'userBranchId';
 
 export const saveBranchId = async (branchId: string): Promise<void> => {
@@ -52,7 +57,6 @@ export const getBranchId = async (): Promise<string | null> => {
 export const getProfile = async (): Promise<ProfileUser> => {
   try {
     const res = await axiosInstance.get('/profile');
-
     if (!res?.data?.user) {
       throw new Error('Profile response missing user');
     }
@@ -80,31 +84,21 @@ export const getProfile = async (): Promise<ProfileUser> => {
 
 /**
  * PUT /users/:id
- * Updates the user's profile.
+ * Updates the logged-in user's profile.
  */
 export const updateProfile = async (
   payload: Partial<ProfileUser>,
   id?: string
 ): Promise<ProfileUser> => {
   try {
-    let userId = id;
-    if (!userId) {
-      userId = await getUserId();
-    }
-    if (!userId) {
-      throw new Error('Cannot determine user id for update');
-    }
+    let userId = id || (await getUserId());
+    if (!userId) throw new Error('Cannot determine user id for update');
 
     const res = await axiosInstance.put(`/users/${userId}`, payload);
-
     const updated =
-      res?.data?.data ??
-      res?.data?.user ??
-      (res?.data && typeof res.data === 'object' ? res.data : null);
+      res?.data?.data ?? res?.data?.user ?? res?.data ?? null;
 
-    if (!updated) {
-      throw new Error('Unexpected update response');
-    }
+    if (!updated) throw new Error('Unexpected update response');
 
     return updated as ProfileUser;
   } catch (error: any) {
@@ -117,20 +111,18 @@ export const updateProfile = async (
   }
 };
 
-
+/**
+ * PUT /users/:id
+ * Updates another user by ID.
+ */
 export const updateUser = async (id: string, payload: Partial<ProfileUser>): Promise<ProfileUser> => {
   try {
     if (!id) throw new Error('updateUser: missing id');
     const res = await axiosInstance.put(`/users/${id}`, payload);
-
     const updated =
-      res?.data?.data ??
-      res?.data?.user ??
-      (res?.data && typeof res.data === 'object' ? res.data : null);
+      res?.data?.data ?? res?.data?.user ?? res?.data ?? null;
 
-    if (!updated) {
-      throw new Error('Unexpected update response');
-    }
+    if (!updated) throw new Error('Unexpected update response');
 
     return updated as ProfileUser;
   } catch (error: any) {
@@ -140,67 +132,13 @@ export const updateUser = async (id: string, payload: Partial<ProfileUser>): Pro
       error?.response?.data ??
       error?.response?.statusText;
     throw serverMsg || error?.message || 'Failed to update user';
-
-/**
- * GET /users
- * Fetch users filtered by branch or role.
- * Automatically includes saved branch ID if not provided.
- */
-export const fetchUsers = async (params?: { branchId?: string; role?: string }) => {
-  try {
-    // Use saved branch ID if not manually passed
-    let branchId = params?.branchId;
-    if (!branchId) {
-      branchId = await getBranchId();
-    }
-
-    // Build query params
-    const queryParams: string[] = [];
-    if (branchId) queryParams.push(`branch=${branchId}`);
-    if (params?.role) queryParams.push(`role=${params.role}`);
-
-    const query = queryParams.length ? `?${queryParams.join('&')}` : '';
-
-    const res = await axiosInstance.get(`/users${query}`);
-    if (!res?.data) throw new Error('Users response missing data');
-
-    const users = res.data.users ?? res.data;
-    return Array.isArray(users) ? users : [];
-  } catch (error: any) {
-    console.error('fetchUsers() failed:', error?.response?.data ?? error);
-    throw error?.response?.data?.message || error?.message || 'Failed to fetch users';
-
   }
 };
 
-// api/profile.ts  (add near other exports)
+// ============================================================
+// ✅ User fetching
+// ============================================================
 
-export type AttendanceSummary = {
-  success: boolean;
-  employee?: string;
-  total_sessions?: number;
-  total_minutes?: number;
-  total_hours?: number;
-  formatted_time?: string; // e.g. "01:13"
-};
-
-export const getUserAttendanceSummary = async (staffId: string): Promise<AttendanceSummary | null> => {
-  try {
-    if (!staffId) throw new Error('getUserAttendanceSummary: missing staffId');
-    const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}`);
-    // API returns the shape you posted:
-    // { success: true, employee: "...", total_sessions: 10, total_minutes: 73, total_hours: 1.22, formatted_time: "01:13" }
-    const data = res?.data ?? null;
-    if (!data) return null;
-    return data as AttendanceSummary;
-  } catch (error: any) {
-    console.error('getUserAttendanceSummary() failed:', error?.response?.data ?? error);
-    // bubble up useful message
-    throw error?.response?.data ?? error?.message ?? 'Failed to fetch attendance summary';
-  }
-};
-
-// api/profile.ts  (replace existing fetchUsers implementation with this)
 export const fetchUsers = async (params?: {
   branchId?: string;
   role?: string;
@@ -208,12 +146,8 @@ export const fetchUsers = async (params?: {
   limit?: number;
 }) => {
   try {
-    let branchId = params?.branchId;
-    if (!branchId) {
-      branchId = await getBranchId();
-    }
+    let branchId = params?.branchId ?? (await getBranchId());
 
-    // Build query params
     const queryParams: string[] = [];
     if (branchId) queryParams.push(`branch=${branchId}`);
     if (params?.role) queryParams.push(`role=${params.role}`);
@@ -225,22 +159,15 @@ export const fetchUsers = async (params?: {
     const res = await axiosInstance.get(`/users${query}`);
     if (!res?.data) throw new Error('Users response missing data');
 
-    // Server response shape (based on the example you posted)
-    // { success: true, page: 1, limit: 10, total: 22, totalPages: 3, users: [...] }
     const data = res.data;
-
-    const users = Array.isArray(data.users) ? data.users : (Array.isArray(data) ? data : []);
-    const page = typeof data.page === 'number' ? data.page : params?.page ?? 1;
-    const limit = typeof data.limit === 'number' ? data.limit : params?.limit ?? users.length;
-    const total = typeof data.total === 'number' ? data.total : users.length;
-    const totalPages = typeof data.totalPages === 'number' ? data.totalPages : Math.ceil(total / limit);
+    const users = Array.isArray(data.users) ? data.users : Array.isArray(data) ? data : [];
 
     return {
       users: users as ProfileUser[],
-      page,
-      limit,
-      total,
-      totalPages,
+      page: data.page ?? params?.page ?? 1,
+      limit: data.limit ?? params?.limit ?? users.length,
+      total: data.total ?? users.length,
+      totalPages: data.totalPages ?? Math.ceil((data.total ?? users.length) / ((data.limit ?? users.length) || 1)),
     };
   } catch (error: any) {
     console.error('fetchUsers() failed:', error?.response?.data ?? error);
@@ -248,33 +175,50 @@ export const fetchUsers = async (params?: {
   }
 };
 
+// ============================================================
+// ✅ Attendance Summary
+// ============================================================
 
+export type AttendanceSummary = {
+  success: boolean;
+  employee?: string;
+  total_sessions?: number;
+  total_minutes?: number;
+  total_hours?: number;
+  formatted_time?: string;
+};
 
-// api/profile.ts  (append or insert near other exports)
+export const getUserAttendanceSummary = async (staffId: string): Promise<AttendanceSummary | null> => {
+  try {
+    if (!staffId) throw new Error('getUserAttendanceSummary: missing staffId');
+    const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}`);
+    const data = res?.data ?? null;
+    return data as AttendanceSummary;
+  } catch (error: any) {
+    console.error('getUserAttendanceSummary() failed:', error?.response?.data ?? error);
+    throw error?.response?.data ?? error?.message ?? 'Failed to fetch attendance summary';
+  }
+};
+
+// ============================================================
+// ✅ Miscellaneous Helpers
+// ============================================================
 
 export const getUserById = async (id: string): Promise<ProfileUser | null> => {
   try {
     if (!id) throw new Error('getUserById: missing id');
     const res = await axiosInstance.get(`/users/${id}`);
-    // server might return { user: {...} } or the user object directly
     const user = res?.data?.user ?? res?.data ?? null;
-    if (!user) return null;
-    return user as ProfileUser;
+    return user as ProfileUser | null;
   } catch (error: any) {
     console.error('getUserById() failed:', error?.response?.data ?? error);
     throw error?.response?.data?.message || error?.message || 'Failed to fetch user';
   }
 };
 
-/**
- * GET /users
- * - returns the raw response `.data.users` (or an empty array)
- * - accepts optional params object (page, limit, search)
- */
 export const getUsers = async (params: Record<string, any> = {}): Promise<ProfileUser[]> => {
   try {
     const res = await axiosInstance.get('/users', { params });
-    // expected: { success: true, users: [...] }
     const users = res?.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
     return users as ProfileUser[];
   } catch (error: any) {
@@ -283,21 +227,13 @@ export const getUsers = async (params: Record<string, any> = {}): Promise<Profil
   }
 };
 
-/**
- * Utility: returns a map of first admin (manager) found per branch:
- * { [branchId]: fullname | username | undefined }
- *
- * - Fetches all users (up to `limit` if passed)
- * - Picks first user with role === 'admin' for each branch
- */
 export const getManagersByBranch = async (params: { limit?: number } = {}): Promise<Record<string, string | undefined>> => {
   try {
     const users = await getUsers({ limit: params.limit ?? 1000 });
     const map: Record<string, string | undefined> = {};
 
     users.forEach((u: any) => {
-      if (!u) return;
-      if (u.role === 'admin') {
+      if (u?.role === 'admin') {
         const branchId = u.branch?._id ?? (typeof u.branch === 'string' ? u.branch : undefined);
         if (branchId && !map[branchId]) {
           map[branchId] = u.fullname ?? u.username ?? undefined;
@@ -311,16 +247,19 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
     return {};
   }
 };
+
 export const deleteUser = async (staffId: string): Promise<any> => {
   try {
     if (!staffId) throw new Error('deleteUser: missing staffId');
     const res = await axiosInstance.delete(`/users/${staffId}`);
-    // return server response (could be message or deleted user)
     return res?.data ?? null;
   } catch (error: any) {
     console.error('deleteUser() failed:', error?.response?.data ?? error);
-    // throw a helpful message upward
-    throw error?.response?.data?.message ?? error?.response?.data ?? error?.message ?? 'Failed to delete user';
+    throw (
+      error?.response?.data?.message ??
+      error?.response?.data ??
+      error?.message ??
+      'Failed to delete user'
+    );
   }
 };
-
