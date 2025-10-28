@@ -1,4 +1,4 @@
-// authToken.ts
+//api/auth/authToken.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'userToken';
