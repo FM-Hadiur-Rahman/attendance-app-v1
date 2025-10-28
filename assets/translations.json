@@ -257,7 +257,13 @@
     "Email_must_include_domain_name":"Email must include domain name (example: example@domain)",
         "Email_must_end_with_a_valid_TLD_like":"Email must end with a valid TLD like .com, .org, .lk",
       "LatitudeLongitude_must_be_numeric":"Latitude/Longitude must be numeric",
-    "A_branch_with_these_coordinates_already_exists":"A branch with these coordinates already exists"
+    "A_branch_with_these_coordinates_already_exists":"A branch with these coordinates already exists",
+    "Branch_Created_successfully":"Branch Created successfully",
+    "Branch_profile":"Branch profile",
+    "Edit_branch_name":"Edit branch name",
+    "Edit_manager_name":"Edit manager name",
+    "Edit_manager_phone_number":"Edit manager phone number",
+    "Edit_branch_address":"Edit branch address"
 
 
 
@@ -518,6 +524,12 @@
     "Email_must_include_domain_name":"Die E-Mail muss den Domänennamen enthalten (Beispiel: beispiel@domäne)",
     "Email_must_end_with_a_valid_TLD_like":"Die E-Mail muss mit einer gültigen TLD wie .com, .org, .lk enden.",
     "LatitudeLongitude_must_be_numeric":"Breitengrad/Längengrad müssen numerisch sein",
-    "A_branch_with_these_coordinates_already_exists":"Eine Filiale mit diesen Koordinaten existiert bereits"
+    "A_branch_with_these_coordinates_already_exists":"Eine Filiale mit diesen Koordinaten existiert bereits",
+    "Branch_Created_successfully":"Zweig erfolgreich erstellt",
+    "Branch_profile":"Filialprofil",
+    "Edit_branch_name":"Filialnamen bearbeiten",
+    "Edit_manager_name":"Bearbeiten Sie den Namen des Managers",
+      "Edit_manager_phone_number":"Bearbeiten Sie die Telefonnummer des Managers",
+      "Edit_branch_address":"Filialadresse bearbeiten"
   }
 }

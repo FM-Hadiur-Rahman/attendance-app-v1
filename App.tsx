@@ -3,6 +3,7 @@ import React from 'react';
 import { StatusBar, StyleSheet } from 'react-native';
 import { StackNavigator } from './navigator/StackNavigator';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import Toast, { toastConfig } from './components/Toast';
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <NavigationContainer>
           <StatusBar barStyle="dark-content" />
           <StackNavigator />
+          <Toast config={toastConfig} />
         </NavigationContainer>
       </SafeAreaView>
     </SafeAreaProvider>

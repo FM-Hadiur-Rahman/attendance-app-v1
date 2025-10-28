@@ -24,6 +24,7 @@ import StaffRecordScreen from '../screens/admin/main/StaffRecordScreen';
 import Footer_S from '../components/Footer_S';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
 import BranchScreen from '../screens/superadmin/main/BranchScreen';
+import BranchProfileScreen from '../screens/superadmin/main/BranchProfileScreen';
 
 
 
@@ -146,6 +147,11 @@ export const StackNavigator: React.FC = () => {
       <Stack.Screen
         name="BranchScreen"
         component={BranchScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BranchProfileScreen"
+        component={BranchProfileScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
