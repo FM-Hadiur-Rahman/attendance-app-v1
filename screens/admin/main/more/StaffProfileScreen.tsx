@@ -624,7 +624,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                             <Image source={require("../../../../assets/icons/p_profile_b.png")} style={styles.icon} />
                             <Text style={styles.infoLabel}>{lang.fullname}</Text>
                         </View>
-                        <Text style={styles.infoValue}>{currentUser?.fullname}</Text>
+                        <Text style={styles.infoValue}numberOfLines={1} ellipsizeMode="tail">{currentUser?.fullname}</Text>
                     </View>
 
                     <TouchableOpacity activeOpacity={0.7} onPress={() => setPositionModalVisible(true)} style={{ marginBottom: 12, paddingHorizontal: 12 }}>
@@ -633,7 +633,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                             <Text style={styles.infoLabel}>{lang.position}</Text>
                         </View>
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Text style={styles.infoValue}>{currentUser?.position}</Text>
+                            <Text style={styles.infoValue}numberOfLines={1} ellipsizeMode="tail">{currentUser?.position}</Text>
                         </View>
                     </TouchableOpacity>
 
@@ -643,7 +643,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                             <Text style={styles.infoLabel}>{lang.email}</Text>
                         </View>
                         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: '100%' }}>
-                            <Text style={styles.infoValue}>{currentUser?.email}</Text>
+                            <Text style={styles.infoValue} numberOfLines={1} ellipsizeMode="tail">{currentUser?.email}</Text>
 
                             <TouchableOpacity
                                 style={styles.actionButton}
@@ -701,7 +701,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                             <Image source={require("../../../../assets/icons/p_profile_b.png")} style={styles.icon} />
                             <Text style={styles.infoLabel}>{lang.username}</Text>
                         </View>
-                        <Text style={styles.infoValue}>{(currentUser as any)?.username ?? (currentUser as any)?.userName}</Text>
+                        <Text style={styles.infoValue} numberOfLines={1} ellipsizeMode="tail">{(currentUser as any)?.username ?? (currentUser as any)?.userName}</Text>
                     </View>
 
                     <View style={{ marginBottom: 0, paddingHorizontal: 12 }}>
@@ -712,7 +712,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                         <Text style={styles.infoValue}>{"*".repeat(((currentUser as any)?.password?.length) || 5)}</Text>
                     </View>
                 </CartBox>
-
                 <View style={{ paddingHorizontal: 20 }}>
                     <CartBox backgroundColor={colors.background} borderRadius={10} paddingTop={12} paddingBottom={12} paddingLeft={20} paddingRight={20} alignItems="flex-start" onPress={() => setDeletePopupVisible(true)}>
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -923,15 +922,16 @@ const styles = StyleSheet.create({
     infoLabel: {
         fontSize: fonts.size.s,
         color: colors.subtext,
+        maxWidth:"80%"
     },
     infoValue: {
         fontSize: fonts.size.m,
         fontWeight: fonts.weight.medium as any,
         color: colors.text,
         paddingHorizontal: 25,
+        maxWidth: 220,
     },
     actionButton: {
-        marginLeft: 12,
         backgroundColor: colors.primary,
         paddingHorizontal: 20,   // wider
         paddingVertical: 6,      // taller

@@ -379,7 +379,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
                 <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
                   {displayName}
                 </Text>
-                <Text style={styles.position}>{position}</Text>
+                <Text style={styles.position}numberOfLines={1} ellipsizeMode="tail">{position}</Text>
               </View>
             </View>
             <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
