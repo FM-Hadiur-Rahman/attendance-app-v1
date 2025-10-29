@@ -101,5 +101,65 @@ export const getBranchDetails = async (branchId: string) => {
   }
 };
 
+export const getWeeklySchedules = async (opts: { userId?: string; timezone?: string } = {}) => {
+  const { userId, timezone = "Asia/Colombo" } = opts;
+
+  const today = new Date();
+  const day = today.getDay();
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - day);
+  sunday.setHours(0, 0, 0, 0);
+
+  const saturday = new Date(sunday);
+  saturday.setDate(sunday.getDate() + 6);
+  saturday.setHours(23, 59, 59, 999);
+
+  try {
+    const resp = await axiosInstance.get("/schedule", { params: { page: 1, limit: 100 } });
+    const allSchedules = resp.data?.schedules ?? resp.data?.data ?? [];
+
+    const weekSchedules = allSchedules.filter((s: any) => {
+      const schedDate = new Date(s.date);
+      return schedDate >= sunday && schedDate <= saturday &&
+        (!userId || s.employee_id?._id === userId);
+    });
+
+    // 🧠 Debug log for your user’s weekly schedule
+    if (userId) {
+      console.log("📆 Weekly Schedules for User:", userId,);
+      weekSchedules.forEach((s: any) => {
+        console.log(
+          `➡️ ${s.day_of_week} (${new Date(s.date).toLocaleDateString("en-CA", { timeZone: timezone })})`,
+          `| Branch: ${s.branch_id?.name}`,
+          `| ${s.start_time} - ${s.end_time}`
+        );
+      });
+
+      if (weekSchedules.length === 0) {
+        console.log("⚠️ No schedules found for this user in the current week.");
+      }
+    }
+
+  
+return weekSchedules.map((s: any) => ({
+  id: s._id,
+  userId: s.employee_id?._id,
+  username: s.employee_id?.username,
+  branchId: s.branch_id?._id,       // schedule branch ID
+  branchName: s.branch_id?.name,    // schedule branch name
+  date: s.date,
+  start_time: s.start_time,
+  end_time: s.end_time,
+  day_of_week: s.day_of_week,
+  raw: s,
+}));
+
+  } catch (err: any) {
+    console.error("❌ getWeeklySchedules failed:", err.response?.data ?? err.message);
+    return [];
+  }
+};
+
+
 
 

@@ -60,7 +60,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [allSchedules, setAllSchedules] = useState<any[]>([]);    // for all fetched schedules
 
 
-  const CHECKIN_RADIUS = 8932041.112879  // keep radius same (meters)
+  const CHECKIN_RADIUS = 8912969.740857948 // keep radius same (meters)
 
 
   let nextSchedule: Schedule | undefined = undefined;
@@ -950,10 +950,17 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               // }}
 
               onPress={() => {
+                // First: check if user is within allowed radius
+                if (!withinRange) {
+                  showErrorToast("You are too far from the shop. Cannot check in.");
+                  return; // stop execution
+                }
+
+                // Second: check schedule timing
                 if (handleCheckInAttempt()) {
-                  setShowPopup(true);
+                  setShowPopup(true); // show confirmation popup
                 } else {
-                  showErrorToast(`You can only check in 15 minutes before ${todaySchedule.start_time}`);
+                  showErrorToast(`You can only check in 15 minutes before ${todaySchedule?.start_time}`);
                 }
               }}
               backgroundColor={withinRange ? colors.primary : colors.button_background}
