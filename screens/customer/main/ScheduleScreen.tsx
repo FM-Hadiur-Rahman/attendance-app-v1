@@ -167,23 +167,38 @@ export default function ScheduleScreen(props: any) {
                     width="auto"
                     containerStyle={[
                       styles.day,
-                      expired ? { backgroundColor: colors.background, borderColor: colors.background } : {},
+                      expired || !hasScheduleForStaff
+                        ? { backgroundColor: colors.background, borderColor: colors.background }
+                        : {},
                     ]}
                   >
-                    <Text style={[styles.day_text, expired ? { color: colors.subtext } : {}]}>
+                    <Text
+                      style={[
+                        styles.day_text,
+                        expired || !hasScheduleForStaff ? { color: colors.subtext } : {},
+                      ]}
+                    >
                       {`${dateNum}`}
                     </Text>
-                    <Text style={[styles.day_text, expired ? { color: colors.subtext } : {}]}>
+                    <Text
+                      style={[
+                        styles.day_text,
+                        expired || !hasScheduleForStaff ? { color: colors.subtext } : {},
+                      ]}
+                    >
                       {`${wk}`}
                     </Text>
                   </CartBox>
+
 
                   <TouchableOpacity style={{ flex: 1 }} activeOpacity={expired ? 1 : 0.8}>
                     <CartBox
                       width="auto"
                       containerStyle={[
                         styles.time,
-                        expired ? { backgroundColor: colors.background, borderColor: colors.background } : {},
+                        (expired || !hasScheduleForStaff)
+                          ? { backgroundColor: colors.background, borderColor: colors.background }
+                          : {},
                       ]}
                     >
                       <View style={{ alignItems: "center" }}>
@@ -200,7 +215,10 @@ export default function ScheduleScreen(props: any) {
                                   style={styles.branch}
                                 />
                                 <Text
-                                  style={[styles.branch_name, expired ? { color: colors.subtext } : {}]}
+                                  style={[
+                                    styles.branch_name,
+                                    (expired || !hasScheduleForStaff) ? { color: colors.subtext } : {},
+                                  ]}
                                   ellipsizeMode="tail"
                                   numberOfLines={1}
                                 >
@@ -219,18 +237,30 @@ export default function ScheduleScreen(props: any) {
                                   }
                                   style={styles.clock}
                                 />
-                                <Text style={[styles.time_text, expired ? { color: colors.subtext } : {}]}>
+                                <Text
+                                  style={[
+                                    styles.time_text,
+                                    (expired || !hasScheduleForStaff) ? { color: colors.subtext } : {},
+                                  ]}
+                                >
                                   {displayTime}
                                 </Text>
                               </View>
                             )}
                           </>
                         ) : (
-                        
-                          <Text style={styles.noScheduleText}>Schedule not added</Text>
+                          <Text
+                            style={[
+                              styles.noScheduleText,
+                              { color: colors.subtext },
+                            ]}
+                          >
+                            Schedule not added
+                          </Text>
                         )}
                       </View>
                     </CartBox>
+
                   </TouchableOpacity>
                 </View>
               );
@@ -320,7 +350,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   clock: { width: 14, height: 14, marginRight: 4 },
-    noScheduleText: {
+  noScheduleText: {
     fontSize: 14,
     color: "#999",
     fontFamily: fonts.family.regular
