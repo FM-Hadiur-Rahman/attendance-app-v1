@@ -263,3 +263,95 @@ export const deleteUser = async (staffId: string): Promise<any> => {
     );
   }
 };
+export const getBranchById = async (branchId: string): Promise<{ _id: string; name: string } | null> => {
+  try {
+    if (!branchId) throw new Error('getBranchById: missing branchId');
+
+    // Try several likely endpoints. Use axiosInstance so Authorization header is included.
+    const tryPaths = [
+      // common patterns
+      `/branch/${branchId}`,
+      `/branches/${branchId}`,
+      `/api.branch/${branchId}`,   // matches the URL you provided: https://api.mrbrbackpunkte.de/api.branch/(branchid)
+      // some APIs expose dot-style paths (rare) — as an absolute fallback use full URL
+      `https://api.mrbrbackpunkte.de/api.branch/${branchId}`,
+    ];
+
+    let lastErr: any = null;
+    for (const p of tryPaths) {
+      try {
+        // If p is absolute URL axiosInstance.get will still work.
+        const res = await axiosInstance.get(p);
+        const data = res?.data ?? null;
+
+        // Possible shapes:
+        // { data: { _id, name, ... } } OR { branch: { _id, name } } OR { _id, name }
+        const branch =
+          data?.data?.branch ??
+          data?.branch ??
+          data?.data ??
+          data;
+
+        const id = branch?._id ?? branch?.id ?? branchId;
+        const name = branch?.name ?? branch?.branch_name ?? branch?.title ?? null;
+
+        if (id) {
+          return { _id: String(id), name: String(name ?? id) };
+        }
+      } catch (err) {
+        lastErr = err;
+        // try the next candidate
+      }
+    }
+
+    console.warn('getBranchById: all attempts failed', lastErr);
+    return null;
+  } catch (error: any) {
+    console.error('getBranchById() failed:', error?.response ?? error);
+    return null;
+  }
+};
+
+export const postSchedulesBulk = async (
+  employeeId: string,
+  branchId: string,
+  schedules: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }>,
+  adminToken?: string
+) => {
+  try {
+    // defensive: filter out any malformed items
+    const bodySchedules = (schedules || []).filter(s =>
+      s && typeof s.date === 'string' && typeof s.day_of_week === 'string' &&
+      typeof s.start_time === 'string' && typeof s.end_time === 'string'
+    ).map(s => ({
+      date: s.date,
+      day_of_week: s.day_of_week,
+      start_time: s.start_time,
+      end_time: s.end_time,
+    }));
+
+    const body = {
+      employee_id: String(employeeId),
+      branch_id: String(branchId ?? ''),
+      schedules: bodySchedules,
+    };
+
+    if (!body.employee_id || !body.branch_id) {
+      throw new Error('Missing employee_id or branch_id');
+    }
+
+    console.log('postSchedulesBulk -> sending body:', JSON.stringify(body, null, 2));
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+
+    const resp = await axiosInstance.post('/schedule/bulk', body, { headers });
+    return resp.data;
+  } catch (e: any) {
+    console.warn('postSchedulesBulk error', e?.response ?? e);
+    if (e?.response?.data) {
+      console.warn('server response data:', JSON.stringify(e.response.data, null, 2));
+    }
+    throw e;
+  }
+};
