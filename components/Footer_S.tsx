@@ -22,6 +22,7 @@ const Footer_S = () => {
   const navigation = useNavigation<any>();
 
   const userId = route.params?.userId;
+  const langId = route.params?.langId ?? 'en';
   const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
 
   // Initialize selectedTab from route params if present, otherwise default to DashboardScreen
@@ -109,7 +110,10 @@ const Footer_S = () => {
             <TouchableOpacity
               key={tab.key}
               style={styles.tabItem}
-              onPress={() => setSelectedTab(tab.key)}
+              onPress={() => {
+                console.log('Footer -> tab press:', tab.key, { userId, langId });
+                setSelectedTab(tab.key);
+              }}
               activeOpacity={0.7}
             >
               <View style={{ width: 28, height: 28, justifyContent: 'center', alignItems: 'center' }}>
