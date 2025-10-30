@@ -375,7 +375,7 @@ export default function LoginScreen() {
             <InputBox
               label={lang.password_label}
               placeholder={lang.password_placeholder}
-              secureTextEntry={showPassword ? false : false} // same as above
+              secureTextEntry={showPassword ? false : true} // same as above
               value={password}
               setValue={handlePasswordChange}
               rightIcon={showPassword ? require('../../assets/icons/eye_open.png') : require('../../assets/icons/eye_close.png')}

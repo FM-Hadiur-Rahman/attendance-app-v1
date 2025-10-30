@@ -1,3 +1,4 @@
+// src/screens/admin/staff/AddStaffScreen.tsx
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
     View,
@@ -15,8 +16,6 @@ import {
     TouchableWithoutFeedback,
     Platform,
     RefreshControl,
-    findNodeHandle,
-    UIManager,
     Dimensions,
     LayoutChangeEvent,
 } from "react-native";
@@ -27,43 +26,93 @@ import Header from "../../../../components/Header";
 import CartBox from "../../../../components/CartBox";
 import { Button1 } from "../../../../components/Button";
 import InputBox from "../../../../components/InputBox";
-import { users } from "../../../../api/Users";
 import colors from "../../../../styles/Colors";
 import fonts from "../../../../styles/Fonts";
 import Popup from "../../../../components/Popup";
 import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
-import { branches as importedBranches } from "../../../../api/Branch";
+
+// API helpers (changed per your request)
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axiosInstance from '../../../../api/axiosInstance';
+import { register as authRegister } from "../../../../api/auth/authService";
+import { getBranchId } from "../../../../api/profile";
+import { getUsers } from "../../../../api/profile";
 
 const PHONE_RULES: Record<string, { min: number; max: number; example?: string }> = {
-    '94': { min: 9, max: 9, example: '7XXXXXXXX' },
-    '49': { min: 7, max: 11, example: 'variable (up to 11)' },
-    '33': { min: 9, max: 9, example: '9 digits after +33' },
-    '44': { min: 10, max: 10, example: '10 digits after +44' },
-    '966': { min: 9, max: 9, example: '9 digits after +966' },
-    '7': { min: 10, max: 10, example: '10 digits after +7' },
-    '90': { min: 10, max: 10, example: '10 digits after +90' },
+    "94": { min: 9, max: 9, example: "7XXXXXXXX" },
+    "49": { min: 7, max: 11, example: "variable (up to 11)" },
+    "33": { min: 9, max: 9, example: "9 digits after +33" },
+    "44": { min: 10, max: 10, example: "10 digits after +44" },
+    "966": { min: 9, max: 9, example: "9 digits after +966" },
+    "7": { min: 10, max: 10, example: "10 digits after +7" },
+    "90": { min: 10, max: 10, example: "10 digits after +90" },
 };
 const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 
 const AddStaffScreen: React.FC = (props: any) => {
-
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
-
     const [refreshing, setRefreshing] = useState(false);
-
     const { userId, langId, onSave } = route.params || {};
-    const user = users.find((u) => u.id === userId) || users[0];
-
     const currentLang = langId || "en";
     const lang = translations[currentLang];
+
+    const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // loading flags (optional, useful if you want a spinner near input)
+    const [checkingEmail, setCheckingEmail] = useState(false);
+
+    const checkUsernameExists = async (usernameToCheck: string): Promise<boolean> => {
+        if (!usernameToCheck) return false;
+
+        try {
+            const users = await getUsers({ username: usernameToCheck, limit: 1000 });
+
+            if (!Array.isArray(users)) return false;
+
+            const target = usernameToCheck.trim();
+            const found = users.some((u: any) => {
+                if (!u) return false;
+                const e = (u.username ?? "").toString();
+                return e === target;
+            });
+
+            return found;
+        } catch (e) {
+            console.warn("checkUsernameExists failed:", e);
+            return false;
+        }
+    };
+
+    const checkEmailExists = async (emailToCheck: string): Promise<boolean> => {
+        if (!emailToCheck) return false;
+
+        try {
+            const users = await getUsers({ email: emailToCheck, limit: 1000 });
+
+            if (!Array.isArray(users)) return false;
+
+            const target = emailToCheck.trim().toLowerCase();
+            const found = users.some((u: any) => {
+                if (!u) return false;
+                const e = (u.email ?? u.username ?? "").toString().trim().toLowerCase();
+                return e === target;
+            });
+
+            return found;
+        } catch (e) {
+            console.warn("checkEmailExists failed:", e);
+            return false;
+        }
+    };
+
+
     // step control
     const [step, setStep] = useState<number>(1);
-
     // profile image
     const [profileImage, setProfileImage] = useState<string | null>(null);
-
     // refs
     const nameRef = useRef<TextInput | null>(null);
     const positionRef = useRef<TextInput | null>(null);
@@ -72,15 +121,12 @@ const AddStaffScreen: React.FC = (props: any) => {
     const usernameRef = useRef<TextInput | null>(null);
     const passwordRef = useRef<TextInput | null>(null);
     const confirmPasswordRef = useRef<TextInput | null>(null);
-
     // fields
     const [fullName, setFullName] = useState("");
     const [position, setPosition] = useState("");
     const [email, setEmail] = useState("");
     const [phone, setPhone] = useState("");
-    const [phoneRaw, setPhoneRaw] = useState('');
-    const [longitude, setLongitude] = useState('');
-    const [latitude, setLatitude] = useState('');
+    const [phoneRaw, setPhoneRaw] = useState("");
     const [selectedCountry, setSelectedCountry] = useState({
         id: 1,
         name: "Deutsch",
@@ -94,35 +140,22 @@ const AddStaffScreen: React.FC = (props: any) => {
     const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [confirmPopupVisible, setConfirmPopupVisible] = useState(false);
-
-
     // Branch selection (typeable)
     const [selectedBranch, setSelectedBranch] = useState<string>("");
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
-
-
     const branchInputWrapperRef = useRef<View | null>(null);
     const [branchInputLayout, setBranchInputLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-
-    const [selectedDayYmd, setSelectedDayYmd] = useState<string | null>(null);
     const [timeFrom, setTimeFrom] = useState<string>("");
     const [timeFromError, setTimeFromError] = useState<string>("");
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [durationHours, setDurationHours] = useState<string>("");
     const [durationError, setDurationError] = useState<string>("");
     const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
-
-
     const [schedules, setSchedules] = useState<{ [dayName: string]: { startTime: string; endTime: string; duration?: number } }>({});
     const [activeDate, setActiveDate] = useState<string | null>(null); // will hold weekday name like "Sunday"
-
-
     const FULL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-
     const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-
     const formatTime12 = (hhmmss: string) => {
         if (!hhmmss) return "";
         const parts = hhmmss.split(":");
@@ -134,7 +167,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         if (hh === 0) hh = 12;
         return `${hh}:${mm} ${ampm}`;
     };
-
     const timeStringToDate = (timeStr: string) => {
         const now = new Date();
         now.setSeconds(0, 0);
@@ -145,8 +177,6 @@ const AddStaffScreen: React.FC = (props: any) => {
     };
 
     const dateToYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-
-
     const getWeekDates = () => {
         const today = new Date();
         const dayIdx = today.getDay();
@@ -163,7 +193,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         return days;
     };
     const weekDates = getWeekDates();
-
     const onShowNativeTimePicker = () => setShowTimePicker(true);
     const onNativeTimeChange = (event: any, selected?: Date) => {
         setShowTimePicker(false);
@@ -174,13 +203,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         setTimeFrom(`${hh}:${mm}:${ss}`);
         setTimeFromError("");
     };
-
-
-    const parseYmdToDate = (ymd: string) => {
-        const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
-        return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
-    };
-
     const buildScheduleArray = () => {
         const result: Array<any> = [];
 
@@ -199,11 +221,10 @@ const AddStaffScreen: React.FC = (props: any) => {
         return result;
     };
 
-
     const onAddSchedule = () => {
         if (!timeFrom || !durationHours) {
-            if (!timeFrom) setTimeFromError("Enter valid start time (HH:MM:SS)");
-            if (!durationHours) setDurationError("Enter duration in hours");
+            if (!timeFrom) setTimeFromError(lang.invalid_start_time || "Enter valid start time (HH:MM:SS)");
+            if (!durationHours) setDurationError(lang.invalid_duration || "Enter duration in hours");
             return;
         }
 
@@ -223,7 +244,7 @@ const AddStaffScreen: React.FC = (props: any) => {
 
         const dayName = activeDate; // e.g. "Sunday"
 
-        setSchedules(prev => {
+        setSchedules((prev) => {
             const newSchedules = {
                 ...prev,
                 [dayName]: {
@@ -232,15 +253,11 @@ const AddStaffScreen: React.FC = (props: any) => {
                     duration: durationNum,
                 },
             };
-
             console.log("Schedule added for", dayName, "=>", newSchedules[dayName]);
             console.table(Object.entries(newSchedules).map(([day, sObj]) => ({ day, start: sObj.startTime, end: sObj.endTime, duration: sObj.duration })));
-
             return newSchedules;
         });
-
         setAddScheduleModalVisible(false);
-        // optional: clear inputs
         setTimeFrom("");
         setDurationHours("");
         setTimeFromError("");
@@ -248,49 +265,46 @@ const AddStaffScreen: React.FC = (props: any) => {
     };
 
     const getPhoneRuleForSelected = () => {
-        const codeDigits = (selectedCountry?.code || '').replace(/\D/g, '');
+        const codeDigits = (selectedCountry?.code || "").replace(/\D/g, "");
         return PHONE_RULES[codeDigits] || DEFAULT_PHONE_RULE;
     };
 
     const formatPhoneForDisplay = (digitsOnly: string) => {
-        if (!digitsOnly) return '';
-        return digitsOnly.replace(/(.{3})/g, '$1 ').trim();
+        if (!digitsOnly) return "";
+        return digitsOnly.replace(/(.{3})/g, "$1 ").trim();
     };
 
     // on change for phone field (UI input)
     const onPhoneChange = (val: string) => {
         const rule = getPhoneRuleForSelected();
-
-        let raw = val.replace(/\D/g, '');
-        const hasLeadingZero = raw.startsWith('0');
+        let raw = val.replace(/\D/g, "");
+        const hasLeadingZero = raw.startsWith("0");
         const maxAllowedForDisplay = rule.max + (hasLeadingZero ? 1 : 0);
         raw = raw.slice(0, maxAllowedForDisplay);
-        let normalized = raw.startsWith('0') ? raw.slice(1) : raw;
+        let normalized = raw.startsWith("0") ? raw.slice(1) : raw;
         normalized = normalized.slice(0, rule.max);
-
         setPhone(formatPhoneForDisplay(raw));
         setPhoneRaw(normalized);
 
         // live validation
         if (!normalized || normalized.length === 0) {
-            setErrors(prev => ({ ...prev, phone: lang.phone_required }));
+            setErrors((prev) => ({ ...prev, phone: lang.phone_required }));
             return;
         }
         if (normalized.length < rule.min) {
             if (rule.min === rule.max) {
-                setErrors(prev => ({ ...prev, phone: `${lang.Please_complete_all} ${rule.max} ${lang.digits}` }));
+                setErrors((prev) => ({ ...prev, phone: `${lang.Please_complete_all} ${rule.max} ${lang.digits}` }));
             } else {
-                setErrors(prev => ({ ...prev, phone: `${lang.Enter_at_least} ${rule.min} ${lang.digits}` }));
+                setErrors((prev) => ({ ...prev, phone: `${lang.Enter_at_least} ${rule.min} ${lang.digits}` }));
             }
             return;
         }
-        setErrors(prev => ({ ...prev, phone: '' }));
+        setErrors((prev) => ({ ...prev, phone: "" }));
     };
 
     const setFieldTouched = (field: string) => {
-        setTouched(prev => ({ ...prev, [field]: true }));
+        setTouched((prev) => ({ ...prev, [field]: true }));
     };
-
     // Camera & gallery functions
     const openCamera = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -312,7 +326,6 @@ const AddStaffScreen: React.FC = (props: any) => {
             setModalVisible(false);
         }
     };
-
     const openGallery = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
@@ -334,44 +347,31 @@ const AddStaffScreen: React.FC = (props: any) => {
             setModalVisible(false);
         }
     };
-
-
     // error states
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [touched, setTouched] = useState<{ [key: string]: boolean }>({});
 
     const validateFieldp = (field: string) => {
-        let error = '';
+        let error = "";
         switch (field) {
-            case 'phone':
-                {
-                    const normalized = phoneRaw || '';
-                    const phoneRule = getPhoneRuleForSelected();
-                    if (!normalized) error = lang.phone_required;
-                    else if (normalized.length < phoneRule.min) error = `${lang.Enter_at_least} ${phoneRule.min} ${lang.digits}`;
-                    else if (normalized.length > phoneRule.max) error = `${lang.Maximum} ${phoneRule.max} ${lang.digits}`;
-                }
-                break;
+            case "phone": {
+                const normalized = phoneRaw || "";
+                const phoneRule = getPhoneRuleForSelected();
+                if (!normalized) error = lang.phone_required;
+                else if (normalized.length < phoneRule.min) error = `${lang.Enter_at_least} ${phoneRule.min} ${lang.digits}`;
+                else if (normalized.length > phoneRule.max) error = `${lang.Maximum} ${phoneRule.max} ${lang.digits}`;
+            }
         }
-        setErrors(prev => ({ ...prev, [field]: error }));
-        return error === '';
+        setErrors((prev) => ({ ...prev, [field]: error }));
+        return error === "";
     };
-
-    const validateAllStep1 = () => {
-        const fields = ['phone'];
-        const newTouched: any = {};
-        fields.forEach(f => (newTouched[f] = true));
-        setTouched(prev => ({ ...prev, ...newTouched }));
-
-        const results = fields.map(f => validateFieldp(f));
-        return results.every(Boolean);
-    };
+    const [emailExists, setEmailExists] = useState(false);
+    const [usernameExists, setUsernameExists] = useState(false);
 
     const validateEmail = (email: string): boolean => {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return re.test(String(email).toLowerCase());
     };
-
     const validatePhone = (phoneValue: string): boolean => {
         const digits = (phoneValue || "").replace(/\D/g, "");
         const rule = getPhoneRuleForSelected();
@@ -381,16 +381,10 @@ const AddStaffScreen: React.FC = (props: any) => {
         const re = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
         return re.test(password);
     };
-
     // validate step 1
     const validateStep1 = (): boolean => {
         let valid = true;
         let newErrors: any = {};
-
-        // if (!profileImage) {
-        //     newErrors.profileImage = lang.profile_image_required;
-        //     valid = false;
-        // }
 
         if (!fullName) {
             newErrors.fullName = lang.full_name_required;
@@ -419,29 +413,35 @@ const AddStaffScreen: React.FC = (props: any) => {
             valid = false;
         } else if (digits.length < rule.min) {
             if (rule.min === rule.max) {
-                newErrors.phone = `${lang.Please_complete_all || 'Please complete all'} ${rule.max} ${lang.digits || 'digits'}`;
+                newErrors.phone = `${lang.Please_complete_all || "Please complete all"} ${rule.max} ${lang.digits || "digits"}`;
             } else {
-                newErrors.phone = `${lang.Enter_at_least || 'Enter at least'} ${rule.min} ${lang.digits || 'digits'}`;
+                newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${rule.min} ${lang.digits || "digits"}`;
             }
             valid = false;
         } else if (digits.length > rule.max) {
-            newErrors.phone = `${lang.Maximum || 'Maximum'} ${rule.max} ${lang.digits || 'digits'}`;
+            newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${lang.digits || "digits"}`;
             valid = false;
         }
-
         setErrors(newErrors);
         return valid;
     };
 
     // validate step 2
-    const validateStep2 = (): boolean => {
+    const validateStep2 = async (): Promise<boolean> => {
         let valid = true;
         let newErrors: any = {};
 
         if (!username) {
             newErrors.username = lang.username_required;
             valid = false;
+        } else {
+            const exists = await checkUsernameExists(username);
+            if (exists) {
+                newErrors.username = lang.username_exists; // make sure to add this string in lang file
+                valid = false;
+            }
         }
+
         if (!password) {
             newErrors.password = lang.password_required;
             valid = false;
@@ -461,10 +461,24 @@ const AddStaffScreen: React.FC = (props: any) => {
         setErrors(newErrors);
         return valid;
     };
+    const [checkingUsername, setCheckingUsername] = useState(false);
+    const onSavePress = async () => {
+        if (checkingUsername) return; // avoid duplicate requests
+
+        try {
+            setCheckingUsername(true);
+            const isValid = await validateStep2();
+            if (isValid) {
+                setConfirmPopupVisible(true);
+            }
+        } finally {
+            setCheckingUsername(false);
+        }
+    };
+
 
     const validateField = (field: string, value: string) => {
         let error = "";
-
         switch (field) {
             case "fullName":
                 if (!value) error = lang.full_name_required;
@@ -487,88 +501,158 @@ const AddStaffScreen: React.FC = (props: any) => {
             case "username":
                 if (!value) {
                     error = lang.username_required;
-                } else {
-                    const exists = users.some(
-                        (u) => u.username.toLowerCase() === value.toLowerCase()
-                    );
-                    if (exists) error = lang.username_exists;
                 }
+                // removed local uniqueness check (we now rely on backend)
                 break;
 
             case "password":
                 if (!value) error = lang.password_required;
-                else if (!validatePassword(value))
-                    error = lang.password_invalid;
+                else if (!validatePassword(value)) error = lang.password_invalid;
                 break;
-
 
             case "confirmPassword":
                 if (!value) error = lang.confirm_password_required;
                 else if (value !== password) error = lang.passwords_no_match;
                 break;
         }
-
         setErrors((prev) => ({ ...prev, [field]: error }));
     };
 
-
-
     // handlers
-    const handleNext = () => {
-        if (validateStep1()) {
-            // use digits-only phoneRaw when constructing finalPhone
-            const finalPhone = `${selectedCountry.code}${phoneRaw}`;
-
-            const step1_Data = {
-                id: undefined,
-                firstname: fullName.split(" ")[0] ?? "",
-                lastname: fullName.split(" ")[1] ?? "",
-                position,
-                email,
-                phone: finalPhone,
-                userId,
-                langId
-            };
-
-            console.log("Step1 data:", step1_Data);
-            goToStep2();
-        } else {
-            // ensure phone field shows touched error if step validation fails
-            setTouched(prev => ({ ...prev, phone: true }));
+    const handleNext = async () => {
+        if (!validateStep1()) {
+            setTouched((prev) => ({ ...prev, phone: true }));
+            return;
         }
+
+        // format finalPhone as earlier
+        const finalPhone = `${selectedCountry.code}${phoneRaw}`;
+
+        if (email && validateEmail(email)) {
+            try {
+                // optionally set a small UI flag here (checkingEmail) if you want a spinner
+                const exists = await checkEmailExists(email);
+                if (exists) {
+                    // set error and prevent going to next step
+                    setErrors((prev) => ({ ...prev, email: lang.email_in_use || "Email already in use" }));
+                    // ensure email input is focused so user notices (optional)
+                    emailRef.current?.focus();
+                    return;
+                } else {
+                    // clear any previous email-exists error
+                    setErrors((prev) => ({ ...prev, email: "" }));
+                }
+            } catch (e) {
+                // if the check fails unexpectedly, we do not block user — but log it
+                console.warn("Email availability check failed, proceeding without blocking:", e);
+            }
+        }
+
+        // proceed to build step1 data and go to step 2
+        const nameParts = fullName.trim().split(/\s+/);
+        const firstname = nameParts[0] ?? "";
+        const lastname = nameParts.slice(1).join(" ") ?? "";
+
+        const step1_Data = {
+            id: undefined,
+            firstname,
+            lastname,
+            position,
+            email,
+            phone: finalPhone,
+            userId,
+            langId,
+        };
+
+        console.log("Step1 data:", { ...step1_Data, phone: step1_Data.phone });
+        goToStep2();
     };
-    const handleSave = () => {
-        if (validateStep2()) {
-            // use phoneRaw here as well
-            const finalPhone = `${selectedCountry.code}${phoneRaw}`;
-            const scheduleArray = buildScheduleArray();
 
-            const newStaff = {
-                id: undefined,
-                firstname: fullName.split(" ")[0] ?? "",
-                lastname: fullName.split(" ")[1] ?? "",
-                position,
-                email,
-                phone: finalPhone,
-                username,
-                password,
-                role: "employee",
-                userId,
-                langId,
-                schedule: scheduleArray,
-            };
 
-            console.log("Staff saved (before callback):", newStaff);
 
+    const handleSave = async () => {
+        if (!validateStep2()) return;
+
+        // build payload (API expects "fullname" per your raw body)
+        const finalPhone = `${selectedCountry.code}${phoneRaw}`;
+
+        // Determine branch id to use: prefer selectedBranchId, else use saved admin branch
+        let branchIdToUse: string | null = selectedBranchId ?? null;
+        if (!branchIdToUse) {
+            try {
+                const saved = await getBranchId();
+                if (saved) branchIdToUse = saved;
+            } catch (e) {
+                console.warn("Failed to read saved branch id", e);
+            }
+        }
+
+        const payload: any = {
+            fullname: fullName,
+            branch: branchIdToUse ?? "",
+            username: username,
+            email: email,
+            password: password,
+            position: position,
+            phone: finalPhone,
+            role: "", // omit or empty to let backend default (you said role optional)
+        };
+
+        // Save current admin token & userId so we can restore later
+        let prevToken: string | null = null;
+        let prevUserId: string | null = null;
+        try {
+            prevToken = await AsyncStorage.getItem("userToken");
+            prevUserId = await AsyncStorage.getItem("userId");
+        } catch (e) {
+            console.warn("Failed to read previous auth data", e);
+        }
+
+        try {
+            // call register from AuthService
+            const result = await authRegister(payload);
+            // result contains { token, user } per interface
+            const createdUser = result?.user ?? null;
+
+            // call onSave callback without password
             if (onSave) {
-                onSave(newStaff);
+                try {
+                    const sanitized = { ...(createdUser || {}), password: undefined };
+                    onSave(sanitized);
+                } catch (e) {
+                    console.warn("onSave callback error", e);
+                }
             }
 
+            showSuccessToast(lang?.staff_created_success ?? "Staff created successfully");
             setConfirmPopupVisible(false);
             navigation.goBack();
+        } catch (err: any) {
+            console.error("Error creating staff via authRegister:", err?.response ?? err);
+            const message =
+                err?.response?.data?.message ??
+                err?.response?.data ??
+                err?.message ??
+                "Failed to create staff";
+            showErrorToast(String(message));
+        } finally {
+            // restore previous admin token and userId (if any) to avoid switching session
+            try {
+                if (prevToken) {
+                    await AsyncStorage.setItem("userToken", prevToken);
+                } else {
+                    await AsyncStorage.removeItem("userToken");
+                }
+                if (prevUserId) {
+                    await AsyncStorage.setItem("userId", prevUserId);
+                } else {
+                    await AsyncStorage.removeItem("userId");
+                }
+            } catch (e) {
+                console.warn("Failed to restore previous auth data", e);
+            }
         }
     };
-
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
@@ -598,7 +682,6 @@ const AddStaffScreen: React.FC = (props: any) => {
             setConfirmPassword("");
             setErrors({});
         }
-
         setTimeout(() => {
             setRefreshing(false);
         }, 1000);
@@ -606,7 +689,6 @@ const AddStaffScreen: React.FC = (props: any) => {
 
     const goToStep2 = () => {
         setStep(2);
-
     };
 
     const goToStep3 = () => {
@@ -621,24 +703,31 @@ const AddStaffScreen: React.FC = (props: any) => {
         setBranchInputLayout({ x, y, width, height });
     };
 
-    const openAddModalForDate = (ymd: string) => {
-        // convert YMD to weekday name
-        const d = new Date(ymd);
+    // Small safe parseYMD utility to avoid cross-engine Date parsing issues
+    const parseYMD = (ymd: string) => {
+        const [y, m, d] = ymd.split("-").map((n) => Number(n));
+        return new Date(y, m - 1, d);
+    };
+
+    const openAddModalForDate = async (ymd: string) => {
+        // convert YMD to weekday name using safe parse
+        const d = parseYMD(ymd);
         const dayName = FULL_WEEKDAYS[d.getDay()];
         setActiveDate(dayName);
 
-        // default branch selection as before...
-        if (!selectedBranch && user?.branch_id) {
-            const defaultBranch = importedBranches.find((b) => b.id === user.branch_id);
-            if (defaultBranch) {
-                setSelectedBranch(defaultBranch.name);
-                setSelectedBranchId(defaultBranch.id);
+        // if branch not selected, try fetching admin's saved branch id and set selectedBranchId
+        if (!selectedBranch && !selectedBranchId) {
+            try {
+                const saved = await getBranchId();
+                if (saved) {
+                    setSelectedBranchId(saved);
+                }
+            } catch (e) {
+                console.warn("Could not load saved branch id", e);
             }
         }
-
         setAddScheduleModalVisible(true);
     };
-
 
     const screenH = Dimensions.get("window").height;
     const screenW = Dimensions.get("window").width;
@@ -661,23 +750,104 @@ const AddStaffScreen: React.FC = (props: any) => {
 
     const handleProceedFromStep2 = () => {
         // Log a friendly summary to the console before proceeding
-        const summary = Object.keys(schedules).length === 0
-            ? "No schedules set for this week."
-            : Object.entries(schedules).map(([date, sObj]) => `${date}: ${sObj.startTime} - ${sObj.endTime}`).join("\n");
+        const summary =
+            Object.keys(schedules).length === 0
+                ? "No schedules set for this week."
+                : Object.entries(schedules).map(([date, sObj]) => `${date}: ${sObj.startTime} - ${sObj.endTime}`).join("\n");
 
         console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
         if (Object.keys(schedules).length > 0) {
-            console.table(
-                Object.entries(schedules).map(([date, sObj]) => ({ start: sObj.startTime, end: sObj.endTime }))
-            );
+            console.table(Object.entries(schedules).map(([date, sObj]) => ({ start: sObj.startTime, end: sObj.endTime })));
         }
         goToStep3();
     };
+    // username availability check
+    useEffect(() => {
+        // clear existing timer
+        if (usernameTimer.current) {
+            clearTimeout(usernameTimer.current);
+            usernameTimer.current = null;
+        }
 
+        // empty -> clear any error
+        if (!username) {
+            setErrors(prev => ({ ...prev, username: '' }));
+            setCheckingUsername(false);
+            return;
+        }
+
+        // kick off debounce
+        setCheckingUsername(true);
+        usernameTimer.current = setTimeout(async () => {
+            try {
+                const exists = await checkUsernameExists(username);
+                if (exists) {
+                    setErrors(prev => ({ ...prev, username: lang.username_exists || 'Username already taken' }));
+                } else {
+                    // only clear if there isn't another validation error
+                    setErrors(prev => ({ ...prev, username: prev.username === (lang.username_exists || 'Username already taken') ? '' : prev.username }));
+                }
+            } finally {
+                setCheckingUsername(false);
+            }
+        }, 600);
+
+        return () => {
+            if (usernameTimer.current) {
+                clearTimeout(usernameTimer.current);
+                usernameTimer.current = null;
+            }
+        };
+    }, [username]);
+
+    // email availability check (only when email format valid)
+    useEffect(() => {
+        if (emailTimer.current) {
+            clearTimeout(emailTimer.current);
+            emailTimer.current = null;
+        }
+
+        if (!email) {
+            setErrors(prev => ({ ...prev, email: '' }));
+            setCheckingEmail(false);
+            return;
+        }
+
+        // quick format check
+        if (!validateEmail(email)) {
+            // don't run availability check if invalid format
+            setErrors(prev => ({ ...prev, email: lang.invalid_email || 'Invalid email' }));
+            setCheckingEmail(false);
+            return;
+        } else {
+            // clear format error (we will check uniqueness)
+            setErrors(prev => ({ ...prev, email: '' }));
+        }
+
+        setCheckingEmail(true);
+        emailTimer.current = setTimeout(async () => {
+            try {
+                const exists = await checkEmailExists(email);
+                if (exists) {
+                    setErrors(prev => ({ ...prev, email: lang.email_in_use || 'Email already in use' }));
+                } else {
+                    setErrors(prev => ({ ...prev, email: '' }));
+                }
+            } finally {
+                setCheckingEmail(false);
+            }
+        }, 600);
+
+        return () => {
+            if (emailTimer.current) {
+                clearTimeout(emailTimer.current);
+                emailTimer.current = null;
+            }
+        };
+    }, [email]);
 
 
     return (
-
         <View style={styles.container}>
             <Header
                 backgroundColor={colors.secondary}
@@ -690,106 +860,52 @@ const AddStaffScreen: React.FC = (props: any) => {
                     onPress: () => {
                         if (step === 2) {
                             resetStep2Fields();
-                            setStep(1);   // go back to Step 1
+                            setStep(1); // go back to Step 1
                         } else if (step === 3) {
-                            // going back from step 3 -> step 2: also reset step2 fields so step2 is clean
                             resetStep2Fields();
                             setStep(2);
                         } else {
-                            navigation.goBack();  // exit screen
+                            navigation.goBack();
                         }
                     },
                 }}
                 center={{ type: "text", value: lang.profile, color: colors.text }}
             />
+
             <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-                <KeyboardAvoidingView
-                    style={{ flex: 1 }}
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 40} // adjust header height
-                >
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 40}>
                     <ScrollView
                         contentContainerStyle={styles.content}
-                        refreshControl={
-                            <RefreshControl
-                                refreshing={refreshing}
-                                onRefresh={onRefresh}
-                                progressBackgroundColor={colors.secondary}
-                                colors={[colors.primary]}
-                                tintColor={colors.primary}
-
-                            />
-                        }
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />}
                     >
                         <View style={styles.progressWrap}>
-                            {/* Step 1 */}
-                            <View
-                                style={[
-                                    styles.progressLine,
-                                    { backgroundColor: step >= 1 ? colors.primary : colors.progressBarBackground },
-                                ]}
-                            />
-
-                            {/* Step 2 */}
-                            <View
-                                style={[
-                                    styles.progressLine,
-                                    { backgroundColor: step >= 2 ? colors.primary : colors.progressBarBackground },
-                                ]}
-                            />
-
-                            {/* Step 3 */}
-                            <View
-                                style={[
-                                    styles.progressLine,
-                                    { backgroundColor: step >= 3 ? colors.primary : colors.progressBarBackground },
-                                ]}
-                            />
+                            <View style={[styles.progressLine, { backgroundColor: step >= 1 ? colors.primary : colors.progressBarBackground }]} />
+                            <View style={[styles.progressLine, { backgroundColor: step >= 2 ? colors.primary : colors.progressBarBackground }]} />
+                            <View style={[styles.progressLine, { backgroundColor: step >= 3 ? colors.primary : colors.progressBarBackground }]} />
                         </View>
 
                         {step === 1 ? (
                             <>
-                                <View style={{}}>
+                                <View>
                                     <Text style={styles.title}>{lang.basic_details}</Text>
                                     <Text style={styles.subtitle}>{lang.basic_details_desc}</Text>
                                 </View>
-                                <CartBox
-                                    alignItems="center"
-                                    marginTop={20}
-                                    marginBottom={8}
-                                    backgroundColor={colors.secondary}
-                                    borderRadius={0}
-                                    paddingTop={10}
-                                    paddingBottom={10}
-                                >
+
+                                <CartBox alignItems="center" marginTop={20} marginBottom={8} backgroundColor={colors.secondary} borderRadius={0} paddingTop={10} paddingBottom={10}>
                                     <View style={styles.profileImageContainer}>
-                                        {profileImage ? (
-                                            <Image source={{ uri: profileImage }} style={styles.image} />
-                                        ) : (
-                                            <Image
-                                                source={require("../../../../assets/icons/profile_gray.png")}
-                                                style={styles.image}
-                                            />
-                                        )}
+                                        {profileImage ? <Image source={{ uri: profileImage }} style={styles.image} /> : <Image source={require("../../../../assets/icons/profile_gray.png")} style={styles.image} />}
                                     </View>
                                     <View style={styles.addprofile}>
                                         <TouchableOpacity onPress={() => setModalVisible(true)}>
-                                            <Text style={[
-                                                styles.addPhoto,
-                                                errors.profileImage ? { color: colors.error_text } : null
-                                            ]}>
-                                                {lang.add_profile}
-                                            </Text>
+                                            <Text style={[styles.addPhoto, errors.profileImage ? { color: colors.error_text } : null]}>{lang.add_profile}</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </CartBox>
-
                                 <InputBox
                                     ref={nameRef}
                                     label={lang.full_name}
                                     placeholder={lang.enter_full_name}
                                     value={fullName}
-                                    // setValue={setFullName}
                                     setValue={(text) => {
                                         setFullName(text);
                                         if (!text) {
@@ -808,7 +924,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     label={lang.position}
                                     placeholder={lang.enter_position}
                                     value={position}
-                                    // setValue={setPosition}
                                     setValue={(text) => {
                                         setPosition(text);
                                         if (!text) {
@@ -823,33 +938,52 @@ const AddStaffScreen: React.FC = (props: any) => {
                                 />
                                 <InputBox
                                     ref={emailRef}
-                                    label={lang.email}
-                                    placeholder={lang.enter_email}
+                                    label="Email"
+                                    placeholder="Enter email"
                                     value={email}
-                                    setValue={(text) => {
+                                    setValue={async (text) => {
                                         setEmail(text);
+
                                         if (!text) {
-                                            setErrors((prev) => ({ ...prev, email: lang.email_required }));
-                                        } else if (!validateEmail(text)) {
-                                            setErrors((prev) => ({ ...prev, email: lang.invalid_email }));
+                                            setErrors((prev) => ({ ...prev, email: lang.Email_is_required || "Email is required" }));
+                                            setEmailExists(false);
+                                            return;
+                                        }
+
+                                        if (!validateEmail(text)) {
+                                            setErrors((prev) => ({ ...prev, email: lang.invalid_email || "Invalid email format" }));
+                                            setEmailExists(false);
+                                            return;
+                                        }
+
+                                        const exists = await checkEmailExists(text);
+
+                                        if (exists) {
+                                            setErrors((prev) => ({ ...prev, email: lang.email_already_used || "This email is already used." }));
+                                            setEmailExists(true);
                                         } else {
                                             setErrors((prev) => ({ ...prev, email: "" }));
+                                            setEmailExists(false);
                                         }
                                     }}
                                     errorMessage={errors.email}
                                     returnKeyType="next"
                                     onSubmitEditing={() => {
-                                        validateField("email", email);
-                                        phoneRef.current?.focus();
+                                        if (!errors.email && !emailExists) {
+                                            phoneRef.current?.focus();
+                                        } else {
+                                            emailRef.current?.focus(); // stay in email field if error exists
+                                        }
                                     }}
                                 />
+
                                 <InputBox
                                     ref={phoneRef}
                                     label="Phone"
                                     placeholder={`123 456 789`}
                                     value={phone}
                                     setValue={(text: string) => onPhoneChange(text)}
-                                    errorMessage={touched.phone ? errors.phone : ''}
+                                    errorMessage={touched.phone ? errors.phone : ""}
                                     leftIcon={selectedCountry.flag}
                                     leftIcon2={require("../../../../assets/icons/down_b.png")}
                                     onLeftIcon2Press={() =>
@@ -857,47 +991,47 @@ const AddStaffScreen: React.FC = (props: any) => {
                                             initialSelectedId: selectedCountry.id,
                                             onSelect: (item: any) => {
                                                 setSelectedCountry(item);
-                                                const newRule = PHONE_RULES[(item.code || '').replace(/\D/g, '')] || DEFAULT_PHONE_RULE;
+                                                const newRule = PHONE_RULES[(item.code || "").replace(/\D/g, "")] || DEFAULT_PHONE_RULE;
 
-                                                let currentRaw = (phone || '').replace(/\D/g, '');
-                                                const hasLeadingZero = currentRaw.startsWith('0');
+                                                let currentRaw = (phone || "").replace(/\D/g, "");
+                                                const hasLeadingZero = currentRaw.startsWith("0");
                                                 const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
                                                 currentRaw = currentRaw.slice(0, maxDisplay);
 
-                                                let normalized = currentRaw.startsWith('0') ? currentRaw.slice(1) : currentRaw;
+                                                let normalized = currentRaw.startsWith("0") ? currentRaw.slice(1) : currentRaw;
                                                 normalized = normalized.slice(0, newRule.max);
 
                                                 setPhone(formatPhoneForDisplay(currentRaw));
                                                 setPhoneRaw(normalized);
 
                                                 if (!normalized || normalized.length === 0) {
-                                                    setErrors(prev => ({ ...prev, phone: lang.phone_required }));
+                                                    setErrors((prev) => ({ ...prev, phone: lang.phone_required }));
                                                 } else if (normalized.length < newRule.min) {
                                                     if (newRule.min === newRule.max) {
-                                                        setErrors(prev => ({ ...prev, phone: `Please complete all ${newRule.max} digits` }));
+                                                        setErrors((prev) => ({ ...prev, phone: `${lang.Please_complete_all || "Please complete all"} ${newRule.max} digits` }));
                                                     } else {
-                                                        setErrors(prev => ({ ...prev, phone: `${lang.enterAtLeast || 'Enter at least'} ${newRule.min} ${lang.digits || 'digits'}` }));
+                                                        setErrors((prev) => ({ ...prev, phone: `${lang.enterAtLeast || "Enter at least"} ${newRule.min} ${lang.digits || "digits"}` }));
                                                     }
                                                 } else {
-                                                    setErrors(prev => ({ ...prev, phone: '' }));
+                                                    setErrors((prev) => ({ ...prev, phone: "" }));
                                                 }
                                             },
                                         })
                                     }
                                     returnKeyType="done"
-                                    onFocus={() => { setFieldTouched('phone'); }}
-                                    onBlur={() => validateFieldp('phone')}
+                                    onFocus={() => {
+                                        setFieldTouched("phone");
+                                    }}
+                                    onBlur={() => validateFieldp("phone")}
                                     keyboardType="phone-pad"
                                     onSubmitEditing={() => {
                                         validateField("phone", phone);
                                         Keyboard.dismiss();
                                     }}
                                 />
-
                             </>
                         ) : step === 2 ? (
                             <>
-                                {/* STEP 2 UI */}
                                 <View style={styles.contentBox}>
                                     <Text style={styles.title}>{lang.schedule_details}</Text>
                                     <Text style={styles.subtitle}>{lang.create_new_work_schedule}</Text>
@@ -907,7 +1041,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     {weekDates.map((d) => {
                                         const ymd = dateToYMD(d);
                                         const dayName = FULL_WEEKDAYS[d.getDay()];
-                                        const wk = WEEKDAYS[d.getDay()]; // short label like "Sun","Mon" — keep UI same
+                                        const wk = WEEKDAYS[d.getDay()]; // short label like "Sun","Mon"
                                         return (
                                             <View key={dayName} style={styles.each_day}>
                                                 <CartBox width="auto" height={52} containerStyle={styles.day}>
@@ -917,7 +1051,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                                     style={{ flex: 1 }}
                                                     activeOpacity={0.8}
                                                     onPress={() => {
-                                                        openAddModalForDate(ymd); // still pass ymd here; openAddModalForDate converts to dayName internally
+                                                        openAddModalForDate(ymd);
                                                     }}
                                                 >
                                                     <CartBox width="auto" containerStyle={styles.time}>
@@ -926,11 +1060,8 @@ const AddStaffScreen: React.FC = (props: any) => {
                                                                 <View style={{ flexDirection: "row" }}>
                                                                     <Image source={require("../../../../assets/icons/clock_b.png")} style={styles.clock} />
                                                                     <Text style={styles.time_text}>
-                                                                        {schedules[dayName]
-                                                                            ? `${formatTime12(schedules[dayName].startTime)} - ${formatTime12(schedules[dayName].endTime)}`
-                                                                            : ''}
+                                                                        {schedules[dayName] ? `${formatTime12(schedules[dayName].startTime)} - ${formatTime12(schedules[dayName].endTime)}` : ""}
                                                                     </Text>
-
                                                                 </View>
                                                             </View>
                                                         ) : (
@@ -941,9 +1072,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                             </View>
                                         );
                                     })}
-
                                 </View>
-
                             </>
                         ) : (
                             <>
@@ -957,26 +1086,34 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     label={lang.username}
                                     placeholder={lang.enter_username}
                                     value={username}
-                                    setValue={(text) => {
+                                    setValue={async (text) => {
                                         setUsername(text);
+
                                         if (!text) {
                                             setErrors((prev) => ({ ...prev, username: lang.username_required }));
+                                            setUsernameExists(false);
+                                            return;
+                                        }
+
+                                        const exists = await checkUsernameExists(text);
+
+                                        if (exists) {
+                                            setErrors((prev) => ({ ...prev, username: lang.username_exists }));
+                                            setUsernameExists(true);
                                         } else {
-                                            const exists = users.some(
-                                                (u) => u.username.toLowerCase() === text.toLowerCase()
-                                            );
-                                            if (exists) {
-                                                setErrors((prev) => ({ ...prev, username: lang.username_exists }));
-                                            } else {
-                                                setErrors((prev) => ({ ...prev, username: "" }));
-                                            }
+                                            setErrors((prev) => ({ ...prev, username: "" }));
+                                            setUsernameExists(false);
                                         }
                                     }}
                                     errorMessage={errors.username}
                                     returnKeyType="next"
                                     onSubmitEditing={() => {
-                                        validateField("username", username);
-                                        passwordRef.current?.focus();
+                                        if (!errors.userName && !usernameExists) {
+                                            validateField("username", username);
+                                            passwordRef.current?.focus();
+                                        } else {
+                                            usernameRef.current?.focus();
+                                        }
                                     }}
                                 />
 
@@ -984,7 +1121,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     ref={passwordRef}
                                     label={lang.password_label}
                                     placeholder="********"
-                                    secureTextEntry={!showPassword}
+                                    secureTextEntry={!showPassword ? false : false}
                                     value={password}
                                     setValue={(text) => {
                                         setPassword(text);
@@ -996,7 +1133,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                             setErrors((prev) => ({ ...prev, password: "" }));
                                         }
                                     }}
-                                    rightIcon={showPassword ? require('../../../../assets/icons/eye_open.png') : require('../../../../assets/icons/eye_close.png')}
+                                    rightIcon={showPassword ? require("../../../../assets/icons/eye_open.png") : require("../../../../assets/icons/eye_close.png")}
                                     onRightIconPress={() => setShowPassword((s) => !s)}
                                     errorMessage={errors.password}
                                     returnKeyType="next"
@@ -1004,14 +1141,13 @@ const AddStaffScreen: React.FC = (props: any) => {
                                         validateField("password", password);
                                         confirmPasswordRef.current?.focus();
                                     }}
-
                                 />
 
                                 <InputBox
                                     ref={confirmPasswordRef}
                                     label={lang.confirmPassword}
                                     placeholder="********"
-                                    secureTextEntry={!showConfirmPassword}
+                                    secureTextEntry={!showConfirmPassword ? false : false}
                                     value={confirmPassword}
                                     setValue={(text) => {
                                         setConfirmPassword(text);
@@ -1023,7 +1159,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                                             setErrors((prev) => ({ ...prev, confirmPassword: "" }));
                                         }
                                     }}
-                                    rightIcon={showConfirmPassword ? require('../../../../assets/icons/eye_open.png') : require('../../../../assets/icons/eye_close.png')}
+                                    rightIcon={showConfirmPassword ? require("../../../../assets/icons/eye_open.png") : require("../../../../assets/icons/eye_close.png")}
                                     onRightIconPress={() => setShowConfirmPassword((s) => !s)}
                                     errorMessage={errors.confirmPassword}
                                     returnKeyType="done"
@@ -1031,60 +1167,30 @@ const AddStaffScreen: React.FC = (props: any) => {
                                         validateField("confirmPassword", confirmPassword);
                                         Keyboard.dismiss();
                                     }}
-
                                 />
                             </>
                         )}
                     </ScrollView>
                 </KeyboardAvoidingView>
             </TouchableWithoutFeedback>
+
             {/* Profile Image Modal */}
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={modalVisible}
-                onRequestClose={() => setModalVisible(false)}
-            >
+            <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
                 <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
                     <View style={styles.modalContainer}>
                         <View style={styles.modalHandle} />
                         <Text style={styles.modalTitle}>Edit profile</Text>
 
-                        <CartBox
-                            paddingLeft={20}
-                            paddingTop={10}
-                            paddingBottom={10}
-                            alignItems="flex-start"
-                            borderRadius={12}
-                            borderWidth={1}
-                            borderColor="#E5E7EB"
-                            marginBottom={12}
-                            onPress={openCamera}
-                        >
+                        <CartBox paddingLeft={20} paddingTop={10} paddingBottom={10} alignItems="flex-start" borderRadius={12} borderWidth={1} borderColor="#E5E7EB" marginBottom={12} onPress={openCamera}>
                             <View style={styles.logout}>
-                                <Image
-                                    source={require("../../../../assets/icons/p_camera.png")}
-                                    style={styles.logoutIcon}
-                                />
+                                <Image source={require("../../../../assets/icons/p_camera.png")} style={styles.logoutIcon} />
                                 <Text style={styles.modalButtonText}>{lang.camera}</Text>
                             </View>
                         </CartBox>
 
-                        <CartBox
-                            paddingLeft={20}
-                            paddingTop={10}
-                            paddingBottom={10}
-                            alignItems="flex-start"
-                            borderRadius={12}
-                            borderWidth={1}
-                            borderColor="#E5E7EB"
-                            onPress={openGallery}
-                        >
+                        <CartBox paddingLeft={20} paddingTop={10} paddingBottom={10} alignItems="flex-start" borderRadius={12} borderWidth={1} borderColor="#E5E7EB" onPress={openGallery}>
                             <View style={styles.logout}>
-                                <Image
-                                    source={require("../../../../assets/icons/p_gallery.png")}
-                                    style={styles.logoutIcon}
-                                />
+                                <Image source={require("../../../../assets/icons/p_gallery.png")} style={styles.logoutIcon} />
                                 <Text style={styles.modalButtonText}>{lang.gallery}</Text>
                             </View>
                         </CartBox>
@@ -1092,88 +1198,32 @@ const AddStaffScreen: React.FC = (props: any) => {
                 </Pressable>
             </Modal>
 
-            <Popup
-                visible={confirmPopupVisible}
-                onClose={() => setConfirmPopupVisible(false)}
-                popupBorderColor={colors.primary}
-                dismissOnOverlayPress={false}
-                title={lang.confirm_save_staff}
-                titleStyle={{ color: colors.primary, marginBottom: 30 }}
-            >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-                    <Button1
-                        text={lang.yes}
-                        backgroundColor={colors.primary}
-                        width={'48%'}
-                        textStyle={{ color: colors.secondary }}
-                        onPress={handleSave}
-                    />
-                    <Button1
-                        text={lang.no}
-                        onPress={() => setConfirmPopupVisible(false)}
-                        backgroundColor={colors.error_text}
-                        width={'48%'}
-                        textStyle={{ color: colors.secondary }}
-                    />
+            <Popup visible={confirmPopupVisible} onClose={() => setConfirmPopupVisible(false)} popupBorderColor={colors.primary} dismissOnOverlayPress={false} title={lang.confirm_save_staff} titleStyle={{ color: colors.primary, marginBottom: 30 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
+                    <Button1 text={lang.yes} backgroundColor={colors.primary} width={"48%"} textStyle={{ color: colors.secondary }} onPress={handleSave} />
+                    <Button1 text={lang.no} onPress={() => setConfirmPopupVisible(false)} backgroundColor={colors.error_text} width={"48%"} textStyle={{ color: colors.secondary }} />
                 </View>
             </Popup>
 
             <View style={styles.fixedNext}>
-                {step === 1 && (
-                    <Button1
-                        text={lang.next}
-                        onPress={handleNext}   // use your handler
-                        backgroundColor={colors.primary}
-                        width={"100%"}
-                    />
-                )}
+                {step === 1 && <Button1 text={lang.next} onPress={handleNext} backgroundColor={colors.primary} width={"100%"} />}
                 {step === 2 && (
                     <View style={styles.step2Buttons}>
-                        <Button1
-                            text={lang.previous}
-                            textStyle={{ color: colors.primary }}
-                            onPress={() => {
-                                resetStep2Fields();
-                                setStep(1);
-                            }}
-                            backgroundColor={colors.secondary}
-                            width={"45%"}
-                        />
-
-                        {hasWeeklySchedule ? (
-                            <Button1
-                                text={lang.next ?? "Next"}
-                                onPress={handleProceedFromStep2}
-                                backgroundColor={colors.primary}
-                                width={"45%"}
-                            />
-                        ) : (
-                            <Button1
-                                text={lang.skip ?? "Skip"}
-                                onPress={handleProceedFromStep2}
-                                backgroundColor={colors.primary}
-                                width={"45%"}
-                            />
-                        )}
+                        <Button1 text={lang.previous} textStyle={{ color: colors.primary }} onPress={() => { resetStep2Fields(); setStep(1); }} backgroundColor={colors.secondary} width={"45%"} />
+                        {hasWeeklySchedule ? <Button1 text={lang.next ?? "Next"} onPress={handleProceedFromStep2} backgroundColor={colors.primary} width={"45%"} /> : <Button1 text={lang.skip ?? "Skip"} onPress={handleProceedFromStep2} backgroundColor={colors.primary} width={"45%"} />}
                     </View>
                 )}
 
                 {step === 3 && (
                     <View style={styles.step2Buttons}>
-                        <Button1
-                            text={lang.previous}
-                            textStyle={{ color: colors.primary }}
-                            onPress={() => setStep(2)}
-                            backgroundColor={colors.secondary}
-                            width={"45%"}
-                        />
+                        <Button1 text={lang.previous} textStyle={{ color: colors.primary }} onPress={() => setStep(2)} backgroundColor={colors.secondary} width={"45%"} />
+                        {/* <Button1 text={lang.save} onPress={() => { if (validateStep2()) setConfirmPopupVisible(true); }} backgroundColor={colors.primary} width={"45%"} /> */}
                         <Button1
                             text={lang.save}
-                            onPress={() => {
-                                if (validateStep2()) setConfirmPopupVisible(true);
-                            }}
+                            onPress={onSavePress}
                             backgroundColor={colors.primary}
                             width={"45%"}
+                            disabled={checkingUsername} // optional - depends on Button1 props
                         />
                     </View>
                 )}
@@ -1186,14 +1236,9 @@ const AddStaffScreen: React.FC = (props: any) => {
                         <View style={styles.modalHandle} />
                         <Text style={styles.modalTitle}>{lang.Add_Schedule}</Text>
 
-                        {/* We render branch overlay inside modal container (so it sits above modal content) */}
                         <View>
                             <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                                {/* Branch input wrapper (measured for overlay) */}
-                                <View
-                                    ref={(r) => { branchInputWrapperRef.current = r; }}
-                                    onLayout={onBranchLayout}
-                                >
+                                <View ref={(r) => { branchInputWrapperRef.current = r; }} onLayout={onBranchLayout}>
                                     <InputBox
                                         label={lang.branch}
                                         placeholder={""}
@@ -1202,14 +1247,12 @@ const AddStaffScreen: React.FC = (props: any) => {
                                         setValue={() => {
                                             setSelectedBranch("");
                                             setSelectedBranchId(null);
-
                                         }}
                                         rightIcon={require("../../../../assets/icons/branch_b.png")}
                                         rightIconStyle={{ tintColor: colors.primary }}
                                     />
                                 </View>
 
-                                {/* Start time */}
                                 <InputBox
                                     label={lang.set_time_from}
                                     placeholder={"00:00:00"}
@@ -1226,7 +1269,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     onPress={onShowNativeTimePicker}
                                 />
 
-                                {/* Duration */}
                                 <InputBox
                                     label={lang.Duration}
                                     placeholder={"Eg: 8"}
@@ -1241,29 +1283,16 @@ const AddStaffScreen: React.FC = (props: any) => {
                                 <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
                                 <View style={{ height: 20 }} />
                             </ScrollView>
-
-                            {/* Branch suggestion overlay inside modal container */}
-
                         </View>
                     </View>
                 </Pressable>
             </Modal>
             {/* Native Time Picker */}
-            {showTimePicker && (
-                <DateTimePicker
-                    value={timeStringToDate(timeFrom)}
-                    mode="time"
-                    is24Hour={true}
-                    display={Platform.OS === "ios" ? "spinner" : "clock"}
-                    onChange={onNativeTimeChange}
-                />
-            )}
+            {showTimePicker && <DateTimePicker value={timeStringToDate(timeFrom)} mode="time" is24Hour={true} display={Platform.OS === "ios" ? "spinner" : "clock"} onChange={onNativeTimeChange} />}
         </View>
     );
 };
-
 export default AddStaffScreen;
-
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.secondary },
     content: { paddingHorizontal: 20, paddingBottom: 80 },

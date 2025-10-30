@@ -298,9 +298,12 @@
     "Manager_name_already_exists":"Manager name already exists",
     "Failed_to_update_Manager_name":" Failed to update Manager name",
     "Missing_branch_id":"Missing branch id",
-    "Address_updated_successfully":"Address updated successfully"
-
-
+    "Address_updated_successfully":"Address updated successfully",
+    "email_already_used": "This email is already used.",
+    "email_in_use": "Email already in use",
+    "invalid_start_time": "Enter valid start time (HH:MM:SS)",
+    "invalid_duration": "Enter duration in hours",
+    "staff_created_success": "Staff created successfully"
   },
   "de": {
     "profile": "Profil",
@@ -599,6 +602,11 @@
     "Manager_name_already_exists":"Managername existiert bereits",
     "Failed_to_update_Manager_name":"Managername konnte nicht aktualisiert werden",
     "Missing_branch_id":"Filial-ID fehlt",
-    "Address_updated_successfully":"Adresse erfolgreich aktualisiert"
+    "Address_updated_successfully":"Adresse erfolgreich aktualisiert",
+    "email_already_used": "Diese E-Mail wird bereits verwendet.",
+    "email_in_use": "E-Mail bereits in Verwendung",
+    "invalid_start_time": "Geben Sie eine gültige Startzeit ein (HH:MM:SS)",
+    "invalid_duration": "Geben Sie die Dauer in Stunden ein",
+    "staff_created_success": "Mitarbeiter erfolgreich erstellt"
   }
 }
