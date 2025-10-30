@@ -234,6 +234,7 @@ export default function LoginScreen() {
         // Save full user object locally
         try {
           await AsyncStorage.setItem('userObj', JSON.stringify(user));
+          await AsyncStorage.setItem('langId', langId);
         } catch (e) {
           console.warn('Failed to save full user object locally', e);
         }
@@ -358,7 +359,6 @@ export default function LoginScreen() {
             <Text style={styles.greetingTitle}>{lang.welcome_back}</Text>
             <Text style={styles.greetingSubtitle}>{lang.please_sign_in}</Text>
           </View>
-
           <View style={styles.inputsContainer}>
 
             <InputBox
@@ -391,7 +391,8 @@ export default function LoginScreen() {
           <View style={styles.signInBtnWrap}>
             <Button1 text={lang.sign_in_button} width={'90%'} onPress={handleSignIn} />
           </View>
-        </View>
+          </View>
+
         <Toast config={toastConfig} />
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
@@ -431,7 +432,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   inputsContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   signInBtnWrap: {
     marginTop: 10,

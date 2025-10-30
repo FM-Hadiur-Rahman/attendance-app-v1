@@ -241,7 +241,9 @@ const BranchScreen: React.FC = (props: any) => {
 
       <View style={styles.body}>
         {loading && branches.length === 0 ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.primary} />
+          </View>
         ) : (
           <FlatList
             data={branches}

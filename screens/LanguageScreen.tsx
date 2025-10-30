@@ -21,6 +21,8 @@ import CartBox from "../components/CartBox";
 const { width, height } = Dimensions.get("window");
 
 type LangId = "en" | "de";
+const { width: deviceWidth } = Dimensions.get("window");
+const base = deviceWidth / 440;
 
 const LanguageScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -58,7 +60,6 @@ const LanguageScreen: React.FC = () => {
           <Text style={styles.subtitle}>
             Choose how you’d like to view the app
           </Text>
-
           {/* Language option 1 - English */}
           <TouchableOpacity
             activeOpacity={0.8}
@@ -194,6 +195,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingLeft: 20,
     marginBottom: 12,
+  
   },
   langCardSelected: {
     borderColor: colors.popupBorderColor,
@@ -244,5 +246,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 80, // prevent button cutoff when scrolling
+   width:390 * base
   },
 });
