@@ -21,7 +21,7 @@ import fonts from '../../../styles/Fonts';
 // API
 import { getUsers, ProfileUser } from '../../../api/profile';
 import { getAllBranches, Branch } from '../../../api/Branchs';
-import { getSchedulesForDate, ScheduleItem } from '../../../api/schedule';
+import { getSchedulesForDate, ScheduleItem } from '../../../api/schedules';
 import { clearAllAuthData } from '../../../api/auth/authToken';
 
 import translations from "../../../assets/translations.json";
