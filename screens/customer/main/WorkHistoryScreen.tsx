@@ -22,8 +22,7 @@ import { getWeeklySchedules, getMonthlySchedules } from "../../../api/checkin_ch
 import { getProfile, getUserById, ProfileUser } from "../../../api/profile";
 import { getBranchById } from "../../../api/Branch"; // ✅ import API
 import { getAllBranches } from "../../../api/Branchs";
-
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
 /* ---------- interfaces ---------- */
@@ -32,30 +31,14 @@ interface Props {
   langId?: string;
 }
 
-
-
-/* ---------- utilities ---------- */
-const formatTime = (time: string) => {
-  const [h, m, s] = time.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m, s || 0);
-  return d
-    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
-    .replace("am", "AM")
-    .replace("pm", "PM");
+const normalizeBranchIdValue = (v: any): string | undefined => {
+  if (!v) return undefined;
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    return v._id ?? v.id ?? v.branch_id ?? v.branchId ?? undefined;
+  }
+  return undefined;
 };
-
-const formatDate = (dateString?: string) => {
-  if (!dateString) return "N/A";
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return "N/A";
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-};
-
 
 
 const calcDuration = (checkIn?: string, checkOut?: string) => {
@@ -73,100 +56,7 @@ const calcDuration = (checkIn?: string, checkOut?: string) => {
   return { h, m, text: `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m` };
 };
 
-const timeToMinutes = (t?: string) => {
-  if (!t) return 0;
-  const [h = 0, m = 0, s = 0] = t.split(":").map((v) => Number(v) || 0);
-  return h * 60 + m;
-};
 
-
-/* ---------- group work hours ---------- */
-const groupWorkHours = (entries: WorkHour[]) => {
-  const today = new Date();
-
-  const todaySchedules = monthlySchedules.filter((s: any) => {
-    const schedDate = new Date(s.In);
-    return (
-      schedDate.getFullYear() === today.getFullYear() &&
-      schedDate.getMonth() === today.getMonth() &&
-      schedDate.getDate() === today.getDate()
-    );
-  });
-
-  let todayTotalMinutes = 0;
-  todaySchedules.forEach((s: any) => {
-    if (s.In && s.Out) {
-      const inTime = new Date(s.In);
-      const outTime = new Date(s.Out);
-      const diffMinutes = Math.floor((outTime.getTime() - inTime.getTime()) / 60000);
-      todayTotalMinutes += diffMinutes;
-    }
-  });
-
-  // Convert total minutes to hours and minutes
-  const todayTotalText = `${String(Math.floor(todayTotalMinutes / 60)).padStart(2, "0")}h ${String(
-    todayTotalMinutes % 60
-  ).padStart(2, "0")}m`;
-
-
-
-
-  const todayStr = today.toISOString().slice(0, 10);
-  const currWeekStart = new Date(today);
-  const day = today.getDay();
-  const offsetToMonday = day === 0 ? -6 : 1 - day;
-  currWeekStart.setDate(today.getDate() + offsetToMonday);
-  currWeekStart.setHours(0, 0, 0, 0);
-  const currWeekEnd = new Date(currWeekStart);
-  currWeekEnd.setDate(currWeekStart.getDate() + 6);
-  currWeekEnd.setHours(23, 59, 59, 999);
-
-  const formatWeekRange = (d: Date) => {
-    const weekStart = new Date(d);
-    const dd = weekStart.getDay();
-    const off = dd === 0 ? -6 : 1 - dd;
-    weekStart.setDate(weekStart.getDate() + off);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    const format = (dt: Date) =>
-      dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return `${format(weekStart)} - ${format(weekEnd)}`;
-  };
-
-  const groups: Record<string, WorkHour[]> = {};
-
-  entries.forEach((w) => {
-    if (w.date === todayStr) {
-      groups["Today"] = groups["Today"] || [];
-      groups["Today"].push(w);
-    } else {
-      const d = new Date(w.date + "T00:00:00");
-      if (d >= currWeekStart && d <= currWeekEnd) {
-        groups["This week"] = groups["This week"] || [];
-        groups["This week"].push(w);
-      } else {
-        const label = formatWeekRange(d);
-        groups[label] = groups[label] || [];
-        groups[label].push(w);
-      }
-    }
-  });
-
-  const worked: { title: string; data: WorkHour[] }[] = [];
-  if (groups["Today"]) worked.push({ title: "Today", data: groups["Today"] });
-  if (groups["This week"]) worked.push({ title: "This week", data: groups["This week"] });
-
-  Object.keys(groups)
-    .filter((k) => k !== "Today" && k !== "This week")
-    .sort((a, b) => {
-      const dateA = new Date(groups[a][0].date).getTime();
-      const dateB = new Date(groups[b][0].date).getTime();
-      return dateB - dateA;
-    })
-    .forEach((k) => worked.push({ title: k, data: groups[k] }));
-
-  return worked;
-};
 
 /* ---------- main screen ---------- */
 const screenWidth = Dimensions.get("window").width;
@@ -179,8 +69,36 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [branchDistances, setBranchDistances] = useState<Record<string, number>>({});
+  const [user, setUser] = useState(null);
 
 
+  // normalize branch id from different shapes we get from APIs
+  const normalizeBranchId = (item: any): string | undefined => {
+    if (!item) return undefined;
+    // possible places: branch_id (string), branch._id, branch.id, branch (string)
+    if (typeof item.branch_id === "string" && item.branch_id) return item.branch_id;
+    if (item.branch && typeof item.branch === "string") return item.branch;
+    if (item.branch && typeof item.branch === "object") {
+      return item.branch._id ?? item.branch.id ?? undefined;
+    }
+    // fallback: sometimes API returns branchId or branchId string
+    return item.branchId ?? item.branch_id ?? undefined;
+  };
+
+  const getLoggedInUserBranchId = (currentUser: any, localUserFallback: any): string | undefined => {
+    if (!currentUser && !localUserFallback) return undefined;
+    // check many possible keys
+    return (
+      currentUser?.branch_id ??
+      currentUser?.branch?._id ??
+      currentUser?.branch?.id ??
+      currentUser?.default_branch_id ??
+      currentUser?.defaultBranchId ??
+      localUserFallback?.default_branch_id ??
+      localUserFallback?.defaultBranchId ??
+      undefined
+    );
+  };
 
 
   const onRefresh = useCallback(() => {
@@ -210,6 +128,15 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
+
+  useEffect(() => {
+    // Example: load user from AsyncStorage or context
+    const loadUser = async () => {
+      const data = await AsyncStorage.getItem("user");
+      if (data) setUser(JSON.parse(data));
+    };
+    loadUser();
+  }, []);
 
   useEffect(() => {
     const fetchDistances = async () => {
@@ -326,23 +253,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   }, []);
 
 
-
-
-
-  const fetchBranchName = async (branchId: string) => {
-    if (!branchId || branchNames[branchId]) return; // already cached
-    try {
-      const branch = await getBranchById(branchId);
-      if (branch?.name) {
-        setBranchNames(prev => ({ ...prev, [branchId]: branch.name }));
-      }
-    } catch (err) {
-      console.error("❌ Error fetching branch name:", err);
-      setBranchNames(prev => ({ ...prev, [branchId]: "Unknown Branch" }));
-    }
-  };
-
-
   /* ---------- fetch readable addresses ---------- */
   useEffect(() => {
     const fetchAddresses = async () => {
@@ -404,12 +314,11 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [branchData, setBranchData] = useState({});
   const [schedules, setSchedules] = useState<any[]>([]);
   const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
+const ITEMS_PER_PAGE = 10;
+const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+const [loadingMore, setLoadingMore] = useState(false);
+const [hasMore, setHasMore] = useState(true);
 
-  const sumMinutes = (arr: WorkHour[]) =>
-    arr.reduce((acc, w) => {
-      const d = calcDuration(w.check_in, w.check_out);
-      return acc + d.h * 60 + d.m;
-    }, 0);
 
   const totalToText = (mins: number) => {
     const h = Math.floor(mins / 60);
@@ -481,6 +390,27 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
       text: `${String(hours).padStart(2, "0")}h${String(minutes).padStart(2, "0")}m`
     };
   }, [schedules]);
+
+const visibleSections = useMemo(() => {
+  if (!sections || !Array.isArray(sections)) return [];
+
+  let count = 0;
+  const limitedSections: { title: string; data: any[] }[] = [];
+
+  for (const section of sections) {
+    if (!section || !section.data) continue;
+    if (count >= visibleCount) break;
+
+    const remaining = visibleCount - count;
+    const sliced = section.data.slice(0, remaining);
+    if (sliced.length > 0) {
+      limitedSections.push({ title: section.title, data: sliced });
+      count += sliced.length;
+    }
+  }
+
+  return limitedSections;
+}, [sections, visibleCount]);
 
 
 
@@ -554,11 +484,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
         // For logged-in user
         const user = await getProfile();
         setCurrentUser(user);
-
-        // Or fetch any user by ID
-        // const user = await getUserById("U001");
-        // setCurrentUser(user);
-
       } catch (err) {
         console.error("Failed to fetch user profile:", err);
       }
@@ -661,9 +586,25 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
           }
 
           renderItem={({ item, index }) => {
-            const branchName = item.branch?.name || "Unknown Branch";
+            // normalize branch ids
+            const itemBranchId =
+              normalizeBranchIdValue(item.branch_id ?? item.branch ?? item.branchId ?? item.branchId) ??
+              normalizeBranchIdValue(item?.branch); // extra fallback
+
+            const loggedBranchId =
+              normalizeBranchIdValue(
+                currentUser?.branch_id ??
+                currentUser?.default_branch_id ??
+                currentUser?.defaultBranchId ??
+                currentUser?.branch
+              );
+
+            // if itemBranchId is same as logged-in user's branch id -> don't show branch info
+            const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
+
+            const branchName = item.branch?.name || (itemBranchId ? branchNames[itemBranchId] : "Unknown Branch");
             const branchAddress =
-              branchAddresses[item.branch_id] ||
+              (itemBranchId && branchAddresses[itemBranchId]) ||
               (item.branch?.latitude && item.branch?.longitude
                 ? `${item.branch.latitude}, ${item.branch.longitude}`
                 : "Address not available");
@@ -671,7 +612,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
             const inDate = item.In ? new Date(item.In) : null;
             const outDate = item.Out ? new Date(item.Out) : null;
 
-            // Display with AM/PM (no seconds)
             const inTimeText = inDate
               ? inDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })
               : "--:--";
@@ -681,7 +621,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
             const timeText = `${inTimeText} - ${outTimeText}`;
 
-            // Calculate duration using exact seconds
             const durationText =
               inDate && outDate
                 ? calcDuration(
@@ -691,41 +630,24 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
                 : "--h--m";
 
             return (
-              <CartBox
-                key={index}
-                marginTop={8}
-                paddingRight={12}
-                paddingLeft={12}
-                paddingTop={12}
-                paddingBottom={12}
-                borderRadius={10}
-                alignItems="flex-start"
-              >
-                {/* Branch name */}
-                <View style={styles.brnamerow}>
-                  <Image
-                    source={require("../../../assets/icons/branch.png")}
-                    style={styles.branchIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.branchName}>{branchName}</Text>
-                </View>
+              <CartBox key={index} marginTop={8} paddingRight={12} paddingLeft={12} paddingTop={12} paddingBottom={12} borderRadius={10} alignItems="flex-start">
+                {/* Branch name — only show when different from logged-in user's branch */}
+                {showBranchInfo && (
+                  <View style={styles.brnamerow}>
+                    <Image source={require("../../../assets/icons/branch.png")} style={styles.branchIcon} resizeMode="contain" />
+                    <Text style={styles.branchName}>{branchName}</Text>
+                  </View>
+                )}
 
-                {/* Branch location */}
-                <View style={styles.branchLocationRow}>
-                  <Image
-                    source={require("../../../assets/icons/location.png")}
-                    style={styles.locationIcon}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={styles.branchLocationText}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {branchAddress}
-                  </Text>
-                </View>
+                {/* Branch location — only show when different from logged-in user's branch */}
+                {showBranchInfo && (
+                  <View style={styles.branchLocationRow}>
+                    <Image source={require("../../../assets/icons/location.png")} style={styles.locationIcon} resizeMode="contain" />
+                    <Text style={styles.branchLocationText} numberOfLines={1} ellipsizeMode="tail">
+                      {branchAddress}
+                    </Text>
+                  </View>
+                )}
 
                 {/* Time row */}
                 <View style={styles.itemRow}>
@@ -735,11 +657,7 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
                 {/* Date */}
                 <Text style={styles.dateText}>
-                  {new Date(item.In).toLocaleDateString("en-US", {
-                    weekday: "short",   // Thu
-                    month: "short",     // Oct
-                    day: "2-digit",     // 30
-                  })}
+                  {new Date(item.In).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "2-digit" })}
                 </Text>
               </CartBox>
             );

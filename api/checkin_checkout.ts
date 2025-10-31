@@ -89,17 +89,37 @@ export const getTodaySchedule = async (opts: { userId?: string; branchId?: strin
 
 export const getBranchDetails = async (branchId: string) => {
   try {
-    const response = await axiosInstance.get("/branch"); // fetch all branches
-    const branch = response.data.branches.find(
-      (b: any) => b._id === branchId
-    );
+    const response = await axiosInstance.get(`/branch/${branchId}`);
+    const branch = response.data?.branch || response.data?.data || response.data;
+
     if (!branch) throw new Error("Branch not found");
-    return branch;
-  } catch (error) {
-    console.log("❌ Error fetching branch address:", error);
-    throw error;
+
+    let address: string | null = null;
+
+    if (typeof branch.address === "string") {
+      address = branch.address;
+    } else if (branch.location?.coordinates) {
+      const [lon, lat] = branch.location.coordinates;
+      address = `Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    } else {
+      address = "Address not available";
+    }
+
+    return {
+      id: branch._id,
+      name: branch.name,
+      address,
+      phone: branch.phone || "N/A",
+      email: branch.email || "N/A",
+      raw: branch,
+    };
+  } catch (error: any) {
+    console.error("❌ Error fetching branch details:", error.response?.data || error.message);
+    return null;
   }
 };
+
+
 
 export const getWeeklySchedules = async (opts: { userId?: string; timezone?: string } = {}) => {
   const { userId, timezone = "Asia/Colombo" } = opts;
