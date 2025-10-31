@@ -809,7 +809,7 @@ const buildScheduleArray = () => {
             scheduleArray.length === 0
                 ? "No schedules set for this week."
                 : scheduleArray
-                    .map((item) => `${item.day} (${item.date}): ${item.start_time} - ${item.end_time}`)
+                    .map((item) => `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`)
                     .join("\n");
 
         console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
