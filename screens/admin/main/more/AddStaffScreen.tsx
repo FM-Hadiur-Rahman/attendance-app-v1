@@ -12,13 +12,13 @@ import {
     Pressable,
     Alert,
     Modal,
-    KeyboardAvoidingView,
     TouchableWithoutFeedback,
     Platform,
     RefreshControl,
     Dimensions,
     LayoutChangeEvent,
 } from "react-native";
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation, useRoute } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -205,77 +205,76 @@ const AddStaffScreen: React.FC = (props: any) => {
     };
     const [finalSchedule, setFinalSchedule] = useState([]);
 
-// replace your current buildScheduleArray
-const buildScheduleArray = () => {
-  const result: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }> = [];
+    
+    const buildScheduleArray = () => {
+      const result: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }> = [];
 
-  const normalizeHHMM = (t: string) => {
-    if (!t) return '';
-    const parts = t.split(':').map(p => p.trim());
-    if (parts.length >= 2) {
-      const hh = parts[0].padStart(2, '0');
-      const mm = parts[1].padStart(2, '0');
-      return `${hh}:${mm}`;
-    }
-    return t;
-  };
+      const normalizeHHMM = (t: string) => {
+        if (!t) return '';
+        const parts = t.split(':').map(p => p.trim());
+        if (parts.length >= 2) {
+          const hh = parts[0].padStart(2, '0');
+          const mm = parts[1].padStart(2, '0');
+          return `${hh}:${mm}`;
+        }
+        return t;
+      };
 
-  const addEntry = (date: string, weekday: string, start: string, end: string) => {
-    const s = normalizeHHMM(start);
-    const e = normalizeHHMM(end);
-    if (!date || !weekday || !s || !e) {
-      console.warn('Skipping malformed schedule entry', { date, weekday, start, end });
-      return;
-    }
-    result.push({ date, day_of_week: weekday, start_time: s, end_time: e });
-  };
+      const addEntry = (date: string, weekday: string, start: string, end: string) => {
+        const s = normalizeHHMM(start);
+        const e = normalizeHHMM(end);
+        if (!date || !weekday || !s || !e) {
+          console.warn('Skipping malformed schedule entry', { date, weekday, start, end });
+          return;
+        }
+        result.push({ date, day_of_week: weekday, start_time: s, end_time: e });
+      };
 
-  FULL_WEEKDAYS.forEach((dayName) => {
-    const s = schedules[dayName];
-    if (!s) return;
+      FULL_WEEKDAYS.forEach((dayName) => {
+        const s = schedules[dayName];
+        if (!s) return;
 
-    const date = String(s.date ?? getDateForWeekday(dayName));
-    if (!date) return;
-    if (!s.startTime || !s.endTime) return;
+        const date = String(s.date ?? getDateForWeekday(dayName));
+        if (!date) return;
+        if (!s.startTime || !s.endTime) return;
 
-    const start_time = normalizeHHMM(String(s.startTime));
-    const end_time = normalizeHHMM(String(s.endTime));
+        const start_time = normalizeHHMM(String(s.startTime));
+        const end_time = normalizeHHMM(String(s.endTime));
 
-    if (!start_time || !end_time) return;
+        if (!start_time || !end_time) return;
 
-    // if same-day or start <= end -> push as-is
-    const [sh, sm] = start_time.split(':').map(Number);
-    const [eh, em] = end_time.split(':').map(Number);
-    const startMinutes = sh * 60 + sm;
-    const endMinutes = eh * 60 + em;
+        // if same-day or start <= end -> push as-is
+        const [sh, sm] = start_time.split(':').map(Number);
+        const [eh, em] = end_time.split(':').map(Number);
+        const startMinutes = sh * 60 + sm;
+        const endMinutes = eh * 60 + em;
 
-    if (endMinutes > startMinutes || endMinutes === startMinutes) {
-      // normal same-day entry
-      addEntry(date, dayName, start_time, end_time);
-    } else {
-      // crosses midnight -> split into two entries:
-      // 1) date: start_time -> 23:59
-      // 2) date+1: 00:00 -> end_time
-      addEntry(date, dayName, start_time, '23:59');
+        if (endMinutes > startMinutes || endMinutes === startMinutes) {
+          // normal same-day entry
+          addEntry(date, dayName, start_time, end_time);
+        } else {
+          // crosses midnight -> split into two entries:
+          // 1) date: start_time -> 23:59
+          // 2) date+1: 00:00 -> end_time
+          addEntry(date, dayName, start_time, '23:59');
 
-      // compute next day date and weekday
-      const nextDateObj = new Date(date);
-      nextDateObj.setDate(nextDateObj.getDate() + 1);
-      const y = nextDateObj.getFullYear();
-      const m = (nextDateObj.getMonth() + 1).toString().padStart(2, '0');
-      const d = nextDateObj.getDate().toString().padStart(2, '0');
-      const nextDate = `${y}-${m}-${d}`;
+          // compute next day date and weekday
+          const nextDateObj = new Date(date);
+          nextDateObj.setDate(nextDateObj.getDate() + 1);
+          const y = nextDateObj.getFullYear();
+          const m = (nextDateObj.getMonth() + 1).toString().padStart(2, '0');
+          const d = nextDateObj.getDate().toString().padStart(2, '0');
+          const nextDate = `${y}-${m}-${d}`;
 
-      // weekday lookup
-      const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
+          // weekday lookup
+          const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
 
-      addEntry(nextDate, nextWeekday, '00:00', end_time);
-    }
-  });
+          addEntry(nextDate, nextWeekday, '00:00', end_time);
+        }
+      });
 
-  return result;
-};
-
+      return result;
+    };
 
 
 
@@ -460,7 +459,7 @@ const buildScheduleArray = () => {
 
     const validateEmail = (email: string): boolean => {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return re.test(String(email).toLowerCase());
+        return re.test(String(email));
     };
     const validatePhone = (phoneValue: string): boolean => {
         const digits = (phoneValue || "").replace(/\D/g, "");
@@ -1064,7 +1063,6 @@ const buildScheduleArray = () => {
                             resetStep2Fields();
                             setStep(1); // go back to Step 1
                         } else if (step === 3) {
-                            resetStep2Fields();
                             setStep(2);
                         } else {
                             navigation.goBack();
@@ -1073,11 +1071,23 @@ const buildScheduleArray = () => {
                 }}
                 center={{ type: "text", value: lang.profile, color: colors.text }}
             />
-
             <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-                <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 40}>
+                <KeyboardAwareScrollView
+                    contentContainerStyle={styles.content}
+                    extraScrollHeight={20} // adjust scroll when keyboard opens
+                    enableOnAndroid={true}
+                    keyboardShouldPersistTaps="handled"
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            progressBackgroundColor={colors.secondary}
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
+                        />
+                    }
+                >
                     <ScrollView
-                        contentContainerStyle={styles.content}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />}
                     >
                         <View style={styles.progressWrap}>
@@ -1120,7 +1130,6 @@ const buildScheduleArray = () => {
                                     returnKeyType="next"
                                     onSubmitEditing={() => positionRef.current?.focus()}
                                 />
-
                                 <InputBox
                                     ref={positionRef}
                                     label={lang.position}
@@ -1178,7 +1187,6 @@ const buildScheduleArray = () => {
                                         }
                                     }}
                                 />
-
                                 <InputBox
                                     ref={phoneRef}
                                     label="Phone"
@@ -1282,7 +1290,6 @@ const buildScheduleArray = () => {
                                     <Text style={styles.title}>{lang.login_account_details}</Text>
                                     <Text style={styles.subtitle}>{lang.login_account_desc}</Text>
                                 </View>
-
                                 <InputBox
                                     ref={usernameRef}
                                     label={lang.username}
@@ -1373,7 +1380,7 @@ const buildScheduleArray = () => {
                             </>
                         )}
                     </ScrollView>
-                </KeyboardAvoidingView>
+                </KeyboardAwareScrollView>
             </TouchableWithoutFeedback>
 
             {/* Profile Image Modal */}
@@ -1477,6 +1484,7 @@ const buildScheduleArray = () => {
                                     setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
                                     errorMessage={durationError}
                                     rightIconStyle={{ tintColor: colors.primary }}
+                                    keyboardType="numeric"
                                 />
                                 <View style={{ height: 18 }} />
                                 <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
@@ -1488,7 +1496,7 @@ const buildScheduleArray = () => {
             </Modal>
             {/* Native Time Picker */}
             {showTimePicker && <DateTimePicker value={timeStringToDate(timeFrom)} mode="time" is24Hour={true} display={Platform.OS === "ios" ? "spinner" : "clock"} onChange={onNativeTimeChange} />}
-        </View>
+        </View >
     );
 };
 export default AddStaffScreen;
