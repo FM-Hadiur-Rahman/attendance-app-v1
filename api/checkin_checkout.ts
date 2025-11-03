@@ -89,17 +89,37 @@ export const getTodaySchedule = async (opts: { userId?: string; branchId?: strin
 
 export const getBranchDetails = async (branchId: string) => {
   try {
-    const response = await axiosInstance.get("/branch"); // fetch all branches
-    const branch = response.data.branches.find(
-      (b: any) => b._id === branchId
-    );
+    const response = await axiosInstance.get(`/branch/${branchId}`);
+    const branch = response.data?.branch || response.data?.data || response.data;
+
     if (!branch) throw new Error("Branch not found");
-    return branch;
-  } catch (error) {
-    console.log("❌ Error fetching branch address:", error);
-    throw error;
+
+    let address: string | null = null;
+
+    if (typeof branch.address === "string") {
+      address = branch.address;
+    } else if (branch.location?.coordinates) {
+      const [lon, lat] = branch.location.coordinates;
+      address = `Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    } else {
+      address = "Address not available";
+    }
+
+    return {
+      id: branch._id,
+      name: branch.name,
+      address,
+      phone: branch.phone || "N/A",
+      email: branch.email || "N/A",
+      raw: branch,
+    };
+  } catch (error: any) {
+    console.error("❌ Error fetching branch details:", error.response?.data || error.message);
+    return null;
   }
 };
+
+
 
 export const getWeeklySchedules = async (opts: { userId?: string; timezone?: string } = {}) => {
   const { userId, timezone = "Asia/Colombo" } = opts;
@@ -160,6 +180,74 @@ return weekSchedules.map((s: any) => ({
   }
 };
 
+export const getMonthlySchedules = async (opts: { userId?: string; timezone?: string } = {}) => {
+  const { userId, timezone = "Asia/Colombo" } = opts;
 
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
+  try {
+    // ✅ Correct API endpoint
+    const resp = await axiosInstance.get("/attendance/my-history", { params: { page: 1, limit: 500 } });
+    const allSchedules = resp.data?.attendance ?? resp.data?.data ?? [];
+
+    // Filter for this month and optionally by userId
+    const monthSchedules = allSchedules.filter((s: any) => {
+      const schedDate = new Date(s.In);
+      return schedDate >= firstDay && schedDate <= lastDay &&
+        (!userId || s.employee === userId);
+    });
+
+    console.log("\n🗓️ MONTHLY SCHEDULES ===========================");
+    if (monthSchedules.length > 0) {
+      monthSchedules.forEach((s: any) => {
+        const inTime = s.In?.split(" ")[1] ?? "--:--";
+        const outTime = s.Out?.split(" ")[1] ?? "--:--";
+        console.log(
+          `➡️ (${new Date(s.In).toLocaleDateString("en-CA", { timeZone: timezone })})`,
+          `| Branch: ${s.branch?.name || "Unknown"}`,
+          `| ${inTime} - ${outTime}`
+        );
+      });
+    } else {
+      console.log("⚠️ No monthly schedules found.");
+    }
+
+    return monthSchedules;
+
+  } catch (err: any) {
+    console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
+    return [];
+  }
+};
+
+// Combine weekly and monthly schedules
+export const showWeeklyAndMonthlySchedules = async (userId?: string) => {
+  console.log("===============================================");
+  console.log("🧩 Fetching Weekly and Monthly Schedules...");
+  console.log("===============================================");
+
+  const weekly = await getWeeklySchedules({ userId });
+  const monthly = await getMonthlySchedules({ userId });
+
+  // Calculate total duration for monthly schedules
+  let totalMinutes = 0;
+  monthly.forEach((sched: any) => {
+    if (sched.In && sched.Out) {
+      const { h, m } = calcDuration(sched.In.split(" ")[1], sched.Out.split(" ")[1]);
+      totalMinutes += h * 60 + m;
+    }
+  });
+
+  const totalText = `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}h ${String(
+    totalMinutes % 60
+  ).padStart(2, "0")}m`;
+
+  console.log("\n✅ Summary:");
+  console.log(`Weekly schedules: ${weekly.length}`);
+  console.log(`Monthly schedules: ${monthly.length}`);
+  console.log(`Total hours this month: ${totalText}`);
+  console.log("===============================================");
+};
 
