@@ -7,6 +7,8 @@ import {
   Image,
   RefreshControl,
   Dimensions,
+  TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
 import CartBox from "../../../components/CartBox";
@@ -314,10 +316,13 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [branchData, setBranchData] = useState({});
   const [schedules, setSchedules] = useState<any[]>([]);
   const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
-const ITEMS_PER_PAGE = 10;
-const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
-const [loadingMore, setLoadingMore] = useState(false);
-const [hasMore, setHasMore] = useState(true);
+  const ITEMS_PER_PAGE = 10;
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+ 
 
 
   const totalToText = (mins: number) => {
@@ -391,27 +396,17 @@ const [hasMore, setHasMore] = useState(true);
     };
   }, [schedules]);
 
-const visibleSections = useMemo(() => {
-  if (!sections || !Array.isArray(sections)) return [];
+  const totalItems = useMemo(
+    () => sections.reduce((sum, section) => sum + section.data.length, 0),
+    [sections]
+  );
 
-  let count = 0;
-  const limitedSections: { title: string; data: any[] }[] = [];
+  const totalVisible = page * limit;
 
-  for (const section of sections) {
-    if (!section || !section.data) continue;
-    if (count >= visibleCount) break;
-
-    const remaining = visibleCount - count;
-    const sliced = section.data.slice(0, remaining);
-    if (sliced.length > 0) {
-      limitedSections.push({ title: section.title, data: sliced });
-      count += sliced.length;
-    }
-  }
-
-  return limitedSections;
-}, [sections, visibleCount]);
-
+  const visibleSections = sections.map(section => {
+    const visibleData = section.data.slice(0, totalVisible);
+    return { ...section, data: visibleData };
+  });
 
 
 
@@ -573,35 +568,29 @@ const visibleSections = useMemo(() => {
         </View>
 
         <SectionList
-          sections={sections}
-          showsVerticalScrollIndicator={false}
+          sections={visibleSections.slice(0, limit * page)} // show records up to page × limit
           keyExtractor={(item, index) =>
             item.id ? `${item.id}-${index}` : `${item.In}-${item.Out}-${index}`
           }
-          contentContainerStyle={{ paddingBottom: 80 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           renderSectionHeader={({ section }) =>
             section.data.length > 0 ? (
               <Text style={styles.sectionTitle}>{section.title}</Text>
             ) : null
           }
-
           renderItem={({ item, index }) => {
-            // normalize branch ids
             const itemBranchId =
               normalizeBranchIdValue(item.branch_id ?? item.branch ?? item.branchId ?? item.branchId) ??
-              normalizeBranchIdValue(item?.branch); // extra fallback
+              normalizeBranchIdValue(item?.branch);
 
-            const loggedBranchId =
-              normalizeBranchIdValue(
-                currentUser?.branch_id ??
-                currentUser?.default_branch_id ??
-                currentUser?.defaultBranchId ??
-                currentUser?.branch
-              );
+            const loggedBranchId = normalizeBranchIdValue(
+              currentUser?.branch_id ??
+              currentUser?.default_branch_id ??
+              currentUser?.defaultBranchId ??
+              currentUser?.branch
+            );
 
-            // if itemBranchId is same as logged-in user's branch id -> don't show branch info
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
-
             const branchName = item.branch?.name || (itemBranchId ? branchNames[itemBranchId] : "Unknown Branch");
             const branchAddress =
               (itemBranchId && branchAddresses[itemBranchId]) ||
@@ -624,40 +613,63 @@ const visibleSections = useMemo(() => {
             const durationText =
               inDate && outDate
                 ? calcDuration(
-                  `${String(inDate.getHours()).padStart(2, "0")}:${String(inDate.getMinutes()).padStart(2, "0")}:${String(inDate.getSeconds()).padStart(2, "0")}`,
-                  `${String(outDate.getHours()).padStart(2, "0")}:${String(outDate.getMinutes()).padStart(2, "0")}:${String(outDate.getSeconds()).padStart(2, "0")}`
+                  `${String(inDate.getHours()).padStart(2, "0")}:${String(inDate.getMinutes()).padStart(
+                    2,
+                    "0"
+                  )}:${String(inDate.getSeconds()).padStart(2, "0")}`,
+                  `${String(outDate.getHours()).padStart(2, "0")}:${String(outDate.getMinutes()).padStart(
+                    2,
+                    "0"
+                  )}:${String(outDate.getSeconds()).padStart(2, "0")}`
                 ).text
                 : "--h--m";
 
             return (
-              <CartBox key={index} marginTop={8} paddingRight={12} paddingLeft={12} paddingTop={12} paddingBottom={12} borderRadius={10} alignItems="flex-start">
-                {/* Branch name — only show when different from logged-in user's branch */}
+              <CartBox
+                key={index}
+                marginTop={8}
+                paddingRight={12}
+                paddingLeft={12}
+                paddingTop={12}
+                paddingBottom={12}
+                borderRadius={10}
+                alignItems="flex-start"
+              >
                 {showBranchInfo && (
                   <View style={styles.brnamerow}>
-                    <Image source={require("../../../assets/icons/branch.png")} style={styles.branchIcon} resizeMode="contain" />
+                    <Image
+                      source={require("../../../assets/icons/branch.png")}
+                      style={styles.branchIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.branchName}>{branchName}</Text>
                   </View>
                 )}
 
-                {/* Branch location — only show when different from logged-in user's branch */}
                 {showBranchInfo && (
                   <View style={styles.branchLocationRow}>
-                    <Image source={require("../../../assets/icons/location.png")} style={styles.locationIcon} resizeMode="contain" />
+                    <Image
+                      source={require("../../../assets/icons/location.png")}
+                      style={styles.locationIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.branchLocationText} numberOfLines={1} ellipsizeMode="tail">
                       {branchAddress}
                     </Text>
                   </View>
                 )}
 
-                {/* Time row */}
                 <View style={styles.itemRow}>
                   <Text style={styles.timeText}>{timeText}</Text>
                   <Text style={styles.durationText}>{durationText}</Text>
                 </View>
 
-                {/* Date */}
                 <Text style={styles.dateText}>
-                  {new Date(item.In).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "2-digit" })}
+                  {new Date(item.In).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "2-digit",
+                  })}
                 </Text>
               </CartBox>
             );
@@ -671,7 +683,42 @@ const visibleSections = useMemo(() => {
               tintColor={colors.primary}
             />
           }
+onEndReached={async () => {
+  const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
+  const visibleItems = page * limit;
+
+  if (visibleItems < totalItems && !loadingMore) {
+    setLoadingMore(true);
+    // simulate short delay if needed or call API
+    await new Promise(resolve => setTimeout(resolve, 400));
+    setPage(prev => prev + 1);
+    setLoadingMore(false);
+  }
+}}
+onEndReachedThreshold={0.2}
+ListFooterComponent={() => {
+  const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
+  const visibleItems = page * limit;
+
+  if (loadingMore) {
+    return (
+      <ActivityIndicator
+        style={{ marginVertical: 16 }}
+        size="small"
+        color={colors.primary}
+      />
+    );
+  }
+
+  if (visibleItems < totalItems) {
+    // Empty space before spinner shows up
+    return <View style={{ height: 20 }} />;
+  }
+
+  return null;
+}}
         />
+
 
       </View>
     </View>

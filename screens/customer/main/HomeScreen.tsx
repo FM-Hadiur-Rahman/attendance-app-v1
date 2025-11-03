@@ -66,7 +66,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
   const [allSchedules, setAllSchedules] = useState<any[]>([]); // for all fetched schedules
 
-  const CHECKIN_RADIUS = 8912969.979599247; // keep radius same (meters)
+  const CHECKIN_RADIUS = 8912970.088506764; // keep radius same (meters)
 
   let nextSchedule: Schedule | undefined = undefined;
 
