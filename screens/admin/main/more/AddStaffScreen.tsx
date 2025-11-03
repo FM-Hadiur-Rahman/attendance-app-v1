@@ -12,13 +12,13 @@ import {
     Pressable,
     Alert,
     Modal,
-    KeyboardAvoidingView,
     TouchableWithoutFeedback,
     Platform,
     RefreshControl,
     Dimensions,
     LayoutChangeEvent,
 } from "react-native";
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation, useRoute } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -36,8 +36,8 @@ import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from '../../../../api/axiosInstance';
 import { register as authRegister } from "../../../../api/auth/authService";
-import { getBranchId } from "../../../../api/profile";
-import { getUsers } from "../../../../api/profile";
+import { getBranchId, getBranchById, getUsers, getUserById, postSchedulesBulk } from '../../../../api/profile';
+
 
 const PHONE_RULES: Record<string, { min: number; max: number; example?: string }> = {
     "94": { min: 9, max: 9, example: "7XXXXXXXX" },
@@ -203,22 +203,97 @@ const AddStaffScreen: React.FC = (props: any) => {
         setTimeFrom(`${hh}:${mm}:${ss}`);
         setTimeFromError("");
     };
+    const [finalSchedule, setFinalSchedule] = useState([]);
+
+    
     const buildScheduleArray = () => {
-        const result: Array<any> = [];
+      const result: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }> = [];
 
-        FULL_WEEKDAYS.forEach((dayName) => {
-            const s = schedules[dayName];
-            if (s) {
-                result.push({
-                    day: dayName,
-                    start_time: s.startTime,
-                    duration: s.duration ?? 0,
-                    end_time: s.endTime,
-                });
-            }
-        });
+      const normalizeHHMM = (t: string) => {
+        if (!t) return '';
+        const parts = t.split(':').map(p => p.trim());
+        if (parts.length >= 2) {
+          const hh = parts[0].padStart(2, '0');
+          const mm = parts[1].padStart(2, '0');
+          return `${hh}:${mm}`;
+        }
+        return t;
+      };
 
-        return result;
+      const addEntry = (date: string, weekday: string, start: string, end: string) => {
+        const s = normalizeHHMM(start);
+        const e = normalizeHHMM(end);
+        if (!date || !weekday || !s || !e) {
+          console.warn('Skipping malformed schedule entry', { date, weekday, start, end });
+          return;
+        }
+        result.push({ date, day_of_week: weekday, start_time: s, end_time: e });
+      };
+
+      FULL_WEEKDAYS.forEach((dayName) => {
+        const s = schedules[dayName];
+        if (!s) return;
+
+        const date = String(s.date ?? getDateForWeekday(dayName));
+        if (!date) return;
+        if (!s.startTime || !s.endTime) return;
+
+        const start_time = normalizeHHMM(String(s.startTime));
+        const end_time = normalizeHHMM(String(s.endTime));
+
+        if (!start_time || !end_time) return;
+
+        // if same-day or start <= end -> push as-is
+        const [sh, sm] = start_time.split(':').map(Number);
+        const [eh, em] = end_time.split(':').map(Number);
+        const startMinutes = sh * 60 + sm;
+        const endMinutes = eh * 60 + em;
+
+        if (endMinutes > startMinutes || endMinutes === startMinutes) {
+          // normal same-day entry
+          addEntry(date, dayName, start_time, end_time);
+        } else {
+          // crosses midnight -> split into two entries:
+          // 1) date: start_time -> 23:59
+          // 2) date+1: 00:00 -> end_time
+          addEntry(date, dayName, start_time, '23:59');
+
+          // compute next day date and weekday
+          const nextDateObj = new Date(date);
+          nextDateObj.setDate(nextDateObj.getDate() + 1);
+          const y = nextDateObj.getFullYear();
+          const m = (nextDateObj.getMonth() + 1).toString().padStart(2, '0');
+          const d = nextDateObj.getDate().toString().padStart(2, '0');
+          const nextDate = `${y}-${m}-${d}`;
+
+          // weekday lookup
+          const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
+
+          addEntry(nextDate, nextWeekday, '00:00', end_time);
+        }
+      });
+
+      return result;
+    };
+
+
+
+    // --- 1) Helper: getDateForWeekday ---
+    const getDateForWeekday = (dayName: string) => {
+        const idx = FULL_WEEKDAYS.indexOf(dayName); // 0 = Sunday
+        if (idx === -1) return null;
+
+        const today = new Date();
+        const dayIdx = today.getDay(); // 0..6
+        const sunday = new Date(today);
+        sunday.setDate(today.getDate() - dayIdx);
+        sunday.setHours(0, 0, 0, 0);
+
+        const target = new Date(sunday);
+        target.setDate(sunday.getDate() + idx);
+        target.setHours(0, 0, 0, 0);
+
+        return dateToYMD(target); // uses your existing dateToYMD helper
     };
 
     const onAddSchedule = () => {
@@ -244,6 +319,9 @@ const AddStaffScreen: React.FC = (props: any) => {
 
         const dayName = activeDate; // e.g. "Sunday"
 
+        // compute date for this weekday in current week (YYYY-MM-DD)
+        const dateForDay = getDateForWeekday(dayName);
+
         setSchedules((prev) => {
             const newSchedules = {
                 ...prev,
@@ -251,12 +329,23 @@ const AddStaffScreen: React.FC = (props: any) => {
                     startTime: timeFrom,
                     endTime: endTime,
                     duration: durationNum,
+                    date: dateForDay,
                 },
             };
             console.log("Schedule added for", dayName, "=>", newSchedules[dayName]);
-            console.table(Object.entries(newSchedules).map(([day, sObj]) => ({ day, start: sObj.startTime, end: sObj.endTime, duration: sObj.duration })));
+            console.table(
+                Object.entries(newSchedules).map(([day, sObj]) => ({
+                    day,
+                    date: sObj.date,
+                    start: sObj.startTime,
+                    end: sObj.endTime,
+                    duration: sObj.duration,
+                }))
+            );
             return newSchedules;
         });
+
+        // close modal and reset modal fields
         setAddScheduleModalVisible(false);
         setTimeFrom("");
         setDurationHours("");
@@ -370,7 +459,7 @@ const AddStaffScreen: React.FC = (props: any) => {
 
     const validateEmail = (email: string): boolean => {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return re.test(String(email).toLowerCase());
+        return re.test(String(email));
     };
     const validatePhone = (phoneValue: string): boolean => {
         const digits = (phoneValue || "").replace(/\D/g, "");
@@ -476,7 +565,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         }
     };
 
-
     const validateField = (field: string, value: string) => {
         let error = "";
         switch (field) {
@@ -568,92 +656,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         goToStep2();
     };
 
-
-
-    const handleSave = async () => {
-        if (!validateStep2()) return;
-
-        // build payload (API expects "fullname" per your raw body)
-        const finalPhone = `${selectedCountry.code}${phoneRaw}`;
-
-        // Determine branch id to use: prefer selectedBranchId, else use saved admin branch
-        let branchIdToUse: string | null = selectedBranchId ?? null;
-        if (!branchIdToUse) {
-            try {
-                const saved = await getBranchId();
-                if (saved) branchIdToUse = saved;
-            } catch (e) {
-                console.warn("Failed to read saved branch id", e);
-            }
-        }
-
-        const payload: any = {
-            fullname: fullName,
-            branch: branchIdToUse ?? "",
-            username: username,
-            email: email,
-            password: password,
-            position: position,
-            phone: finalPhone,
-            role: "", // omit or empty to let backend default (you said role optional)
-        };
-
-        // Save current admin token & userId so we can restore later
-        let prevToken: string | null = null;
-        let prevUserId: string | null = null;
-        try {
-            prevToken = await AsyncStorage.getItem("userToken");
-            prevUserId = await AsyncStorage.getItem("userId");
-        } catch (e) {
-            console.warn("Failed to read previous auth data", e);
-        }
-
-        try {
-            // call register from AuthService
-            const result = await authRegister(payload);
-            // result contains { token, user } per interface
-            const createdUser = result?.user ?? null;
-
-            // call onSave callback without password
-            if (onSave) {
-                try {
-                    const sanitized = { ...(createdUser || {}), password: undefined };
-                    onSave(sanitized);
-                } catch (e) {
-                    console.warn("onSave callback error", e);
-                }
-            }
-
-            showSuccessToast(lang?.staff_created_success ?? "Staff created successfully");
-            setConfirmPopupVisible(false);
-            navigation.goBack();
-        } catch (err: any) {
-            console.error("Error creating staff via authRegister:", err?.response ?? err);
-            const message =
-                err?.response?.data?.message ??
-                err?.response?.data ??
-                err?.message ??
-                "Failed to create staff";
-            showErrorToast(String(message));
-        } finally {
-            // restore previous admin token and userId (if any) to avoid switching session
-            try {
-                if (prevToken) {
-                    await AsyncStorage.setItem("userToken", prevToken);
-                } else {
-                    await AsyncStorage.removeItem("userToken");
-                }
-                if (prevUserId) {
-                    await AsyncStorage.setItem("userId", prevUserId);
-                } else {
-                    await AsyncStorage.removeItem("userId");
-                }
-            } catch (e) {
-                console.warn("Failed to restore previous auth data", e);
-            }
-        }
-    };
-
     const onRefresh = useCallback(() => {
         setRefreshing(true);
 
@@ -709,23 +711,76 @@ const AddStaffScreen: React.FC = (props: any) => {
         return new Date(y, m - 1, d);
     };
 
+    const loadSavedBranch = async () => {
+        try {
+            const saved = await getBranchId(); // from AsyncStorage
+            if (!saved) return;
+
+            // set id immediately
+            setSelectedBranchId(saved);
+
+            // try to fetch branch name
+            const branch = await getBranchById(saved);
+            if (branch && branch.name) {
+                setSelectedBranch(branch.name);
+            } else {
+                // fallback: show id (better than empty)
+                setSelectedBranch(String(saved));
+            }
+        } catch (e) {
+            console.warn('loadSavedBranch failed', e);
+            setSelectedBranch(String((await getBranchId()) ?? ''));
+        }
+    };
+
+    useEffect(() => {
+        // load default branch once on mount
+        (async () => {
+            if (!selectedBranch && !selectedBranchId) {
+                await loadSavedBranch();
+            }
+        })();
+    }, []);
+
     const openAddModalForDate = async (ymd: string) => {
-        // convert YMD to weekday name using safe parse
+        // parse input ymd to find weekday name
         const d = parseYMD(ymd);
         const dayName = FULL_WEEKDAYS[d.getDay()];
         setActiveDate(dayName);
-
-        // if branch not selected, try fetching admin's saved branch id and set selectedBranchId
+        // if branch not selected, try fetching admin's saved branch id and set selectedBranchId + name
         if (!selectedBranch && !selectedBranchId) {
-            try {
-                const saved = await getBranchId();
-                if (saved) {
-                    setSelectedBranchId(saved);
-                }
-            } catch (e) {
-                console.warn("Could not load saved branch id", e);
-            }
+            await loadSavedBranch();
         }
+        // If there's an existing schedule for this weekday, pre-fill the modal fields
+        const existing = schedules[dayName];
+        if (existing) {
+            // prefer existing times
+            setTimeFrom(existing.startTime ?? "");
+            setDurationHours(existing.duration !== undefined ? String(existing.duration) : "");
+            // ensure date exists
+            if (!existing.date) {
+                const computed = getDateForWeekday(dayName);
+                if (computed) {
+                    // attach computed date back into schedules so it persists
+                    setSchedules((prev) => ({
+                        ...prev,
+                        [dayName]: {
+                            ...prev[dayName],
+                            date: computed,
+                        },
+                    }));
+                }
+            }
+        } else {
+            // no existing schedule: compute date and set modal defaults empty
+            const computed = getDateForWeekday(dayName);
+            // we do not persist until user presses Add, but keeping date available is helpful
+            setTimeFrom("");
+            setDurationHours("");
+            // optionally preload date into schedules as a placeholder (commented)
+            // setSchedules(prev => ({ ...prev, [dayName]: { date: computed } }));
+        }
+
         setAddScheduleModalVisible(true);
     };
 
@@ -744,32 +799,42 @@ const AddStaffScreen: React.FC = (props: any) => {
         setDurationHours("");
         setDurationError("");
         setAddScheduleModalVisible(false);
-        setSelectedBranch("");
-        setSelectedBranchId(null);
     };
-
     const handleProceedFromStep2 = () => {
+        const scheduleArray = buildScheduleArray();  // ✅ includes date, start_time, end_time, duration
+
         // Log a friendly summary to the console before proceeding
         const summary =
-            Object.keys(schedules).length === 0
+            scheduleArray.length === 0
                 ? "No schedules set for this week."
-                : Object.entries(schedules).map(([date, sObj]) => `${date}: ${sObj.startTime} - ${sObj.endTime}`).join("\n");
+                : scheduleArray
+                    .map((item) => `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`)
+                    .join("\n");
 
         console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
-        if (Object.keys(schedules).length > 0) {
-            console.table(Object.entries(schedules).map(([date, sObj]) => ({ start: sObj.startTime, end: sObj.endTime })));
+
+        if (scheduleArray.length > 0) {
+            console.table(
+                scheduleArray.map((item) => ({
+                    day: item.day,
+                    date: item.date,
+                    start: item.start_time,
+                    end: item.end_time,
+                    duration: item.duration
+                }))
+            );
         }
+        setFinalSchedule(scheduleArray);  // <-- if you store to state for Step3
         goToStep3();
     };
-    // username availability check
+
     useEffect(() => {
-        // clear existing timer
+
         if (usernameTimer.current) {
             clearTimeout(usernameTimer.current);
             usernameTimer.current = null;
         }
 
-        // empty -> clear any error
         if (!username) {
             setErrors(prev => ({ ...prev, username: '' }));
             setCheckingUsername(false);
@@ -846,6 +911,142 @@ const AddStaffScreen: React.FC = (props: any) => {
         };
     }, [email]);
 
+    const handleSave = async () => {
+        if (!(await validateStep2())) return;
+
+        // build payload (API expects "fullname" per your raw body)
+        const finalPhone = `${selectedCountry.code}${phoneRaw}`;
+
+        // Determine branch id to use: prefer selectedBranchId, else use saved admin branch
+        let branchIdToUse: string | null = selectedBranchId ?? null;
+        if (!branchIdToUse) {
+            try {
+                const saved = await getBranchId();
+                if (saved) branchIdToUse = saved;
+            } catch (e) {
+                console.warn("Failed to read saved branch id", e);
+            }
+        }
+
+        const payload: any = {
+            fullname: fullName,
+            branch: branchIdToUse ?? "",
+            username: username,
+            email: email,
+            password: password,
+            position: position,
+            phone: finalPhone,
+            role: "", // omit or empty to let backend default
+        };
+
+        // Save current admin token & userId so we can restore later
+        let prevToken: string | null = null;
+        let prevUserId: string | null = null;
+        try {
+            prevToken = await AsyncStorage.getItem("userToken");
+            prevUserId = await AsyncStorage.getItem("userId");
+        } catch (e) {
+            console.warn("Failed to read previous auth data", e);
+        }
+
+        try {
+            // call register from AuthService
+            const result = await authRegister(payload);
+            // result contains { token, user } per interface
+            const createdUser = result?.user ?? null;
+            const createdId = createdUser?._id ?? createdUser?.id ?? null;
+
+            // call onSave callback without password
+            if (onSave) {
+                try {
+                    const sanitized = { ...(createdUser || {}), password: undefined };
+                    onSave(sanitized);
+                } catch (e) {
+                    console.warn("onSave callback error", e);
+                }
+            }
+
+            // Immediately restore previous admin token BEFORE fetching user profile and posting schedules
+            try {
+                if (prevToken) {
+                    await AsyncStorage.setItem("userToken", prevToken);
+                } else {
+                    await AsyncStorage.removeItem("userToken");
+                }
+                if (prevUserId) {
+                    await AsyncStorage.setItem("userId", prevUserId);
+                } else {
+                    await AsyncStorage.removeItem("userId");
+                }
+            } catch (e) {
+                console.warn("Failed to restore previous auth data before profile fetch / schedule post", e);
+            }
+
+            // If we have a created user id, fetch full user from DB and log it
+            if (createdId) {
+                try {
+                    const fresh = await getUserById(String(createdId));
+                    console.log("✅ Created user fetched from DB:", fresh);
+                } catch (fetchErr) {
+                    console.warn("Failed to fetch created user after register:", fetchErr);
+                }
+            } else {
+                console.warn("Created user id not returned by authRegister:", createdUser);
+            }
+
+            // --- NEW: Build schedule payload and POST to schedule bulk endpoint ---
+            try {
+                const scheduleArray = buildScheduleArray();
+                if (scheduleArray.length > 0) {
+                    try {
+                        const scheduleResp = await postSchedulesBulk(
+                            String(createdId),
+                            String(branchIdToUse ?? ''),
+                            scheduleArray,
+                            prevToken ?? undefined
+                        );
+                        console.log('Schedule bulk response:', scheduleResp);
+                    } catch (scheduleErr: any) {
+                        console.warn('Failed to POST schedules after creating employee:', scheduleErr?.response ?? scheduleErr);
+                        showErrorToast('Failed to save schedules (saved user).');
+                    }
+                } else {
+                    console.log('No schedules to post for created employee.');
+                }
+            } catch (outerErr) {
+                console.warn('Error while preparing schedules:', outerErr);
+            }
+
+            showSuccessToast(lang?.staff_created_success ?? "Staff created successfully");
+            setConfirmPopupVisible(false);
+            navigation.goBack();
+        } catch (err: any) {
+            console.error("Error creating staff via authRegister:", err?.response ?? err);
+            const message =
+                err?.response?.data?.message ??
+                err?.response?.data ??
+                err?.message ??
+                "Failed to create staff";
+            showErrorToast(String(message));
+        } finally {
+            // restore previous admin token and userId (if any) to avoid switching session
+            // NOTE: we already attempted restore above; keep this as a safety net.
+            try {
+                if (prevToken) {
+                    axiosInstance.defaults.headers['Authorization'] = `Bearer ${prevToken}`;
+                } else {
+                    await AsyncStorage.removeItem("userToken");
+                }
+                if (prevUserId) {
+                    await AsyncStorage.setItem("userId", prevUserId);
+                } else {
+                    await AsyncStorage.removeItem("userId");
+                }
+            } catch (e) {
+                console.warn("Failed to restore previous auth data in finally", e);
+            }
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -862,7 +1063,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                             resetStep2Fields();
                             setStep(1); // go back to Step 1
                         } else if (step === 3) {
-                            resetStep2Fields();
                             setStep(2);
                         } else {
                             navigation.goBack();
@@ -871,11 +1071,23 @@ const AddStaffScreen: React.FC = (props: any) => {
                 }}
                 center={{ type: "text", value: lang.profile, color: colors.text }}
             />
-
             <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-                <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 40}>
+                <KeyboardAwareScrollView
+                    contentContainerStyle={styles.content}
+                    extraScrollHeight={20} // adjust scroll when keyboard opens
+                    enableOnAndroid={true}
+                    keyboardShouldPersistTaps="handled"
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            progressBackgroundColor={colors.secondary}
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
+                        />
+                    }
+                >
                     <ScrollView
-                        contentContainerStyle={styles.content}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />}
                     >
                         <View style={styles.progressWrap}>
@@ -918,7 +1130,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     returnKeyType="next"
                                     onSubmitEditing={() => positionRef.current?.focus()}
                                 />
-
                                 <InputBox
                                     ref={positionRef}
                                     label={lang.position}
@@ -976,7 +1187,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                                         }
                                     }}
                                 />
-
                                 <InputBox
                                     ref={phoneRef}
                                     label="Phone"
@@ -1080,7 +1290,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     <Text style={styles.title}>{lang.login_account_details}</Text>
                                     <Text style={styles.subtitle}>{lang.login_account_desc}</Text>
                                 </View>
-
                                 <InputBox
                                     ref={usernameRef}
                                     label={lang.username}
@@ -1171,7 +1380,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                             </>
                         )}
                     </ScrollView>
-                </KeyboardAvoidingView>
+                </KeyboardAwareScrollView>
             </TouchableWithoutFeedback>
 
             {/* Profile Image Modal */}
@@ -1228,7 +1437,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                     </View>
                 )}
             </View>
-
             {/* Add Schedule Modal */}
             <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); }}>
                 <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); }}>
@@ -1245,8 +1453,8 @@ const AddStaffScreen: React.FC = (props: any) => {
                                         value={selectedBranch}
                                         editable={false}
                                         setValue={() => {
-                                            setSelectedBranch("");
-                                            setSelectedBranchId(null);
+                                            setSelectedBranch(item.name ?? String(item._id));
+                                            setSelectedBranchId(item._id ?? item.id ?? null);
                                         }}
                                         rightIcon={require("../../../../assets/icons/branch_b.png")}
                                         rightIconStyle={{ tintColor: colors.primary }}
@@ -1276,10 +1484,9 @@ const AddStaffScreen: React.FC = (props: any) => {
                                     setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
                                     errorMessage={durationError}
                                     rightIconStyle={{ tintColor: colors.primary }}
+                                    keyboardType="numeric"
                                 />
-
                                 <View style={{ height: 18 }} />
-
                                 <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
                                 <View style={{ height: 20 }} />
                             </ScrollView>
@@ -1289,7 +1496,7 @@ const AddStaffScreen: React.FC = (props: any) => {
             </Modal>
             {/* Native Time Picker */}
             {showTimePicker && <DateTimePicker value={timeStringToDate(timeFrom)} mode="time" is24Hour={true} display={Platform.OS === "ios" ? "spinner" : "clock"} onChange={onNativeTimeChange} />}
-        </View>
+        </View >
     );
 };
 export default AddStaffScreen;

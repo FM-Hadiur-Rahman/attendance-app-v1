@@ -253,10 +253,59 @@ const StaffRecordScreen: React.FC = (props: any) => {
     navigation.navigate(routeName as any, allParams);
   };
 
-  const openAddStaff = () => {
+  // const openAddStaff = () => {
+  //   navigation.navigate("AddStaffScreen" as any, {
+  //     userId,
+  //     langId,
+  //     branchId: activeBranchId ?? undefined,
+  //     onSave: (newStaff: Partial<ProfileUser> & { id?: string; firstname: string; lastname?: string; position?: string; role?: string }) => {
+  //       const newId = `U${(users.length + 1).toString().padStart(3, "0")}`;
+  //       const payload: ProfileUser = {
+  //         id: newId,
+  //         fullname: `${newStaff.firstname ?? "New"} ${newStaff.lastname ?? "Staff"}`.trim(),
+  //         username: ((newStaff.firstname ?? "user") as string).toLowerCase(),
+  //         role: newStaff.role ?? "user",
+  //         position: newStaff.position ?? "",
+  //         branch_id: activeBranchId,
+  //         createDate: new Date().toISOString(),
+  //         updateDate: new Date().toISOString(),
+  //       } as any;
+  //       setUsers((prev) => [payload, ...prev]);
+  //       setVersion((v) => v + 1);
+  //       showSuccessToast("Staff added");
+  //     },
+  //   });
+  // };
+  // replace your existing openAddStaff with this async version
+const openAddStaff = async () => {
+  try {
+    // Try to use existing activeBranchId first
+    let branchIdToPass: string | undefined = activeBranchId ?? undefined;
+
+    // If we don't have it yet, fetch the logged-in profile to get branch id
+    if (!branchIdToPass) {
+      try {
+        const profile = await getProfile();
+        const branchFromProfile =
+          typeof profile?.branch === "string"
+            ? profile.branch
+            : profile?.branch?._id ?? null;
+        if (branchFromProfile) {
+          branchIdToPass = branchFromProfile;
+          setActiveBranchId(branchFromProfile);
+          console.log("Determined branchId from profile:", branchFromProfile);
+        } else {
+          console.log("No branch found on profile");
+        }
+      } catch (pfErr) {
+        console.warn("getProfile() failed while opening AddStaffScreen:", pfErr);
+      }
+    }
+
     navigation.navigate("AddStaffScreen" as any, {
       userId,
       langId,
+      branchId: branchIdToPass ?? undefined,
       onSave: (newStaff: Partial<ProfileUser> & { id?: string; firstname: string; lastname?: string; position?: string; role?: string }) => {
         const newId = `U${(users.length + 1).toString().padStart(3, "0")}`;
         const payload: ProfileUser = {
@@ -265,7 +314,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
           username: ((newStaff.firstname ?? "user") as string).toLowerCase(),
           role: newStaff.role ?? "user",
           position: newStaff.position ?? "",
-          branch_id: activeBranchId,
+          branch_id: branchIdToPass ?? activeBranchId ?? undefined,
           createDate: new Date().toISOString(),
           updateDate: new Date().toISOString(),
         } as any;
@@ -274,7 +323,17 @@ const StaffRecordScreen: React.FC = (props: any) => {
         showSuccessToast("Staff added");
       },
     });
-  };
+  } catch (err) {
+    console.error("openAddStaff error:", err);
+    // fallback: navigate without branch if something unexpected fails
+    navigation.navigate("AddStaffScreen" as any, {
+      userId,
+      langId,
+      branchId: activeBranchId ?? undefined,
+    });
+  }
+};
+
 
   const openStaffProfile = (staffId: string) => {
     const staff = safeFind(users, (u) => (u as any).id === staffId || (u as any)._id === staffId);
