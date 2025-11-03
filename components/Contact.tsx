@@ -74,13 +74,13 @@ const ContactCard = ({
       paddingHorizontal={12}
       marginBottom={12}
       height={58}
-      containerStyle={{
-        shadowColor: colors.text,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0,
-        shadowRadius: 1,
-        elevation: 2,
-      }}
+      // containerStyle={{
+      //   shadowColor: colors.text,
+      //   shadowOffset: { width: 0, height: 1 },
+      //   shadowOpacity: 0,
+      //   shadowRadius: 1,
+      //   elevation: 2,
+      // }}
     >
       <View style={styles.cardContent}>
         <View style={styles.leftSection}>

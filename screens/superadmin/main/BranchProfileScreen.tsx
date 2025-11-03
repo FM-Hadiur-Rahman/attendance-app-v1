@@ -88,7 +88,7 @@ export default function BranchProfileScreen(props: any) {
   const [longitude, setLongitude] = useState<string | undefined>(undefined);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-
+  const [branchEmail, setBranchEmail] = useState("");
   // manager user id (admin) for this branch
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
 
@@ -247,6 +247,9 @@ export default function BranchProfileScreen(props: any) {
       // fetch branch using api helper
       const b = await getBranchById(branchId);
 
+      const branchEmailRaw = b?.email ?? '';
+      setBranchEmail(branchEmailRaw);
+
       const name = b?.name ?? '';
       setbranchName(name);
 
@@ -321,6 +324,7 @@ export default function BranchProfileScreen(props: any) {
     }
   };
 
+
   useEffect(() => {
     loadData();
   }, [branchId]);
@@ -336,9 +340,21 @@ export default function BranchProfileScreen(props: any) {
         break;
       case 'phoneNumber':
         raw = phoneNumber;
+        // show phone WITH country code in the cartbox value (e.g. +94123456789)
+        {
+          const local = (phoneNumber || '').replace(/\D/g, '');
+          const code = selectedCountry?.code ?? '';
+          // ensure leading + on code
+          const codeWithPlus = code ? (code.startsWith('') ? code : `+${code}`) : '';
+          const full = codeWithPlus ? `${codeWithPlus}${local}` : (phoneNumber ?? '');
+          raw = full;
+        }
         break;
       case 'branchAddress':
         raw = branchAddress;
+        break;
+      case 'email':
+        raw = branchEmail;
         break;
       case 'username':
         raw = username;
@@ -513,7 +529,52 @@ export default function BranchProfileScreen(props: any) {
   //     showErrorToast(lang?.Failed_to_save || 'Failed to save');
   //   }
   // };
-  const savePhone = async () => {
+
+
+  // const savePhone = async () => {
+  //   if (!branchId) {
+  //     showErrorToast(lang.Failed_to_save);
+  //     return;
+  //   }
+
+  //   // empty validation
+  //   if (!phoneInput || phoneInput.trim() === '') {
+  //     setPhoneError('Input can not be empty');
+  //     return;
+  //   }
+
+  //   try {
+  //     // clear previous error
+  //     setPhoneError('');
+
+  //     // normalize phone: remove non digits, drop leading 0, prefix country code
+  //     let digits = (phoneInput || '').replace(/\D/g, '');
+  //     if (digits.startsWith('0')) digits = digits.slice(1);
+  //     const e164 = `${selectedCountry?.code || ''}${digits}`;
+
+  //     // <-- update branch phone (not user) -->
+  //     const updated = await updateBranch(branchId, { phone: e164 });
+
+  //     // update displayed phone using same detect logic (use branch's returned phone if present)
+  //     const branchPhoneRaw = updated?.phone ?? e164;
+  //     const detected = detectCountryFromE164(branchPhoneRaw);
+  //     if (detected) {
+  //       setSelectedCountry(detected.matched);
+  //       setPhoneNumber(detected.displayLocal);
+  //     } else {
+  //       setPhoneNumber(branchPhoneRaw.replace(/\D/g, ''));
+  //     }
+
+  //     setPhoneModalVisible(false);
+  //     showSuccessToast(lang.phoneUpdated);
+  //   } catch (e: any) {
+  //     console.warn('savePhone failed', e?.response?.data ?? e);
+  //     setPhoneError('');
+  //     showErrorToast(lang.Failed_to_save);
+  //   }
+  // };
+
+    const savePhone = async () => {
     if (!branchId) {
       showErrorToast(lang.Failed_to_save);
       return;
@@ -534,17 +595,28 @@ export default function BranchProfileScreen(props: any) {
       if (digits.startsWith('0')) digits = digits.slice(1);
       const e164 = `${selectedCountry?.code || ''}${digits}`;
 
-      // <-- update branch phone (not user) -->
-      const updated = await updateBranch(branchId, { phone: e164 });
+      // update branch phone (primary)
+      const updatedBranch = await updateBranch(branchId, { phone: e164 });
 
-      // update displayed phone using same detect logic (use branch's returned phone if present)
-      const branchPhoneRaw = updated?.phone ?? e164;
+      // update displayed phone using returned branch phone if present
+      const branchPhoneRaw = updatedBranch?.phone ?? e164;
       const detected = detectCountryFromE164(branchPhoneRaw);
       if (detected) {
         setSelectedCountry(detected.matched);
         setPhoneNumber(detected.displayLocal);
       } else {
         setPhoneNumber(branchPhoneRaw.replace(/\D/g, ''));
+      }
+
+      // attempt to update the manager user phone too (best-effort)
+      if (adminUserId) {
+        try {
+          await updateUser(adminUserId, { phone: e164 });
+        } catch (userErr) {
+          console.warn('Failed to update admin user phone (non-fatal):', userErr);
+          // optionally notify the user but don't rollback branch update
+          showErrorToast(lang?.Failed_to_update_Manager_phone || 'Failed to update manager phone');
+        }
       }
 
       setPhoneModalVisible(false);
@@ -685,8 +757,10 @@ export default function BranchProfileScreen(props: any) {
       items: [
         { id: 'branchName', label: "Branch name", labelname: lang.Branch_name, icon: require("../../../assets/icons/branch_b.png") },
         { id: 'managerName', label: "Manager name", labelname: lang.Manager_name, icon: require("../../../assets/icons/p_profile_b.png") },
+        { id: 'email', label: "Email", labelname: "Email", icon: require("../../../assets/icons/p_email_blue.png") },
         { id: 'phoneNumber', label: "Phone number", labelname: lang.phoneNumber, icon: require("../../../assets/icons/p_phone_b.png") },
         { id: 'branchAddress', label: "Branch address", labelname: lang.Branch_address_latitude, icon: require("../../../assets/icons/p_location_b.png") },
+
       ],
     },
     {
@@ -694,7 +768,7 @@ export default function BranchProfileScreen(props: any) {
       title: "credentials",
       items: [
         { id: 'username', label: "username", labelname: lang.username, icon: require("../../../assets/icons/p_profile_b.png") },
-        { id: 'password', label: "password", labelname: lang.password, icon: require("../../../assets/icons/p_lock_b.png") },
+        // { id: 'password', label: "password", labelname: lang.password, icon: require("../../../assets/icons/p_lock_b.png") },
       ],
     },
   ];
@@ -780,6 +854,12 @@ export default function BranchProfileScreen(props: any) {
                                 {showPassword ? getItemValue(item.id) : '********'}
                               </Text>
                             </TouchableOpacity>
+                          ) : item.id === 'email' ? (
+                            <View>
+                              {/* <TouchableOpacity onPress={() => openModalFor('phoneNumber')}> */}
+                              <Text style={styles.labelValue}>{getItemValue(item.id)}</Text>
+                              {/* </TouchableOpacity> */}
+                            </View>
                           ) : (
                             <View style={{ width: 320 * base }}>
                               <Text style={styles.labelValue}>{getItemValue(item.id)}</Text>
@@ -798,13 +878,26 @@ export default function BranchProfileScreen(props: any) {
                             const dial = raw.startsWith('0') ? `${selectedCountry.code}${raw.slice(1)}` : `${selectedCountry.code}${raw}`;
                             Linking.openURL(`tel:${dial}`);
                           }}
-                          style={{ paddingVertical: 6, paddingHorizontal: 8 }}
                         >
                           <View style={{ borderRadius: 20, backgroundColor: colors.primary }}>
                             <Text style={styles.callText}>{lang.call || 'Call'}</Text>
                           </View>
                         </TouchableOpacity>
                       )}
+                    {item.id === 'email' && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          // only open mail client if branchEmail exists
+                          if (!branchEmail) return;
+                          Linking.openURL(`mailto:${branchEmail}`);
+                        }}
+                      >
+                        <View style={{ borderRadius: 20, backgroundColor: colors.primary }}>
+                          <Text style={styles.callText}>{lang.mail}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+
 
                       {item.id === 'password' && (
                         // password action button (eye icon) — matches phone button styling

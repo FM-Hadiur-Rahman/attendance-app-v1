@@ -303,7 +303,8 @@
     "email_in_use": "Email already in use",
     "invalid_start_time": "Enter valid start time (HH:MM:SS)",
     "invalid_duration": "Enter duration in hours",
-    "staff_created_success": "Staff created successfully"
+    "staff_created_success": "Staff created successfully",
+    "no_recent_checkins":"No recent check-ins"
   },
   "de": {
     "profile": "Profil",
@@ -607,6 +608,7 @@
     "email_in_use": "E-Mail bereits in Verwendung",
     "invalid_start_time": "Geben Sie eine gültige Startzeit ein (HH:MM:SS)",
     "invalid_duration": "Geben Sie die Dauer in Stunden ein",
-    "staff_created_success": "Mitarbeiter erfolgreich erstellt"
+    "staff_created_success": "Mitarbeiter erfolgreich erstellt",
+    "no_recent_checkins":"Keine kürzlichen Check-ins"
   }
 }

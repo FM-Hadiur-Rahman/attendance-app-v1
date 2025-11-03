@@ -1,16 +1,31 @@
+// screens/superadmin/main/DashboardScreen.tsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Text, Image, Dimensions, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Text,
+  Image,
+  Dimensions,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import colors from '../../../styles/Colors';
 import Header from '../../../components/Header';
 import Popup from '../../../components/Popup';
 import { Button1 } from '../../../components/Button';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import fonts from '../../../styles/Fonts';
-import { users } from '../../../api/Users';
+
+// API
+import { getUsers, ProfileUser } from '../../../api/profile';
+import { getAllBranches, Branch } from '../../../api/Branchs';
+import { getSchedulesForDate, ScheduleItem } from '../../../api/schedules';
+import { clearAllAuthData } from '../../../api/auth/authToken';
+
 import translations from "../../../assets/translations.json";
 import CartBox from '../../../components/CartBox';
-import { workHours } from "../../../api/WorkHours";
-import { branches } from '../../../api/Branch';
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -18,243 +33,316 @@ const base = deviceWidth / 440;
 type LangId = keyof typeof translations; // "en" | "de"
 
 const DashboardScreen = (props: any) => {
-    const navigation = useNavigation<any>();
-    const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
 
-    const propUserId = props?.userId;
-    const propLangId = props?.langId;
+  const propUserId = props?.userId;
+  const propLangId = props?.langId;
 
-    const routeUserId = route.params?.userId ?? route.params?.id;
-    const userId = propUserId || routeUserId;
+  const routeUserId = route.params?.userId ?? route.params?.id;
+  const userId = propUserId || routeUserId;
 
-    const user = users.find((u) => u.id === userId) || users[0];
+  const routeLangId = route.params?.langId ?? route.params?.language;
+  const initialLang = (propLangId || routeLangId || "en") as LangId;
 
-    const routeLangId = route.params?.langId ?? route.params?.language;
-    const initialLang = (propLangId || routeLangId || "en") as LangId;
+  const [selectedLanguage, setSelectedLanguage] = useState<LangId>(initialLang);
+  const [tempLanguage, setTempLanguage] = useState<LangId>(selectedLanguage);
+  const [logoutPopupVisible, setLogoutPopupVisible] = useState(false);
 
-    const [selectedLanguage, setSelectedLanguage] = useState<LangId>(initialLang);
-    const [tempLanguage, setTempLanguage] = useState<LangId>(selectedLanguage);
-    const [logoutPopupVisible, setLogoutPopupVisible] = useState(false);
+  const lang = translations[selectedLanguage];
 
-    const lang = translations[selectedLanguage];
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-    const [refreshing, setRefreshing] = useState<boolean>(false);
+  // server data states
+  const [usersState, setUsersState] = useState<ProfileUser[]>([]);
+  const [branchesState, setBranchesState] = useState<Branch[]>([]);
+  const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
 
-    const refreshFromServer = async () => {
-        // TODO: replace with real API calls that fetch latest users, branches, workHours, etc.
-        await new Promise((res) => setTimeout(res, 700));
-    };
+  useEffect(() => {
+    if (propLangId && propLangId !== selectedLanguage) {
+      setSelectedLanguage(propLangId as LangId);
+      setTempLanguage(propLangId as LangId);
+    }
+  }, [propLangId, selectedLanguage]);
 
-    const onRefresh = async () => {
-        try {
-            setRefreshing(true);
-            // If parent supplied a refresh function, prefer that
-            if (typeof (props as any).onRefreshData === "function") {
-                await (props as any).onRefreshData();
-            } else {
-                // run the placeholder server-refresh logic (replace with real fetches)
-                await refreshFromServer();
-            }
-            // Force recalculation of useMemo dependents
-            setVersion((v) => v + 1);
-        } catch (err) {
-            console.warn("Refresh failed:", err);
-        } finally {
-            setRefreshing(false);
-        }
-    };
+  // helpers for date -> YMD
+  const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-    useEffect(() => {
-        if (propLangId && propLangId !== selectedLanguage) {
-            setSelectedLanguage(propLangId as LangId);
-            setTempLanguage(propLangId as LangId);
-        }
-    }, [propLangId, selectedLanguage]);
+  // today's date in local timezone (Y-M-D)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayYMD = toYMD(today);
 
-    const [version, setVersion] = useState<number>(0);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // parallel fetch
+      const [branchesRes, usersRes, schedulesRes] = await Promise.all([
+        getAllBranches(),          // returns Branch[]
+        getUsers({ limit: 1000 }), // returns ProfileUser[] (getUsers helper)
+        getSchedulesForDate(todayYMD), // returns schedules for today (filtered)
+      ]);
 
-    // total employees (global)
-    const totalStaff = useMemo(
-        () => users.filter((u) => u.role === "employee").length,
-        [version]
-    );
+      setBranchesState(branchesRes ?? []);
+      setUsersState(usersRes ?? []);
+      setSchedulesState(schedulesRes ?? []);
+    } catch (err) {
+      console.warn('Dashboard loadData failed', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const toYMD = (d: Date) =>
-        `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  useEffect(() => {
+    // initial load
+    loadData();
+  }, []);
 
-    // today's date in local timezone (Y-M-D)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayYMD = toYMD(today);
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await loadData();
+    } catch (err) {
+      console.warn('Refresh failed', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
-    // staff work hours for today (global)
-    const todaysWorkHours = useMemo(
-        () => workHours.filter((w) => w.date === todayYMD),
-        [todayYMD, version]
-    );
+  // Utility: check whether a schedule entry corresponds to a user with role === 'user'
+  const scheduleIsUser = (s: ScheduleItem) => {
+    if (s.employee_id) {
+      // sample backend returns employee_id as object with role/_id
+      const role = s.employee_id.role ?? s.employee_id?.role;
+      if (typeof role === 'string') {
+        return role === 'user';
+      }
+      // fallback: try match against usersState by id
+      const id = s.employee_id._id ?? s.employee_id;
+      if (id) {
+        const found = usersState.find((u) => u._id === id || (u as any).id === id);
+        return found?.role === 'user';
+      }
+    }
+    return false;
+  };
 
-    // Helper: compute per-branch counts
-    const branchCounts = useMemo(() => {
-        return branches.map((branch) => {
-            const totalEmployees = users.filter(
-                (u) => u.role === 'employee' && u.branch_id === branch.id
-            ).length;
+  // Global totals (only role === 'user')
+  const totalStaff = useMemo(() => usersState.filter((u) => u.role === 'user').length, [usersState]);
 
-            // unique user ids who have a workHours entry today and belong to this branch
-            const workingUserIds = new Set<string>();
-            todaysWorkHours.forEach((wh) => {
-                const u = users.find((usr) => usr.id === wh.user_id);
-                if (u && u.branch_id === branch.id) {
-                    workingUserIds.add(wh.user_id);
-                }
-            });
+  // Staff on shift today (unique user count where schedule date == today and employee role === 'user')
+  const todaysUniqueStaffCount = useMemo(() => {
+    const set = new Set<string>();
+    schedulesState.forEach((s) => {
+      if (!scheduleIsUser(s)) return;
+      const uid = s.employee_id?._id ?? s.employee_id;
+      if (uid) set.add(String(uid));
+    });
+    return set.size;
+  }, [schedulesState, usersState]);
 
-            const todayWorking = workingUserIds.size;
+  // Per-branch counts
+  const branchCounts = useMemo(() => {
+    return branchesState.map((branch) => {
+      const branchId = branch._id ?? (branch as any).id;
 
-            return {
-                branchId: branch.id,
-                branchName: branch.name,
-                totalEmployees,
-                todayWorking,
-            };
-        });
-    }, [todaysWorkHours, version]);
+      // total employees in branch (only role === 'user')
+      const totalEmployees = usersState.filter((u) => {
+        if (u.role !== 'user') return false;
+        const b = u.branch;
+        if (!b) return false;
+        if (typeof b === 'string') return b === branchId || b === branch.name;
+        return (b._id ?? b) === branchId;
+      }).length;
 
-    return (
-        <View style={styles.container}>
-            <Header
-                backgroundColor={colors.secondary}
-                position="relative"
-                left={{
-                    type: 'image',
-                    url: require('../../../assets/icons/logout_b.png'),
-                    width: 19,
-                    height: 19,
-                    onPress: () => setLogoutPopupVisible(true),
-                }}
-                center={{ type: 'text', value: lang.Dashboard, color: colors.text }}
-            />
+      // unique users scheduled today for this branch (only role === 'user')
+      const workingSet = new Set<string>();
+      schedulesState.forEach((s) => {
+        // schedule must be of today already since schedulesState is filtered by today
+        // check branch match
+        const sBranchId = s.branch_id?._id ?? s.branch_id;
+        if (!sBranchId) return;
+        if (String(sBranchId) !== String(branchId)) return;
+        if (!scheduleIsUser(s)) return;
+        const uid = s.employee_id?._id ?? s.employee_id;
+        if (uid) workingSet.add(String(uid));
+      });
 
-            <View style={styles.body}>
-                <View style={styles.boxes}>
-                    <CartBox containerStyle={styles.staff}>
-                        <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Image
-                                source={require("../../../assets/icons/totalstaff_b.png")}
-                                style={styles.icon}
-                            />
-                            <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
-                        </View>
-                        <Text style={styles.total_count}>{totalStaff}</Text>
-                    </CartBox>
+      const todayWorking = workingSet.size;
 
-                    <CartBox containerStyle={styles.staff}>
-                        <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Image
-                                source={require("../../../assets/icons/staff_tik_g.png")}
-                                style={styles.icon}
-                            />
-                            <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
-                        </View>
+      return {
+        branchId,
+        branchName: branch.name ?? '—',
+        totalEmployees,
+        todayWorking,
+      };
+    });
+  }, [branchesState, usersState, schedulesState]);
 
-                        <Text style={styles.shift_count}>{todaysWorkHours.length}</Text>
-                    </CartBox>
-                </View>
+  return (
+    <View style={styles.container}>
+      <Header
+        backgroundColor={colors.secondary}
+        position="relative"
+        left={{
+          type: 'image',
+          url: require('../../../assets/icons/logout_b.png'),
+          width: 19,
+          height: 19,
+          onPress: () => setLogoutPopupVisible(true),
+        }}
+        center={{ type: 'text', value: lang.Dashboard, color: colors.text }}
+      />
 
-                <ScrollView
-                    style={{ marginBottom: 0 }}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            colors={[colors.primary]}
-                            tintColor={colors.primary}
-                        />
-                    }
-                >
-                    <View style={styles.all_branches}>
+      <View style={styles.body}>
+        <View style={styles.boxes}>
+          <CartBox containerStyle={styles.staff}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Image
+                source={require("../../../assets/icons/totalstaff_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
+            </View>
+            <Text style={styles.total_count}>{totalStaff}</Text>
+          </CartBox>
 
-                        {/* Render each branch's CartBox with real data */}
-                        {branchCounts.map((b) => (
-                            <TouchableOpacity
-                                key={b.branchId}
-                                onPress={() => {
-                                    const navParams = {
-                                        branch_id: b.branchId,
-                                        userId: user?.id,
-                                        langId: selectedLanguage,
-                                        branch_name: b.branchName,
-                                    };
-                                    console.log('Navigating to AttendanceScreen with:', navParams);
-                                    navigation.navigate('AttendanceScreen', navParams);
-                                }}
-                            >
-                                <CartBox containerStyle={styles.branch}>
-                                    <View style={{ flexDirection: "row", alignItems: "center", width: '90%' }}>
-                                        <Image
-                                            source={require("../../../assets/icons/branch_b_withbg.png")}
-                                            style={styles.icon}
-                                        />
-                                        <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{b.branchName}</Text>
-                                    </View>
-                                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
-                                        {/* employees on schedule today */}
-                                        <Text style={styles.count}>{b.todayWorking}</Text>
-                                        <Text style={styles.count}>/</Text>
-                                        {/* total employee count on each branch */}
-                                        <Text style={styles.count}>{b.totalEmployees}</Text>
-                                    </View>
-                                </CartBox>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </ScrollView>
-
+          <CartBox containerStyle={styles.staff}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Image
+                source={require("../../../assets/icons/staff_tik_g.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            <Popup
-                visible={logoutPopupVisible}
-                onClose={() => setLogoutPopupVisible(false)}
-                popupBorderColor={colors.error_text}
-                dismissOnOverlayPress={false}
-                title={lang.Logout}
-                titleStyle={{ color: colors.error_text }}
-            >
-                <Text style={styles.popupsubtext}>
-                    {lang.logout_confirm}
-                </Text>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-                    <Button1
-                        text={lang.yes}
-                        onPress={() => {
-                            setLogoutPopupVisible(false);
-                            navigation.reset({
-                                index: 0,
-                                routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
-
-                            });
-                            console.log('Logout -> received params:', { userId, langId: selectedLanguage });
-                        }}
-                        backgroundColor={colors.primary}
-                        width={'48%'}
-                        textStyle={{ color: colors.secondary }}
-                    />
-                    <Button1
-                        text={lang.no}
-                        onPress={() => setLogoutPopupVisible(false)}
-                        backgroundColor={colors.error_text}
-                        width={'48%'}
-                        textStyle={{ color: colors.secondary }}
-                    />
-                </View>
-            </Popup>
+            <Text style={styles.shift_count}>{todaysUniqueStaffCount}</Text>
+          </CartBox>
         </View>
-    );
+
+        {loading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <ScrollView
+            style={{ marginBottom: 0 }}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+                tintColor={colors.primary}
+              />
+            }
+          >
+            <View style={styles.all_branches}>
+              {branchCounts.map((b) => (
+                <TouchableOpacity
+                  key={b.branchId}
+                  onPress={() => {
+                    const navParams = {
+                      branch_id: b.branchId,
+                      userId,
+                      langId: selectedLanguage,
+                      branch_name: b.branchName,
+                    };
+                    console.log('Navigating to AttendanceScreen with:', navParams);
+                    navigation.navigate('AttendanceScreen', navParams);
+                  }}
+                >
+                  <CartBox containerStyle={styles.branch}>
+                    <View style={{ flexDirection: "row", alignItems: "center", width: '90%' }}>
+                      <Image
+                        source={require("../../../assets/icons/branch_b_withbg.png")}
+                        style={styles.icon}
+                      />
+                      <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{b.branchName}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+                      <Text style={styles.count}>{b.todayWorking}</Text>
+                      <Text style={styles.count}>/</Text>
+                      <Text style={styles.count}>{b.totalEmployees}</Text>
+                    </View>
+                  </CartBox>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        )}
+      </View>
+
+      <Popup
+        visible={logoutPopupVisible}
+        onClose={() => setLogoutPopupVisible(false)}
+        popupBorderColor={colors.error_text}
+        dismissOnOverlayPress={false}
+        title={lang.Logout}
+        titleStyle={{ color: colors.error_text }}
+      >
+        <Text style={styles.popupsubtext}>
+          {lang.logout_confirm}
+        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+          {/* <Button1
+            text={lang.yes}
+            onPress={() => {
+              setLogoutPopupVisible(false);
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+              });
+              console.log('Logout -> received params:', { userId, langId: selectedLanguage });
+            }}
+            backgroundColor={colors.primary}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          /> */}
+          <Button1
+  text={lang.yes}
+  onPress={async () => {
+    setLogoutPopupVisible(false);
+
+    try {
+      // clear stored token & user id
+      await clearAllAuthData();
+      console.log('Cleared auth data (token & userId).');
+    } catch (err) {
+      console.warn('Failed to clear auth data on logout:', err);
+      // continue to navigate even if clearing fails
+    }
+
+    // reset navigation to login screen
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+    });
+
+    console.log('Logout -> navigated to LoginScreen with params:', { userId, langId: selectedLanguage });
+  }}
+  backgroundColor={colors.primary}
+  width={'48%'}
+  textStyle={{ color: colors.secondary }}
+/>
+
+          <Button1
+            text={lang.no}
+            onPress={() => setLogoutPopupVisible(false)}
+            backgroundColor={colors.error_text}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          />
+        </View>
+      </Popup>
+    </View>
+  );
 };
 
 export default DashboardScreen;
+
 
 const styles = StyleSheet.create({
     container: {

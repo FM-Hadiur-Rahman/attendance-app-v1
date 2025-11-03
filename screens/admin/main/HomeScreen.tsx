@@ -1,5 +1,5 @@
-// screens/admin/main/WorkScheduleScreen.tsx
-import React, { useMemo, useState } from "react";
+// screens/admin/main/HomeScreen_A.tsx
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,73 +8,76 @@ import {
   ScrollView,
   Dimensions,
   RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
-import translations from "../../../assets/translations.json"
-import { users, users as usersArr } from "../../../api/Users";
-import { schedules } from "../../../api/Schedule";
-import { workHours, workHours as workHoursArr } from "../../../api/WorkHours";
+import translations from "../../../assets/translations.json";
+import { workHours } from "../../../api/WorkHours";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { getBranchById } from "../../../api/Branch"; 
+
+// API helpers
+import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
+import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
+import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+import { getBranchById } from "../../../api/Branch";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-const toYMD = (d: Date) =>
-  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-
-// convert hh:mm:ss -> minutes from midnight
-const timeToMinutes = (hhmmss: string) => {
-  if (!hhmmss) return 0;
-  const parts = hhmmss.split(":").map((p) => parseInt(p, 10) || 0);
-  return (parts[0] || 0) * 60 + (parts[1] || 0);
+// convert hh:mm -> minutes
+const hhmmToMinutes = (hhmm: string) => {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(':').map(x => parseInt(x || '0', 10));
+  return (h || 0) * 60 + (m || 0);
+};
+// convert "YYYY-MM-DD HH:mm:ss" -> minutes from midnight for that datetime
+const datetimeToMinutes = (datetime: string) => {
+  if (!datetime) return 0;
+  const parts = datetime.split(' ');
+  if (parts.length < 2) return 0;
+  const time = parts[1].split(':');
+  const h = parseInt(time[0] || '0', 10);
+  const m = parseInt(time[1] || '0', 10);
+  return (h || 0) * 60 + (m || 0);
 };
 
-// format minutes difference as "1h 30m" or "30m"
 const formatMinutesDiff = (mins: number) => {
   const abs = Math.abs(Math.round(mins));
   const h = Math.floor(abs / 60);
   const m = abs % 60;
-  if (h > 0) {
-    return `${h}h ${m}m`;
-  }
+  if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 };
 
-// format hh:mm:ss -> "h:mm AM/PM"
-const formatTime12 = (hhmmss: string) => {
-  if (!hhmmss) return "";
-  const [hhStr, mmStr] = hhmmss.split(":");
-  const hh = parseInt(hhStr || "0", 10);
-  const mm = mmStr || "00";
+const formatTime12 = (t: string) => {
+  if (!t) return "";
+  let hh = 0;
+  let mm = "00";
+  if (t.includes(' ')) {
+    const timePart = t.split(' ')[1];
+    const [h, m] = timePart.split(':');
+    hh = parseInt(h || "0", 10);
+    mm = m || "00";
+  } else {
+    const [h, m] = t.split(':');
+    hh = parseInt(h || "0", 10);
+    mm = m || "00";
+  }
   const ampm = hh >= 12 ? "PM" : "AM";
   let h12 = hh % 12;
   if (h12 === 0) h12 = 12;
   return `${h12}:${mm} ${ampm}`;
 };
 
-// format YYYY-MM-DD -> "Thu, Aug 18"
 const formatYMDDisplay = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
   const dt = new Date(y, (m || 1) - 1, d || 1);
@@ -85,133 +88,269 @@ const HomeScreen_A = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  // Support prop-based injection from Footer (preferred) or fallback to route params.
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  const propSetLangId = props?.setLangId; // if Footer passes a setter
-
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
-
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
-
-  // translation dictionary for this screen
   const lang = (translations as any)[langId] || (translations as any)["en"];
 
-  // today's date in local timezone (Y-M-D)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayYMD = toYMD(today);
 
-  // refresh state
   const [refreshing, setRefreshing] = useState<boolean>(false);
-
-  // add this next to your refreshing state
   const [version, setVersion] = useState<number>(0);
 
+  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
 
-  // Pull-to-refresh: clear search and refresh view
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
+  const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
+
+  const [totalStaff, setTotalStaff] = useState<number>(0);
+  const [loadingStaff, setLoadingStaff] = useState<boolean>(false);
+
+  // schedules & users (previously used)
+  const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
+  const [usersState, setUsersState] = useState<any[]>([]);
+  const [loadingShiftData, setLoadingShiftData] = useState<boolean>(false);
+
+  // New: recent checkins from attendance API (already enriched)
+  const [recentCheckins, setRecentCheckins] = useState<
+    Array<{
+      attendance: AttendanceHistoryItem;
+      userProfile: any | null;
+      schedule?: ScheduleItem | null;
+      status: "early" | "late" | "noschedule";
+      diffText: string;
+      branchNameToShow?: string | null;
+    }>
+  >([]);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    // bump version to force re-evaluation of all useMemo hooks that depend on it
+    await new Promise((r) => setTimeout(r, 800));
     setVersion((v) => v + 1);
     setRefreshing(false);
   };
-  const currentUser = usersArr.find(u => u.id === userId) || null;
-    const currentBranchId = currentUser?.branch_id ?? null;
 
+  // fetch branch & total staff
+  const fetchBranchAndStaff = async () => {
+    try {
+      if (!userId && !passedBranchId) {
+        setTotalStaff(0);
+        return;
+      }
+      setLoadingStaff(true);
 
-      // ---------- NEW: use passed branch params (superadmin passes branch_id & branch_name) ----------
-  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
-  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
-    const activeBranchId = passedBranchId || currentBranchId || null;
+      let branchIdToUse = passedBranchId ?? activeBranchId;
 
-  // total employees
-  const totalStaff = useMemo(
-    () => {
-      if (!activeBranchId) return 0;
-      return usersArr.filter(u => u.role === "employee" && u.branch_id === activeBranchId).length;
-    },
-    [version, activeBranchId]
-  );
+      if (!branchIdToUse && userId) {
+        try {
+          const u = await getUserById(userId);
+          const branchObj = u?.branch;
+          const branchIdFromUser = typeof branchObj === "string" ? branchObj : branchObj?._id ?? null;
+          if (branchIdFromUser) {
+            branchIdToUse = branchIdFromUser;
+            setActiveBranchId(branchIdFromUser);
+            const branchNameMaybe = typeof branchObj === "object" ? branchObj?.name ?? null : null;
+            if (branchNameMaybe) setActiveBranchName(branchNameMaybe);
+          }
+        } catch (e) {
+          console.warn("Failed to fetch user to determine branch", e);
+        }
+      }
+      if (!branchIdToUse) {
+        setTotalStaff(0);
+        setLoadingStaff(false);
+        return;
+      }
 
-  // staff on shift (based on workHours entries for today)
+      const res = await fetchUsers({ branchId: branchIdToUse, role: "user", limit: 1000, page: 1 });
+      const users = res?.users ?? [];
+      const count = users.filter((u: any) => (u.role ?? "user") === "user").length;
+      setTotalStaff(count);
+    } catch (err) {
+      console.error("fetchBranchAndStaff error", err);
+      setTotalStaff(0);
+    } finally {
+      setLoadingStaff(false);
+    }
+  };
+
+  // fetch schedules & users
+  const fetchShiftData = async (branchIdToUse: string | null) => {
+    if (!branchIdToUse) {
+      setSchedulesState([]);
+      setUsersState([]);
+      return;
+    }
+    setLoadingShiftData(true);
+    try {
+      const schedArr = await getSchedulesForDate(todayYMD);
+      const usersArr = await getUsers({ limit: 1000 });
+      setSchedulesState(schedArr ?? []);
+      setUsersState(usersArr ?? []);
+    } catch (e) {
+      console.warn("fetchShiftData failed", e);
+      setSchedulesState([]);
+      setUsersState([]);
+    } finally {
+      setLoadingShiftData(false);
+    }
+  };
+
+  // helper to test if schedule belongs to a role:user
+  const scheduleIsUser = (s: any) => {
+    if (s.employee_id) {
+      const role = s.employee_id.role ?? s.employee_id?.role;
+      if (typeof role === "string") return role === "user";
+      const id = s.employee_id._id ?? s.employee_id;
+      if (id) {
+        const found = usersState.find((u) => u._id === id || (u as any).id === id);
+        return found?.role === "user";
+      }
+    }
+    return false;
+  };
+
+  // restore staffOnShiftCount computed from schedulesState (unique users scheduled today for this branch)
+  const staffOnShiftCount = useMemo(() => {
+    if (!activeBranchId) return 0;
+    if (!Array.isArray(schedulesState)) return 0;
+    const set = new Set<string>();
+    schedulesState.forEach((s) => {
+      const sBranchId = s.branch_id?._id ?? s.branch_id;
+      if (!sBranchId) return;
+      if (String(sBranchId) !== String(activeBranchId)) return;
+      if (!scheduleIsUser(s)) return;
+      const uid = s.employee_id?._id ?? s.employee_id;
+      if (uid) set.add(String(uid));
+    });
+    return set.size;
+  }, [schedulesState, usersState, activeBranchId]);
+
+  // fetch attendance and enrich (with branch-name logic)
+  const fetchAttendanceAndEnrich = async (branchIdToUse: string | null) => {
+    if (!branchIdToUse) {
+      setRecentCheckins([]);
+      return;
+    }
+
+    try {
+      const all = await getAttendanceAllHistory();
+      const now = new Date();
+      const filtered = (all || []).filter((a) => {
+        const aBranchId = a.branch?.id ?? a.branch_id ?? null;
+        if (!aBranchId) return false;
+        if (String(aBranchId) !== String(branchIdToUse)) return false;
+        if (!a.In) return false;
+        const inDt = new Date(a.In.replace(' ', 'T'));
+        const inYMD = toYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
+        if (inYMD !== todayYMD) return false;
+        return inDt.getTime() <= now.getTime();
+      });
+
+      filtered.sort((a, b) => (a.In < b.In ? 1 : -1));
+
+      const enriched = await Promise.all(
+        filtered.map(async (att) => {
+          const uid = att.user?.id ?? att.user?.userId ?? null;
+          let userProfile = usersState.find((u) => String(u._id) === String(uid) || String((u as any).id) === String(uid));
+          if (!userProfile && uid) {
+            try { userProfile = await getUserById(uid); } catch (e) { userProfile = null; }
+          }
+
+          const schedule = schedulesState.find((s) => {
+            const empId = s.employee_id?._id ?? s.employee_id;
+            if (!empId || !uid) return false;
+            const sDate = s.date ? toYMD(new Date(s.date)) : null;
+            return String(empId) === String(uid) && sDate === todayYMD;
+          }) ?? null;
+
+          let status: "early" | "late" | "noschedule" = "noschedule";
+          let diffText = "";
+
+          if (schedule && schedule.start_time) {
+            const schedMin = hhmmToMinutes(schedule.start_time);
+            const inMin = datetimeToMinutes(att.In);
+            const diff = inMin - schedMin;
+            if (diff > 0) {
+              status = "late";
+              diffText = formatMinutesDiff(diff);
+            } else {
+              status = "early";
+              diffText = formatMinutesDiff(diff);
+            }
+          } else {
+            status = "noschedule";
+          }
+
+          // Branch-name logic:
+          // if attendance.branch?.id equals attendance.branch_id => DO NOT show branch name.
+          // If different, fetch branch by branch_id and show that branch.name
+          let branchNameToShow: string | null = null;
+          const attBranchObjId = att.branch?.id ?? null;
+          const attBranchIdField = att.branch_id ?? null;
+          if (attBranchIdField && attBranchObjId && String(attBranchObjId) === String(attBranchIdField)) {
+            branchNameToShow = null; // same -> do not show
+          } else if (attBranchIdField) {
+            try {
+              const b = await getBranchById(attBranchIdField);
+              branchNameToShow = b?.name ?? null;
+            } catch (e) {
+              branchNameToShow = null;
+            }
+          } else if (att.branch?.name && att.branch?.id) {
+            // fallback: if branch field present but no branch_id, and id differs we'd still want to show it
+            branchNameToShow = att.branch?.name ?? null;
+          }
+
+          return {
+            attendance: att,
+            userProfile,
+            schedule,
+            status,
+            diffText,
+            branchNameToShow,
+          };
+        })
+      );
+
+      setRecentCheckins(enriched);
+    } catch (e) {
+      console.warn("fetchAttendanceAndEnrich failed", e);
+      setRecentCheckins([]);
+    }
+  };
+
+  // initial & deps
+  useEffect(() => {
+    if (passedBranchId) {
+      setActiveBranchId(passedBranchId);
+      if (passedBranchName) setActiveBranchName(passedBranchName);
+    }
+    fetchBranchAndStaff();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, version, passedBranchId]);
+
+  useEffect(() => {
+    fetchShiftData(activeBranchId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId, version]);
+
+  useEffect(() => {
+    fetchAttendanceAndEnrich(activeBranchId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId, version, schedulesState, usersState]);
+
+  // kept for compatibility
   const todaysWorkHours = useMemo(
     () => workHours.filter((w) => w.date === todayYMD),
     [todayYMD, version]
   );
-
-    // today's unique working employees for this branch (filter workHours for today's date and this branch)
-    const staffOnShiftCount = useMemo(() => {
-      if (!activeBranchId) return 0;
-  
-      // compute today's Y-M-D locally (avoids ordering issues)
-      const t = new Date();
-      t.setHours(0, 0, 0, 0);
-      const y = t.getFullYear();
-      const m = (t.getMonth() + 1).toString().padStart(2, "0");
-      const d = t.getDate().toString().padStart(2, "0");
-      const todaysYMD = `${y}-${m}-${d}`;
-  
-      const set = new Set<string>();
-      workHoursArr.forEach(w => {
-        if (w.date === todaysYMD) {
-          const u = usersArr.find(us => us.id === w.user_id);
-          if (u && u.branch_id === activeBranchId) set.add(w.user_id);
-        }
-      });
-      return set.size;
-    }, [version, activeBranchId]);
-  
-
-  // recent check-ins: today's workHours sorted by check_in descending (most recent first)
-// recent check-ins: today's workHours for the active branch, sorted by check_in desc
-const recentCheckins = useMemo(() => {
-  if (!activeBranchId) return [];
-
-  // get today's Y-M-D (use same local computation as staffOnShiftCount to avoid timezone mismatches)
-  const t = new Date();
-  t.setHours(0, 0, 0, 0);
-  const y = t.getFullYear();
-  const m = (t.getMonth() + 1).toString().padStart(2, "0");
-  const d = t.getDate().toString().padStart(2, "0");
-  const todaysYMD = `${y}-${m}-${d}`;
-
-  return workHoursArr
-    .filter((w) => w.date === todaysYMD)
-    .filter((w) => {
-      // include if the work record was for this branch OR the user's default branch is this branch
-      const u = usersArr.find((us) => us.id === w.user_id);
-      return (w.branch_id && w.branch_id === activeBranchId) || (u && u.branch_id === activeBranchId);
-    })
-    .slice()
-    .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
-    .map((wh) => {
-      const user = users.find((u) => u.id === wh.user_id) || null;
-      const sched = schedules.find((s) => s.user_id === wh.user_id && s.date === wh.date);
-      let status: "early" | "late" | "noschedule" = "noschedule";
-      let diffText = "";
-      if (sched) {
-        const schedMin = timeToMinutes(sched.start_time);
-        const checkMin = timeToMinutes(wh.check_in);
-        const diff = checkMin - schedMin;
-        if (diff > 0) {
-          status = "late";
-          diffText = formatMinutesDiff(diff);
-        } else {
-          status = "early";
-          diffText = formatMinutesDiff(diff);
-        }
-      } else {
-        status = "noschedule";
-      }
-
-      return { work: wh, user, schedule: sched ?? null, status, diffText };
-    });
-}, [version, activeBranchId]);
-
 
   return (
     <View style={styles.container}>
@@ -225,7 +364,6 @@ const recentCheckins = useMemo(() => {
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Navigate -> NotificationScreen", { userId, langId: langId, activeBranchId: activeBranchId });
             navigation.navigate("NotificationScreen" as any, { userId, langId: langId, activeBranchId });
           },
         }}
@@ -235,106 +373,151 @@ const recentCheckins = useMemo(() => {
         <View style={styles.boxes}>
           <CartBox containerStyle={styles.staff}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Image
-                source={require("../../../assets/icons/totalstaff_b.png")}
-                style={styles.icon}
-              />
+              <Image source={require("../../../assets/icons/totalstaff_b.png")} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            <Text style={styles.total_count}>{totalStaff}</Text>
+            <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text>
           </CartBox>
 
           <CartBox containerStyle={styles.staff}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Image
-                source={require("../../../assets/icons/staff_tik_g.png")}
-                style={styles.icon}
-              />
+              <Image source={require("../../../assets/icons/staff_tik_g.png")} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            <Text style={styles.shift_count}>{staffOnShiftCount}</Text>
+            <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text>
           </CartBox>
         </View>
+
         <Text style={styles.heading}>{lang.recent_check_ins}</Text>
 
         <ScrollView
           style={{ marginBottom: '15%' }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          <View style={styles.details}>
+            {loadingShiftData ? (
+              // Loading state: show spinner centered
+              <View style={{ justifyContent: 'center', alignItems: 'center', marginTop: "40%" }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : recentCheckins.length === 0 ? (
+              // Loaded but empty: show "No recent check-ins"
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 20 * base }}>
+                <Text style={{ textAlign: 'center', color: colors.subtext }}>
+                  {lang.no_recent_checkins || 'No recent check-ins'}
+                </Text>
+              </View>
+            ) : (
+              // Loaded and has data: show the check-ins
+              recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
+                const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
+                const timeStr = `${formatTime12(attendance.In)}${attendance.Out ? ` - ${formatTime12(attendance.Out)}` : ''}`;
+                const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
+
+                return (
+                  <CartBox key={attendance.id} containerStyle={styles.detail_cartbox}>
+                    {branchNameToShow && (
+                      <View style={styles.branchHeader}>
+                        <Image
+                          source={require("../../../assets/icons/branch.png")}
+                          style={styles.branchIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.branchName} numberOfLines={1} ellipsizeMode="tail">
+                          {branchNameToShow}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.profileRow}>
+                      <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+
+                      <View style={styles.middleRightContainer}>
+                        <View style={styles.name_position}>
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
+                          <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{timeStr}</Text>
+                          <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{dateDisplay}</Text>
+                        </View>
+
+                        <View style={styles.statusInline}>
+                          {status === "late" ? (
+                            <Text style={styles.status_late} numberOfLines={1} ellipsizeMode="tail">{lang.late}</Text>
+                          ) : status === "early" ? (
+                            <Text style={styles.status_early} numberOfLines={1} ellipsizeMode="tail">{lang.early}</Text>
+                          ) : (
+                            <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
+                          )}
+                          {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
+                        </View>
+                      </View>
+                    </View>
+                  </CartBox>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+
+        {/* <ScrollView
+          style={{ marginBottom: '15%' }}
+          showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
         >
           <View style={styles.details}>
-
-
-            {recentCheckins.map(({ work, user, schedule, status, diffText }) => {
-              if (!user) return null;
-
-              const displayName = user.fullname;
-              const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(work.check_out)}`;
-              const dateDisplay = formatYMDDisplay(work.date);
-
-              // Branch where the user checked in
-              const checkinBranch = getBranchById(work.branch_id || schedule?.branch_id);
-              const defaultBranch = getBranchById(user.branch_id);
-
-              // Only show branch name if different from default
-              const branchName =
-                checkinBranch && defaultBranch && checkinBranch.id !== defaultBranch.id
-                  ? checkinBranch.name
-                  : null;
+            {recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
+              const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
+              const timeStr = `${formatTime12(attendance.In)}${attendance.Out ? ` - ${formatTime12(attendance.Out)}` : ''}`;
+              const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
 
               return (
-                <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
-                  {branchName && (
+                <CartBox key={attendance.id} containerStyle={styles.detail_cartbox}>
+                  {branchNameToShow && (
                     <View style={styles.branchHeader}>
-                      <Image
-                        source={require("../../../assets/icons/branch.png")}
-                        style={styles.branchIcon}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.branchName}>{branchName}</Text>
+                      <Image source={require("../../../assets/icons/branch.png")} style={styles.branchIcon} resizeMode="contain" />
+                      <Text style={styles.branchName} numberOfLines={1} ellipsizeMode="tail">{branchNameToShow}</Text>
                     </View>
                   )}
 
                   <View style={styles.profileRow}>
-                    <Image
-                      source={require("../../../assets/images/profile2.png")}
-                      style={styles.profileImage}
-                    />
+                    <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
 
-                    {/* Middle + Right grouped together */}
                     <View style={styles.middleRightContainer}>
-                      {/* Name + Time */}
                       <View style={styles.name_position}>
-                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                          {displayName}
-                        </Text>
-                        <Text style={styles.time}>{timeStr}</Text>
-                        <Text style={styles.time}>{dateDisplay}</Text>
+                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
+                        <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{timeStr}</Text>
+                        <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{dateDisplay}</Text>
                       </View>
 
-                      {/* Status + Duration */}
                       <View style={styles.statusInline}>
                         {status === "late" ? (
-                          <Text style={styles.status_late}>{lang.late}</Text>
+                          <Text style={styles.status_late} numberOfLines={1} ellipsizeMode="tail">{lang.late}</Text>
                         ) : status === "early" ? (
-                          <Text style={styles.status_early}>{lang.early}</Text>
+                          <Text style={styles.status_early} numberOfLines={1} ellipsizeMode="tail">{lang.early}</Text>
                         ) : (
-                          <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
+                          <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
                         )}
-                        {status !== "noschedule" && (
-                          <Text style={styles.duration}>{diffText}</Text>
-                        )}
+                        {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
                       </View>
                     </View>
                   </View>
                 </CartBox>
-
               );
             })}
-
+            {recentCheckins.length === 0 && (
+              <Text style={{ textAlign: 'center', marginTop: 12 * base, color: colors.subtext }}>
+                {lang.no_recent_checkins || 'No recent check-ins'}
+              </Text>
+            )}
           </View>
-        </ScrollView>
+        </ScrollView> */}
       </View>
     </View>
   );
@@ -366,7 +549,7 @@ const styles = StyleSheet.create({
 
   },
   profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
-  name_position: { marginLeft: 10, width: "65%" },
+  name_position: { marginLeft: 10, width: "60%", },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
 
@@ -400,6 +583,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginRight: 7,
     textAlign: "center",
+    width: 55 * base,
   },
   heading: {
     fontSize: fonts.size.m,
@@ -449,15 +633,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   branchHeader: {
-    flexDirection: "row", 
+    flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
+    width: '90%'
   },
 
   branchIcon: {
     width: 16,
     height: 16,
-    marginRight: 6, 
+    marginRight: 6,
 
   },
   branchName: {
@@ -473,14 +658,14 @@ const styles = StyleSheet.create({
 
   middleRightContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    // justifyContent: "space-between",
     alignItems: "flex-start",
     flex: 1,
     marginLeft: 10,
   },
 
   statusInline: {
-    flexDirection: "row", 
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
     marginLeft: 8,
@@ -492,9 +677,8 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.medium as any,
     fontSize: fonts.size.m,
     marginLeft: 8,
-    textAlign: "right",
+    width: 45 * base,
   },
-
 });
 
 export default HomeScreen_A;

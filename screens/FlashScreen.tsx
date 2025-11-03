@@ -3,7 +3,7 @@ import { View, StyleSheet, Image, ActivityIndicator, Dimensions } from 'react-na
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '../styles/Colors';
-import { getToken } from '../api/auth/authToken';
+import { getToken, getUserId } from '../api/auth/authToken';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -14,15 +14,17 @@ const FlashScreen = () => {
     const checkLoginStatus = async () => {
       try {
         const token = await getToken();
+        const userId = await getUserId();
+        const langId = await AsyncStorage.getItem('langId')
         const userObjStr = await AsyncStorage.getItem('userObj');
         const userObj = userObjStr ? JSON.parse(userObjStr) : null;
         const roleRaw = userObj?.role ?? null;
         const role = roleRaw ? String(roleRaw).toLowerCase() : null; // ✅ normalize to lowercase
 
-        console.log('FlashScreen check:', { token, role });
+        console.log('FlashScreen check:', { token, role, userId, langId });
 
         setTimeout(() => {
-          if (token && role) {
+          if (token && role && userId) {
             // ✅ Logged in previously — go to correct footer
             let routeName = 'Footer_C'; // default for employee
             if (role === 'admin') routeName = 'Footer_A';
@@ -30,7 +32,8 @@ const FlashScreen = () => {
 
             navigation.reset({
               index: 0,
-              routes: [{ name: routeName as never }],
+              routes: [{ name: routeName as never, params: { userId, langId } as never, }],
+
             });
           } else {
             // 🚪 No token → go to LanguageScreen
