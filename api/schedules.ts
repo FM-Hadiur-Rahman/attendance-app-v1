@@ -52,3 +52,23 @@ export const getSchedulesForDate = async (dateYMD: string): Promise<ScheduleItem
     return [];
   }
 };
+export interface EmployeeSchedule {
+  _id: string;
+  employee_id: {
+    _id: string;
+    username: string;
+    role: string;
+    branch: string;
+  };
+  branch_id: { _id: string; name: string };
+  date: string;
+  start_time: string;
+  end_time: string;
+  day_of_week: string;
+}
+export const getEmployeeSchedules = async (employee_id: string, startDate: string, endDate: string) => {
+  const res = await axiosInstance.get("/schedule", {
+    params: { employee_id, startDate, endDate },
+  });
+  return res.data.schedules as EmployeeSchedule[];
+};

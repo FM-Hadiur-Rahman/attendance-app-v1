@@ -1,4 +1,5 @@
 // screens/admin/main/more/AddScheduleScreen.tsx
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -18,9 +19,10 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { users as importedUsers, User } from "../../../../api/Users";
-import { schedules as importedSchedules } from "../../../../api/Schedule";
-import { branches as importedBranches } from "../../../../api/Branch";
+// API imports (real data)
+import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; // fetchUsers returns { users, page, ... }
+import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
+import { getEmployeeSchedules, getSchedules, getSchedulesForDate, ScheduleItem } from "../../../../api/schedules";
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
 import CartBox from "../../../../components/CartBox";
@@ -31,6 +33,21 @@ import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
 
+// --- Local "normalized" types used by this screen ---
+type LocalUser = {
+  id: string;
+  fullname: string;
+  branch_id?: string;
+  role?: string;
+  raw?: ProfileUser;
+};
+
+type LocalBranch = {
+  id: string;
+  name: string;
+  raw?: ApiBranch;
+};
+
 export default function AddScheduleScreen(props: any) {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -38,64 +55,39 @@ export default function AddScheduleScreen(props: any) {
   const propLangId = props?.langId;
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
-
   const userId = propUserId || routeUserId || null;
   const langId = propLangId || routeLangId || "en";
   const lang = (translations as any)[langId] || (translations as any)["en"];
-
-  // confirm save popup visibility
   const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
 
+  // NOTE: screenBranchId is taken from navigation params (the previous screen passes branchId)
+  const screenBranchId: string = (route.params?.branch_id as string) ?? (route.params?.branchId as string) ?? "";
 
-  useEffect(() => {
-    console.log("AddScheduleScreen opened", { userId, langId, editingId, routeParams: route.params });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // loading states
+  const [loading, setLoading] = useState(false);
+  const [effectiveBranchId, setEffectiveBranchId] = useState<string>(""); // <- NEW
 
-  const editingId: string | undefined = route.params?.id;
+  // Local data arrays (start empty, will be populated from API)
+  const [localUsers, setLocalUsers] = useState<LocalUser[]>([]);
+  const [localBranches, setLocalBranches] = useState<LocalBranch[]>([]);
+  // schedules will be fetched from api/schedules.ts
+  const [localSchedules, setLocalSchedules] = useState<Array<any>>([]);
 
-  // quick helper: true when the screen was opened to edit an existing schedule
-  const isEditingScreen = () => Boolean(editingId);
-
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Local copies of API arrays so refresh can re-sync when the api files change
-  const [localUsers, setLocalUsers] = useState<Array<User>>(() => [...importedUsers]);
-  const [localBranches, setLocalBranches] = useState<Array<any>>(() => [...importedBranches]);
-  const [localSchedules, setLocalSchedules] = useState<Array<any>>(() => [...importedSchedules]);
-
-  // Derived map: schedules grouped by date (Y-M-D)
-  const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, any[]>>(() => {
-    const map: Record<string, any[]> = {};
-    for (const s of importedSchedules) {
-      if (!map[s.date]) map[s.date] = [];
-      map[s.date].push(s);
-    }
-    return map;
-  });
-
-  // Modal-level editing id: this prevents accidentally updating a different schedule
+  // derived schedules map
+  const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, any[]>>({});
+  // UI state
   const [modalEditingId, setModalEditingId] = useState<string | null>(null);
-
-  // Staff selection (typeable)
   const [selectedStaff, setSelectedStaff] = useState<string>("");
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [staffError, setStaffError] = useState<string>("");
   const [staffFilterOpen, setStaffFilterOpen] = useState<boolean>(false);
-
-  // Branch selection (typeable)
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [branchFilterOpen, setBranchFilterOpen] = useState(false);
-
-  // wrappers & layouts for overlays
   const staffInputWrapperRef = useRef<View | null>(null);
   const [staffInputLayout, setStaffInputLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-
-  // branch input layout relative to modal container (we capture via onLayout)
   const branchInputWrapperRef = useRef<View | null>(null);
   const [branchInputLayout, setBranchInputLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-
   const [selectedDayYmd, setSelectedDayYmd] = useState<string | null>(null);
   const [timeFrom, setTimeFrom] = useState<string>("");
   const [timeFromError, setTimeFromError] = useState<string>("");
@@ -104,12 +96,164 @@ export default function AddScheduleScreen(props: any) {
   const [durationError, setDurationError] = useState<string>("");
   const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
 
+
   const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update"; schedule: any }>>([]);
 
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+ const [weekOffset, setWeekOffset] = useState<number>(0); 
 
+  // ------------------------
+  // Utility: normalize API shapes to the local shape this screen expects
+  // ------------------------
+  const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
+    return users.map((u) => {
+      const id = (u as any)._id ?? (u as any).id ?? "";
+      const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
+      const branch_id = typeof u.branch === 'string' ? u.branch : (u.branch && (u.branch._id ?? u.branch.id)) ?? (u as any).branch_id ?? "";
+      return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
+    });
+  };
+
+  const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
+    return branches.map((b) => ({ id: (b as any)._id ?? (b as any).id ?? "", name: (b as any).name ?? (b as any).branch_name ?? "", raw: b }));
+  };
+
+  const normalizeSchedules = (schedules: ScheduleItem[] = []): any[] => {
+    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const computeFromStartAndDuration = (start: string, dur: number) => {
+      if (!start) return "";
+      const parts = start.split(":").map((p) => parseInt(p, 10) || 0);
+      const hh = parts[0] || 0;
+      const mm = parts[1] || 0;
+      const ss = parts[2] || 0;
+      const dt = new Date();
+      dt.setHours(hh, mm, ss, 0);
+      dt.setTime(dt.getTime() + Math.round((dur || 0) * 3600 * 1000));
+      return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
+    };
+
+    const toLocalYmd = (iso?: string) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; // local Y-M-D
+    };
+
+    return schedules.map((s) => {
+      const id = (s as any)._id ?? (s as any).id ?? (s as any).schedule_id ?? '';
+      const rawEmployee = (s as any).employee_id ?? (s as any).user_id ?? (s as any).employee ?? null;
+      const user_id = typeof rawEmployee === 'string' ? rawEmployee : (rawEmployee && (rawEmployee._id ?? rawEmployee.id)) ?? (s as any).user_id ?? (s as any).employee_id ?? '';
+      const branch_raw = (s as any).branch_id ?? (s as any).branch ?? null;
+      const branch_id = typeof branch_raw === 'string' ? branch_raw : (branch_raw && (branch_raw._id ?? branch_raw.id)) ?? '';
+      const start_time = (s as any).start_time ?? (s as any).start ?? (s as any).from_time ?? '';
+      const duration = (s as any).duration ?? (s as any).hours ?? (s as any).dur ?? 0;
+
+      const apiEnd = (s as any).end_time ?? (s as any).end ?? '';
+      const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
+
+      // Convert API date (ISO) to local Y-M-D so it matches weekDates derived from local timezone
+      const dateYmd = toLocalYmd((s as any).date ?? (s as any).day ?? '');
+
+      return {
+        id: String(id),
+        user_id: String(user_id || ''),
+        branch_id: String(branch_id || ''),
+        start_time: String(start_time || ''),
+        duration: Number(duration || 0),
+        end_time: String(end_time || ''),
+        date: dateYmd,
+        raw: s,
+      } as any;
+    });
+  };
+
+  const loadInitialData = async () => {
+    setLoading(true);
+    try {
+      // Determine branch: prefer route param (screenBranchId), otherwise use logged-in user's profile branch
+      let branchToUse: string | undefined = screenBranchId || undefined;
+
+      try {
+        const profile = await getProfile();
+        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?._id ?? undefined;
+        if (!branchToUse && profBranch) branchToUse = profBranch;
+        console.log("getProfile() returned branch:", profBranch);
+      } catch (err) {
+        // If fetching profile fails, we'll still continue using screenBranchId (if any)
+        console.warn('getProfile() failed, falling back to screenBranchId if provided', err);
+      }
+
+      // store effective branch id for UI filtering later
+      setEffectiveBranchId(branchToUse ?? "");
+      console.log("loadInitialData -> branchToUse:", branchToUse);
+
+      // Branches
+      const branches = await getAllBranches();
+      console.log("getAllBranches raw:", branches);
+      const normalizedBranches = normalizeBranches(branches || []);
+      setLocalBranches(normalizedBranches);
+      const usersResp = await fetchUsers({ branchId: branchToUse || undefined, limit: 1000 });
+      console.log("fetchUsers raw:", usersResp);
+      const fetchedUsers = usersResp?.users ?? [];
+      const normalizedUsers = normalizeUsers(fetchedUsers);
+      setLocalUsers(normalizedUsers);
+
+      // Schedules - use new helper from api/schedules.ts
+      try {
+        const fetchedSchedules = await getSchedules({ limit: 1000 });
+        console.log('getSchedules raw count:', Array.isArray(fetchedSchedules) ? fetchedSchedules.length : 0);
+        const normalizedSchedules = normalizeSchedules(fetchedSchedules || []);
+        setLocalSchedules(normalizedSchedules);
+      } catch (err) {
+        console.warn('Failed to load schedules from API helper, continuing with empty schedules', err);
+        setLocalSchedules([]);
+      }
+
+    } catch (err: any) {
+      console.warn('loadInitialData failed', err);
+      showErrorToast('Failed to load staff or branch data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screenBranchId]);
+
+  // keep schedules-by-date map up to date when schedules change
+  useEffect(() => {
+    if (!localSchedules?.length) {
+      setLocalSchedulesByDate({});
+      return;
+    }
+    const map: Record<string, any[]> = {};
+    localSchedules.forEach((s) => {
+      if (!s?.date) return;
+      const dateKey = s.date.split("T")[0];
+      if (!map[dateKey]) map[dateKey] = [];
+      map[dateKey].push(s);
+    });
+    setLocalSchedulesByDate(map);
+  }, [localSchedules]);
+
+
+  const onRefresh = async () => {
+    setLoading(true);
+    try {
+      await loadInitialData();
+      await new Promise((r) => setTimeout(r, 300));
+    } catch (e) {
+      console.warn('refresh failed', e);
+      showErrorToast('Refresh failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- helpers (time formatting, pickers, validators) ---
   const formatTime12 = (hhmmss: string) => {
     if (!hhmmss) return "";
     const parts = hhmmss.split(":");
@@ -132,28 +276,16 @@ export default function AddScheduleScreen(props: any) {
   };
 
   const dateToYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  // WEEK helper
 
-  // prefill if navigation passed a user id (admin opened for a specific user)
-  useEffect(() => {
-    if (!userId) return;
-    const prefillUser = localUsers.find((u) => u.id === userId) || null;
-    if (prefillUser && prefillUser.role === "employee") {
-      setSelectedStaff(prefillUser.fullname);
-      setSelectedStaffId(prefillUser.id);
-      const br = localBranches.find((b) => b.id === prefillUser.branch_id);
-      if (br) {
-        setSelectedBranch(br.name);
-        setSelectedBranchId(br.id);
-      }
+const getWeekDates = (offsetWeeks = 0) => {
+    const base = new Date();
+    if (offsetWeeks && Number.isFinite(offsetWeeks)) {
+      base.setDate(base.getDate() + offsetWeeks * 7);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, localUsers, localBranches]);
-
-  const getWeekDates = () => {
-    const today = new Date();
-    const dayIdx = today.getDay();
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - dayIdx);
+    const dayIdx = base.getDay();
+    const sunday = new Date(base);
+    sunday.setDate(base.getDate() - dayIdx);
     sunday.setHours(0, 0, 0, 0);
     const days: Date[] = [];
     for (let i = 0; i < 7; i++) {
@@ -164,81 +296,25 @@ export default function AddScheduleScreen(props: any) {
     }
     return days;
   };
-  const weekDates = getWeekDates();
 
-  // Whenever localSchedules changes, rebuild the grouped-by-date map
-  useEffect(() => {
-    const map: Record<string, any[]> = {};
-    for (const s of localSchedules) {
-      if (!map[s.date]) map[s.date] = [];
-      map[s.date].push(s);
-    }
-    setLocalSchedulesByDate(map);
-  }, [localSchedules]);
+  // derive weekDates from current offset
+  const weekDates = getWeekDates(weekOffset);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    // small delay for UX
-    await new Promise((r) => setTimeout(r, 600));
-    try {
-      // re-sync with the imported arrays (someone mutated them externally)
-      setLocalUsers([...importedUsers]);
-      setLocalBranches([...importedBranches]);
-      setLocalSchedules([...importedSchedules]);
-      // showSuccessToast("Refreshed");
-    } catch (e) {
-      console.warn("refresh failed", e);
-      showErrorToast("Refresh failed");
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  // staff suggestions filtered by the branch_id passed from previous screen.
-  // If no branch_id is passed, default to "B001".
-  const screenBranchId: string = (route.params?.branch_id as string) ?? "B001";
-
-  const employeeList = localUsers.filter(
-    (u) => u.role === "employee" && (u.branch_id ?? "") === screenBranchId
-  );
-  const branchList = localBranches;
-
-  const staffSuggestions = employeeList.filter((u) => {
-    const q = (selectedStaff || "").toLowerCase();
-    if (!q) return true;
-    return (
-      u.fullname.toLowerCase().includes(q) ||
-      u.id.toLowerCase().includes(q) ||
-      (u.branch_id || "").toLowerCase().includes(q)
-    );
-  });
-
-  const branchSuggestions = branchList.filter((b) =>
-    b.name.toLowerCase().includes((selectedBranch || "").toLowerCase()) ||
-    b.id.toLowerCase().includes((selectedBranch || "").toLowerCase())
-  );
-
-  const onShowNativeTimePicker = () => setShowTimePicker(true);
-  const onNativeTimeChange = (event: any, selected?: Date) => {
-    setShowTimePicker(false);
-    if (!selected) return;
-    const hh = pad2(selected.getHours());
-    const mm = pad2(selected.getMinutes());
-    const ss = "00";
-    setTimeFrom(`${hh}:${mm}:${ss}`);
-    setTimeFromError("");
-  };
-
+  // computeEndTime, isBeforeToday, onAddSchedule, openAddModalForDate, etc. — keep unchanged logic but adapted to normalized fields
   const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
+    if (!startHHMMSS) return "";
+    // Accept formats like "HH:MM", "HH:MM:SS", "HH:MM:SS.sss"
     const parts = startHHMMSS.split(":").map((p) => parseInt(p, 10) || 0);
+    const hh = parts[0] || 0;
+    const mm = parts[1] || 0;
+    const ss = parts[2] || 0;
     const dt = new Date();
-    dt.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
-    dt.setTime(dt.getTime() + Math.round(durationHrs * 3600 * 1000));
-    const hh = pad2(dt.getHours());
-    const mm = pad2(dt.getMinutes());
-    const ss = pad2(dt.getSeconds());
-    return `${hh}:${mm}:${ss}`;
+    dt.setHours(hh, mm, ss, 0);
+    dt.setTime(dt.getTime() + Math.round((durationHrs || 0) * 3600 * 1000));
+    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
   };
+
 
   const isBeforeToday = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
@@ -277,7 +353,6 @@ export default function AddScheduleScreen(props: any) {
       hasError = true;
     }
     if (hasError) return;
-
     const payload: any = {
       user_id: selectedStaffId,
       start_time: timeFrom,
@@ -285,8 +360,6 @@ export default function AddScheduleScreen(props: any) {
       date: selectedDayYmd,
       branch_id: selectedBranchId,
     };
-
-    // Use modalEditingId (not screen-level editingId) to decide update vs create
     if (modalEditingId) payload.id = modalEditingId;
 
     if (typeof route.params?.onSave === "function") {
@@ -296,7 +369,7 @@ export default function AddScheduleScreen(props: any) {
       } catch (e) {
         console.warn("onSave callback threw:", e);
       }
-      // update localSchedules to reflect change as well
+      // update localSchedules for UI immediately
       setLocalSchedules((prev) => {
         const copy = prev.map((p) => ({ ...p }));
         if (payload.id) {
@@ -305,27 +378,23 @@ export default function AddScheduleScreen(props: any) {
             copy[idx] = { ...copy[idx], ...payload, updateDate: new Date().toISOString() };
             setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
           } else {
-            const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() };
+            const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() } as any;
             copy.push(newSch);
             setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
           }
         } else {
-          const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() };
+          const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() } as any;
           copy.push(newSch);
           setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
         }
         return copy;
       });
-
-      // Close modal and clear modal editing state
       setAddScheduleModalVisible(false);
       setModalEditingId(null);
       return;
     }
-
-    // If no onSave callback, we persist to importedSchedules (as original code did) and update localSchedules
     if (!modalEditingId) {
-      const id = `S${(importedSchedules.length + 1).toString().padStart(3, "0")}`;
+      const id = `S${(localSchedules.length + 1).toString().padStart(3, "0")}`;
       const newSch = {
         id,
         user_id: payload.user_id,
@@ -336,40 +405,33 @@ export default function AddScheduleScreen(props: any) {
         createDate: new Date().toISOString(),
         updateDate: new Date().toISOString(),
       } as any;
-
-      // update importedSchedules (the 'api' file)
-      importedSchedules.push(newSch);
-      // update local
       setLocalSchedules((prev) => [...prev, newSch]);
       setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
       showSuccessToast("Schedule added");
     } else {
-      const idx = importedSchedules.findIndex((sch) => sch.id === modalEditingId);
-      if (idx !== -1) {
-        importedSchedules[idx] = {
-          ...importedSchedules[idx],
-          user_id: payload.user_id,
-          start_time: payload.start_time,
-          duration: payload.duration,
-          date: payload.date,
-          branch_id: payload.branch_id,
-          updateDate: new Date().toISOString(),
-        };
-        // update localSchedules
-        setLocalSchedules((prev) => {
-          const copy = prev.map((s) => (s.id === modalEditingId ? { ...importedSchedules[idx] } : s));
-          return copy;
-        });
-        setChangeLog((c) => [...c, { type: "update", schedule: importedSchedules[idx] }]);
-        showSuccessToast("Schedule updated");
-      }
+      setLocalSchedules((prev) => {
+        const copy = prev.map((s) => ({ ...s }));
+        const idx = copy.findIndex((sch) => sch.id === modalEditingId);
+        if (idx !== -1) {
+          copy[idx] = {
+            ...copy[idx],
+            user_id: payload.user_id,
+            start_time: payload.start_time,
+            duration: payload.duration,
+            date: payload.date,
+            branch_id: payload.branch_id,
+            updateDate: new Date().toISOString(),
+          };
+          setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
+        }
+        return copy;
+      });
+      showSuccessToast("Schedule updated");
     }
-
     setAddScheduleModalVisible(false);
     setModalEditingId(null);
   };
 
-  // === measurement helpers ===
   const measureStaffInput = () => {
     const handle = findNodeHandle(staffInputWrapperRef.current);
     if (!handle) return;
@@ -378,7 +440,6 @@ export default function AddScheduleScreen(props: any) {
     });
   };
 
-  // branch input uses onLayout (relative to modal container)
   const onBranchLayout = (e: LayoutChangeEvent) => {
     const { x, y, width, height } = e.nativeEvent.layout;
     setBranchInputLayout({ x, y, width, height });
@@ -388,7 +449,6 @@ export default function AddScheduleScreen(props: any) {
     if (staffFilterOpen) {
       setTimeout(measureStaffInput, 40);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffFilterOpen, selectedStaff]);
 
   useEffect(() => {
@@ -404,22 +464,17 @@ export default function AddScheduleScreen(props: any) {
         }
       }, 40);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchFilterOpen, selectedBranch, addScheduleModalVisible]);
 
-  // When clicking a date's time cartbox -> open modal for that date
   const openAddModalForDate = (ymd: string) => {
     if (isBeforeToday(ymd)) return;
     if (!selectedStaffId) {
       setStaffError(lang.Select_staff || "Please select staff first");
       showErrorToast(lang.Please_select_staff || "Select staff first");
-      // open inline staff suggestions (non-modal)
       setStaffFilterOpen(true);
       setTimeout(measureStaffInput, 40);
       return;
     }
-
-    // Check if a schedule exists for this staff on this date and prefill modal if found
     const daySchedules = localSchedulesByDate[ymd] || [];
     const staffSchedule = daySchedules.find((s) => s.user_id === selectedStaffId) || null;
 
@@ -428,10 +483,8 @@ export default function AddScheduleScreen(props: any) {
     setTimeFromError("");
 
     if (staffSchedule) {
-      // Prefill modal with schedule's values
       setTimeFrom(staffSchedule.start_time || "");
       setDurationHours(String(staffSchedule.duration ?? ""));
-      // find branch name
       const br = localBranches.find((b) => b.id === staffSchedule.branch_id);
       if (br) {
         setSelectedBranch(br.name);
@@ -440,22 +493,17 @@ export default function AddScheduleScreen(props: any) {
         setSelectedBranch("");
         setSelectedBranchId(null);
       }
-      // We're editing this existing schedule in the modal
       setModalEditingId(staffSchedule.id || null);
     } else {
-      // empty modal defaults
       setTimeFrom("");
       setDurationHours("");
-      setModalEditingId(null); // ensure we're in 'add' mode, not 'edit'
-      // keep branch as chosen staff's branch if present; otherwise keep previous selection
+      setModalEditingId(null);
       const staffObj = localUsers.find((u) => u.id === selectedStaffId) || null;
       if (staffObj) {
         const defaultBr = localBranches.find((b) => b.id === staffObj.branch_id);
         if (defaultBr) {
           setSelectedBranch(defaultBr.name);
           setSelectedBranchId(defaultBr.id);
-        } else {
-          // keep whatever branch selection is already present
         }
       }
     }
@@ -464,6 +512,8 @@ export default function AddScheduleScreen(props: any) {
   };
 
   useEffect(() => {
+    if (!route.params?.id) return;
+    const editingId: string | undefined = route.params?.id;
     if (!editingId) return;
     const s = localSchedules.find((sch) => sch.id === editingId);
     if (!s) return;
@@ -485,17 +535,18 @@ export default function AddScheduleScreen(props: any) {
       setSelectedBranch(br.name);
       setSelectedBranchId(br.id);
     }
-    // Because the screen was opened in edit-mode, set modal editing id as well
     setModalEditingId(editingId || null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, localSchedules, localUsers, localBranches]);
+  }, [route.params?.id, localSchedules, localUsers, localBranches]);
 
-  const handleStaffPick = (u: User) => {
+const handleStaffPick = async (u: LocalUser) => {
+  try {
     setSelectedStaff(u.fullname);
     setSelectedStaffId(u.id);
     setStaffError("");
     setStaffFilterOpen(false);
     setStaffInputLayout(null);
+
+    // set default branch
     const br = localBranches.find((b) => b.id === u.branch_id);
     if (br) {
       setSelectedBranch(br.name);
@@ -504,47 +555,152 @@ export default function AddScheduleScreen(props: any) {
       setSelectedBranch("");
       setSelectedBranchId(null);
     }
-  };
+
+    if (!u.id) return;
+
+    // compute current-week YMD set (based on current weekOffset)
+    const currentWeekDates = weekDates.map((d) => dateToYMD(d));
+    const currentWeekSet = new Set(currentWeekDates);
+
+    const currentStart = currentWeekDates[0];
+    const currentEnd = currentWeekDates[currentWeekDates.length - 1];
+
+    // 1) fetch schedules (API may return wide range)
+    const schedules = await getEmployeeSchedules(u.id, currentStart, currentEnd);
+    let fetchedNormalized = normalizeSchedules(Array.isArray(schedules) ? schedules : []);
+
+    console.log('[DEBUG] handleStaffPick: raw fetchedNormalized length=', fetchedNormalized.length);
+
+    // 2) filter to only items that fall inside the CURRENT week (local YMD)
+    const currentWeekItems = (fetchedNormalized || []).filter((s) => s && s.date && currentWeekSet.has(s.date));
+    console.log('[DEBUG] handleStaffPick: currentWeekItems.length=', currentWeekItems.length, 'currentWeekDates=', currentWeekDates);
+
+    // 3) if none in current week, try previous week (and if found, switch weekOffset)
+    if (!currentWeekItems || currentWeekItems.length === 0) {
+      const prevWeekDates = getWeekDates(weekOffset - 1).map((d) => dateToYMD(d));
+      const prevStart = prevWeekDates[0];
+      const prevEnd = prevWeekDates[prevWeekDates.length - 1];
+
+      try {
+        const prevSchedules = await getEmployeeSchedules(u.id, prevStart, prevEnd);
+        const prevNormalized = normalizeSchedules(Array.isArray(prevSchedules) ? prevSchedules : []);
+        const prevWeekItems = (prevNormalized || []).filter((s) => s && s.date && prevWeekDates.includes(s.date));
+
+        console.log('[DEBUG] handleStaffPick: prevWeekItems.length=', prevWeekItems.length, 'prevWeekDates=', prevWeekDates);
+
+        if (prevWeekItems && prevWeekItems.length > 0) {
+          // switch UI to previous week so tiles show those dates
+          setWeekOffset((o) => o - 1);
+          // use prevNormalized as the fetchedNormalized for merging (or keep both)
+          fetchedNormalized = prevNormalized;
+        } else {
+          // no prev-week items either -> keep weekOffset as-is (show current week with no schedules)
+          console.log('[DEBUG] handleStaffPick: no schedules in current or previous week');
+        }
+      } catch (prevErr) {
+        console.warn('[WARN] handleStaffPick: failed prev week fetch', prevErr);
+      }
+    } else {
+      // current week had items — ensure UI shows current week
+      if (weekOffset !== 0) setWeekOffset(0);
+    }
+
+    // 4) merge fetchedNormalized into localSchedules and rebuild date map
+    setLocalSchedules((existing) => {
+      const byId: Record<string, any> = {};
+      (existing || []).forEach((s) => {
+        if (s && s.id) byId[String(s.id)] = s;
+      });
+      (fetchedNormalized || []).forEach((s) => {
+        if (s && s.id) byId[String(s.id)] = s;
+      });
+      const merged = Object.values(byId);
+
+      const map: Record<string, any[]> = {};
+      merged.forEach((s) => {
+        if (!s?.date) return;
+        const dateKey = s.date; // normalizeSchedules sets YYYY-MM-DD (local)
+        if (!map[dateKey]) map[dateKey] = [];
+        map[dateKey].push(s);
+      });
+
+      setLocalSchedulesByDate(map);
+      console.log('[DEBUG] handleStaffPick: merged total=', merged.length, 'dateKeys=', Object.keys(map).slice(0, 30));
+      return merged;
+    });
+
+  } catch (err) {
+    console.error('[ERROR] handleStaffPick unexpected error', err);
+  }
+};
+
+
 
   const onFooterSaveAndBack = () => {
-    // don't open popup if nothing changed
     if (changeLog.length === 0) {
       showErrorToast(lang.no_changes_to_save);
       return;
     }
-
-    // don't open popup if modal is open (user might have unfinished input)
     if (addScheduleModalVisible) {
       showErrorToast("Please finish editing the schedule");
       return;
     }
-
-    // don't open popup if there are validation errors visible
     if (staffError || timeFromError || durationError) {
       showErrorToast("Please fix errors before saving");
       return;
     }
-
-    // Additional safety: ensure at least one meaningful change exists (redundant, but harmless)
     if (!Array.isArray(changeLog) || changeLog.length === 0) {
       showErrorToast("No changes to save");
       return;
     }
-
-    // All checks passed — show confirmation popup
     setSaveConfirmVisible(true);
   };
 
-  // screen dims for overlay limits
   const screenH = Dimensions.get("window").height;
   const screenW = Dimensions.get("window").width;
+  const employeeList = localUsers.filter((u) => {
+    const role = (u.role || "").toLowerCase();
+    // Roles we consider "staff" for scheduling purposes. Extend if your backend uses other role names.
+    const staffRoles = new Set(["employee", "user", "staff", "cashier", "worker", "clerk", "attendant"]);
+    if (!staffRoles.has(role)) return false;
+    if (effectiveBranchId) {
+      return (u.branch_id ?? "") === effectiveBranchId;
+    }
+    return true;
+  });
+
+  const staffSuggestions = employeeList.filter((u) => {
+    const q = (selectedStaff || "").toLowerCase();
+    if (!q) return true;
+    return (
+      u.fullname.toLowerCase().includes(q) ||
+      u.id.toLowerCase().includes(q) ||
+      (u.branch_id || "").toLowerCase().includes(q)
+    );
+  });
+
+  const branchSuggestions = localBranches.filter((b) =>
+    b.name.toLowerCase().includes((selectedBranch || "").toLowerCase()) ||
+    b.id.toLowerCase().includes((selectedBranch || "").toLowerCase())
+  );
+
+  const onShowNativeTimePicker = () => setShowTimePicker(true);
+  const onNativeTimeChange = (event: any, selected?: Date) => {
+    setShowTimePicker(false);
+    if (!selected) return;
+    const hh = pad2(selected.getHours());
+    const mm = pad2(selected.getMinutes());
+    const ss = "00";
+    setTimeFrom(`${hh}:${mm}:${ss}`);
+    setTimeFromError("");
+  };
 
   return (
     <View style={styles.container}>
       <Header
         backgroundColor={colors.secondary}
         position="relative"
-        center={{ type: "text", value: editingId ? (lang.Edit_Schedule) : (lang.Add_Schedule), color: colors.text }}
+        center={{ type: "text", value: route.params?.id ? (lang.Edit_Schedule) : (lang.Add_Schedule), color: colors.text }}
         left={[
           {
             type: "image",
@@ -555,11 +711,10 @@ export default function AddScheduleScreen(props: any) {
           },
         ]}
       />
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={onRefresh} colors={[colors.primary]} />}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.scrollBody}>
@@ -568,7 +723,7 @@ export default function AddScheduleScreen(props: any) {
             <Text style={styles.groupSubtitle}>{lang.Create_new_work_schedule}</Text>
           </View>
 
-          {/* Staff - typeable, overlay suggestions */}
+          {/* Staff input */}
           <View
             ref={(r) => {
               staffInputWrapperRef.current = r;
@@ -581,37 +736,22 @@ export default function AddScheduleScreen(props: any) {
               label={lang.staff_member}
               placeholder={lang.Select_staff_member}
               value={selectedStaff}
-              // setValue={(v: string) => {
-              //   setSelectedStaff(v);
-              //   setStaffError("");
-              //   setSelectedStaffId(null);
-              //   setStaffFilterOpen(true);
-              //   setTimeout(measureStaffInput, 20);
-              // }}
-              setValue={isEditingScreen() ? (_v: string) => { } : (v: string) => {
+              setValue={(v: string) => {
                 setSelectedStaff(v);
                 setStaffError("");
                 setSelectedStaffId(null);
                 setStaffFilterOpen(true);
                 setTimeout(measureStaffInput, 20);
               }}
-              editable={!isEditingScreen()}
+              editable={true}
               onPress={undefined}
               rightIcon={require("../../../../assets/icons/a_staffrecord_b.png")}
               rightIconStyle={{ tintColor: colors.primary }}
-              // onRightIconPress={() => {
-              //   if (!staffFilterOpen) {
-              //     setStaffFilterOpen(true);
-              //     setTimeout(measureStaffInput, 20);
-              //   } else {
-              //     setStaffFilterOpen(false);
-              //     setStaffInputLayout(null);
-              //   }
-              // }}
               onRightIconPress={() => {
-                // don't allow toggling suggestions when in edit-mode
-                if (isEditingScreen()) return;
                 if (!staffFilterOpen) {
+                  // clear the typed query so suggestions show full list
+                  setSelectedStaff('');
+                  setSelectedStaffId(null);
                   setStaffFilterOpen(true);
                   setTimeout(measureStaffInput, 20);
                 } else {
@@ -622,8 +762,6 @@ export default function AddScheduleScreen(props: any) {
               errorMessage={staffError}
             />
           </View>
-
-          {/* Week row */}
           <View style={{ marginTop: 0 }}>
             {weekDates.map((d) => {
               const ymd = dateToYMD(d);
@@ -633,12 +771,13 @@ export default function AddScheduleScreen(props: any) {
               const staffSchedule = selectedStaffId ? daySchedules.find((s) => s.user_id === selectedStaffId) : null;
               const hasScheduleForStaff = !!staffSchedule;
               const expired = isBeforeToday(ymd);
-              const displayTime = hasScheduleForStaff ? `${formatTime12(staffSchedule.start_time)} – ${formatTime12(computeEndTime(staffSchedule.start_time, staffSchedule.duration))}` : null;
+              const displayTime = hasScheduleForStaff
+                ? `${formatTime12(staffSchedule.start_time)} – ${formatTime12(staffSchedule.end_time || computeEndTime(staffSchedule.start_time, staffSchedule.duration))}`
+                : null;
               const userObj = localUsers.find((uu) => uu.id === selectedStaffId) || null;
               const branchNameForSchedule = hasScheduleForStaff && userObj && staffSchedule.branch_id && (staffSchedule.branch_id !== userObj.branch_id)
                 ? (localBranches.find((b) => b.id === staffSchedule.branch_id)?.name ?? "")
                 : "";
-
               return (
                 <View key={ymd} style={styles.each_day}>
                   <CartBox
@@ -648,7 +787,6 @@ export default function AddScheduleScreen(props: any) {
                     <Text style={styles.day_text}>{`${dateNum}`}</Text>
                     <Text style={styles.day_text}>{`${wk}`}</Text>
                   </CartBox>
-
                   <TouchableOpacity
                     style={{ flex: 1 }}
                     activeOpacity={expired ? 1 : 0.8}
@@ -681,22 +819,18 @@ export default function AddScheduleScreen(props: any) {
           <View style={{ height: 0 }} />
         </View>
       </ScrollView>
-
       <View style={styles.footerButtonWrap}>
-        <Button1 text={editingId ? (lang.Save_Changes) : (lang.Add_Schedule)} width={"100%"} onPress={onFooterSaveAndBack} />
+        <Button1 text={route.params?.id ? (lang.Save_Changes) : (lang.Add_Schedule)} width={"100%"} onPress={onFooterSaveAndBack} />
       </View>
 
-      {/* Add Schedule Modal */}
+      {/* Add Schedule Modal (unchanged except branch suggestion overlay uses normalized branch data) */}
       <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
         <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{modalEditingId ? lang.Edit_Schedule : lang.Add_Schedule}</Text>
-
-            {/* We render branch overlay inside modal container (so it sits above modal content) */}
             <View>
               <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                {/* Branch input wrapper (measured for overlay) */}
                 <View
                   ref={(r) => { branchInputWrapperRef.current = r; }}
                   onLayout={onBranchLayout}
@@ -740,7 +874,6 @@ export default function AddScheduleScreen(props: any) {
                   />
                 </View>
 
-                {/* Start time */}
                 <InputBox
                   label={lang.Start_time}
                   placeholder={"00:00:00"}
@@ -757,7 +890,6 @@ export default function AddScheduleScreen(props: any) {
                   onPress={onShowNativeTimePicker}
                 />
 
-                {/* Duration */}
                 <InputBox
                   label={lang.Duration}
                   placeholder={"Eg: 8"}
@@ -768,14 +900,11 @@ export default function AddScheduleScreen(props: any) {
                 />
 
                 <View style={{ height: 18 }} />
-
                 <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
                 <View style={{ height: 20 }} />
               </ScrollView>
 
-              {/* Branch suggestion overlay inside modal container */}
               {branchFilterOpen && branchInputLayout && (
-                // container positioned relative to modalContainer (onLayout gave coords relative to modal container)
                 <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
                   <View
                     style={[
@@ -810,8 +939,6 @@ export default function AddScheduleScreen(props: any) {
           </View>
         </Pressable>
       </Modal>
-
-      {/* Native Time Picker */}
       {showTimePicker && (
         <DateTimePicker
           value={timeStringToDate(timeFrom)}
@@ -822,7 +949,6 @@ export default function AddScheduleScreen(props: any) {
         />
       )}
 
-      {/* Staff suggestion overlay rendered at root (no Modal) so keyboard doesn't hide on Android */}
       {staffFilterOpen && staffInputLayout && (
         <Pressable
           style={styles.overlayBackdrop}
@@ -860,14 +986,10 @@ export default function AddScheduleScreen(props: any) {
           </View>
         </Pressable>
       )}
-
       <Toast config={toastConfig} />
-
-      {/* Save confirmation popup */}
       <Popup
         visible={saveConfirmVisible}
         onClose={() => setSaveConfirmVisible(false)}
-
         dismissOnOverlayPress={false}
         title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
         titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any }}
@@ -877,7 +999,6 @@ export default function AddScheduleScreen(props: any) {
             text={lang.yes || "Yes"}
             onPress={() => {
               setSaveConfirmVisible(false);
-              // navigate back and pass changes (same behaviour as before)
               try {
                 navigation.navigate("WorkScheduleScreen" as any, { userId, langId, changes: changeLog });
               } catch (e) {
@@ -898,7 +1019,6 @@ export default function AddScheduleScreen(props: any) {
           />
         </View>
       </Popup>
-
     </View>
   );
 }
