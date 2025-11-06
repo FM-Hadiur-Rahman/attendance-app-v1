@@ -228,15 +228,15 @@ const AttendanceScreen: React.FC = (props: any) => {
   const [branchAttendanceCount, setBranchAttendanceCount] = useState<number>(0);
 
   const isFocused = useIsFocused();
-useEffect(() => {
-  if (!isFocused) return;
-  // poll every 15s while the screen is visible (adjust ms as needed)
-  const POLL_MS = 15000;
-  const id = setInterval(() => {
-    setVersion(v => v + 1); // triggers fetchDataForRange via your existing deps
-  }, POLL_MS);
-  return () => clearInterval(id);
-}, [isFocused]);
+  useEffect(() => {
+    if (!isFocused) return;
+    // poll every 15s while the screen is visible (adjust ms as needed)
+    const POLL_MS = 15000;
+    const id = setInterval(() => {
+      setVersion(v => v + 1); // triggers fetchDataForRange via your existing deps
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [isFocused]);
 
 
   const defaultToday = (() => {
@@ -495,385 +495,210 @@ useEffect(() => {
         }
       }
 
-//       const uiEntries = schedulesToShow.map((s: any, idx: number) => {
-//         const employeeObj = s.employee_id || s.employee || null;
-//         const employeeId = employeeObj?._id ?? employeeObj?.id ?? employeeObj ?? s.employee_id;
-//         // derive dateYMD from schedule robustly — prefer raw string slice if available
-//         let dateYMD = "";
-//         if (typeof s.date === 'string' && s.date.length >= 10) {
-//           dateYMD = s.date.slice(0, 10);
-//         } else if (s.date) {
-//           try {
-//             const d = new Date(s.date);
-//             dateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
-//           } catch (e) {
-//             dateYMD = "";
-//           }
-//         }
-
-//         // normalize employeeId to string
-//         const empIdStr = String(employeeId ?? "");
-
-//         // exact keyed lookup first
-//         let row = null;
-//         if (dateYMD) {
-//           row = reportMap.get(`${empIdStr}:${dateYMD}`) || null;
-//         }
-//         // fallback to employee-only key from reportMap
-//         if (!row) {
-//           row = reportMap.get(`${empIdStr}:*`) || null;
-//         }
-//         // last-resort: search reportRows arr by emp id (ignoring date)
-//         if (!row && Array.isArray(reportRowsArr)) {
-//           row = reportRowsArr.find((r: any) => {
-//             const rid = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
-//             return rid && String(rid) === empIdStr;
-//           }) || null;
-//         }
-
-
-//         const isoIn = row?.actualIn || row?.actualInTime || row?.In || row?.InTime || row?.In || null;
-//         const isoOut = row?.actualOut || row?.actualOutTime || row?.Out || row?.OutTime || null;
-
-//         const makeTimeStrFromISO = (iso?: string) => {
-//           if (!iso) return "";
-//           try {
-//             const dt = new Date(iso);
-//             if (isNaN(dt.getTime())) {
-//               return String(iso);
-//             }
-//             const hh = pad2Local(dt.getHours());
-//             const mm = pad2Local(dt.getMinutes());
-//             const ss = pad2Local(dt.getSeconds());
-//             return `${hh}:${mm}:${ss}`;
-//           } catch (e) {
-//             return String(iso || "");
-//           }
-//         };
-
-//         const work: any = {
-//           id: `${employeeId}_${dateYMD}_${s._id ?? s.id ?? idx}`,
-//           date: dateYMD,
-//           check_in: makeTimeStrFromISO(isoIn),
-//           check_out: makeTimeStrFromISO(isoOut),
-//           rawActualIn: isoIn,
-//           rawActualOut: isoOut,
-//         };
-
-//         const schedule = {
-//           start_time: s.start_time ?? s.startTime ?? s.start ?? "00:00",
-//           end_time: s.end_time ?? s.endTime ?? s.end ?? "00:00",
-//           branch_id: s.branch_id,
-//         };
-// // --- REPLACE existing status/diffText block with this ---
-// let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
-// let diffText = "";
-
-// // prefer API-provided startStatus when available (robust key check)
-// const startStatusRaw =
-//   row?.startStatus ??
-//   row?.start_status ??
-//   row?.startstatus ??
-//   row?.startStatusText ??
-//   row?.start_status_text ??
-//   "";
-
-// // normalize
-// const startStatusStr = String(startStatusRaw || "").trim();
-// const startStatusLower = startStatusStr.toLowerCase();
-
-// if (!schedule || !schedule.start_time) {
-//   // no schedule info
-//   status = "noschedule";
-//   diffText = "";
-// } else {
-//   // if API explicitly gives early/late + minutes like "early (333m)" or "late (333m)"
-//   if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
-//     // extract minutes number (handles "(333m)", "333m", etc.)
-//     const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
-//     const mins = m ? parseInt(m[1], 10) : 0;
-//     status = startStatusLower.startsWith("early") ? "early" : "late";
-//     diffText = mins ? formatMinutesDiff(mins) : "";
-//   } else {
-//     // API indicates missing/other — treat as not checked in if there's no actual check-in
-//     if (!work.check_in) {
-//       status = "not_checked_in";
-//       diffText = "";
-//     } else {
-//       // fallback: compute from scheduled start vs actual check-in (keeps original behavior if needed)
-//       const schedMin = timeToMinutes(schedule.start_time || "00:00");
-//       const checkMin = timeToMinutes(work.check_in || "00:00");
-//       const diff = schedMin - checkMin;
-//       if (diff < 0) {
-//         status = "late";
-//         diffText = formatMinutesDiff(-diff);
-//       } else {
-//         status = "early";
-//         diffText = formatMinutesDiff(diff);
-//       }
-//     }
-//   }
-// }
-// // --- end replacement ---
-
-//         let user = null;
-//         // prefer name from report row if present (use report fullname first)
-//         const rowName = (row?.fullname || row?.full_name || row?.name || "").toString().trim();
-
-//         if (employeeObj && typeof employeeObj === 'object' && (employeeObj._id || employeeObj.id)) {
-//           // build employee object name from the object if possible (first/last or fullname)
-//           const empNameParts = [
-//             employeeObj.fullname,
-//             employeeObj.full_name,
-//             employeeObj.name,
-//             (employeeObj.firstName || employeeObj.first_name) ? `${employeeObj.firstName || employeeObj.first_name}${employeeObj.lastName || employeeObj.last_name ? ` ${employeeObj.lastName || employeeObj.last_name}` : ""}` : ""
-//           ];
-//           const empName = (empNameParts.find(p => typeof p === 'string' && p.trim() !== "") || "").toString().trim();
-
-//           // final precedence: report fullname (rowName) -> employee object fullname (empName) -> username (last resort)
-//           const finalName = rowName || empName || (employeeObj.username || employeeObj.userName || "").toString().trim() || "";
-
-//           user = {
-//             id: employeeObj._id ?? employeeObj.id,
-//             _id: employeeObj._id ?? employeeObj.id,
-//             fullname: finalName,
-//             position: employeeObj.position ?? "",
-//             branch: employeeObj.branch ?? null,
-//           };
-
-//         } else {
-//           // employee object missing — try users cache, otherwise use report row
-//           user = (users || []).find((u: any) => (String(u._id) === String(employeeId) || String(u.id) === String(employeeId))) || {
-//             id: employeeId,
-//             _id: employeeId,
-//             fullname: rowName || "",
-//             position: "",
-//             branch: null,
-//           };
-//         }
-
-//         // debug log for any entries with missing name — remove later
-//         if (!user.fullname || user.fullname.trim() === "") {
-//           // eslint-disable-next-line no-console
-//           console.warn("Attendance entry missing fullname", { employeeId: empIdStr, employeeObj, row });
-//         }
-
-
-//         return { work, user, schedule, status, diffText, rawSchedule: s };
-//       });
-const uiEntries = schedulesToShow.map((s: any, idx: number) => {
-  const employeeObj = s.employee_id || s.employee || null;
-  const employeeId = employeeObj?._id ?? employeeObj?.id ?? employeeObj ?? s.employee_id;
-  // derive dateYMD from schedule robustly — prefer raw string slice if available
-  let dateYMD = "";
-  if (typeof s.date === 'string' && s.date.length >= 10) {
-    dateYMD = s.date.slice(0, 10);
-  } else if (s.date) {
-    try {
-      const d = new Date(s.date);
-      dateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
-    } catch (e) {
-      dateYMD = "";
-    }
-  }
-
-  const empIdStr = String(employeeId ?? "");
-
-  // find matching row (report) using map and fallbacks (reportMap built earlier)
-  let row: any = null;
-  if (dateYMD) row = reportMap.get(`${empIdStr}:${dateYMD}`) || null;
-  if (!row) row = reportMap.get(`${empIdStr}:*`) || null;
-  if (!row && Array.isArray(reportRowsArr)) {
-    row = reportRowsArr.find((r: any) => {
-      const rid = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
-      return rid && String(rid) === empIdStr;
-    }) || null;
-  }
-
-  // Prefer report-provided ISO times but allow legacy keys:
-  const isoIn = row?.actualIn || row?.actualInTime || row?.In || row?.InTime || row?.In || null;
-  const isoOut = row?.actualOut || row?.actualOutTime || row?.Out || row?.OutTime || null;
-
-  const makeTimeStrFromISO = (iso?: string) => {
-    if (!iso) return "";
-    try {
-      const dt = new Date(iso);
-      if (isNaN(dt.getTime())) {
-        // API may already return HH:MM or ISO — return as-is if Date parsing fails
-        return String(iso);
-      }
-      const hh = pad2Local(dt.getHours());
-      const mm = pad2Local(dt.getMinutes());
-      const ss = pad2Local(dt.getSeconds());
-      return `${hh}:${mm}:${ss}`;
-    } catch (e) {
-      return String(iso || "");
-    }
-  };
-
-  const work: any = {
-    id: `${employeeId}_${dateYMD}_${s._id ?? s.id ?? idx}`,
-    date: dateYMD || (row?.date ? String(row.date).slice(0, 10) : ""),
-    check_in: makeTimeStrFromISO(isoIn),
-    check_out: makeTimeStrFromISO(isoOut),
-    rawActualIn: isoIn,
-    rawActualOut: isoOut,
-  };
-
-  // Build schedule object — prefer schedule endpoint, fallback to report row fields
-  const schedule = {
-    start_time:
-      s.start_time ?? s.startTime ?? s.start ??
-      row?.scheduledStart ?? row?.scheduled_start ?? "00:00",
-    end_time:
-      s.end_time ?? s.endTime ?? s.end ??
-      row?.scheduledEnd ?? row?.scheduled_end ?? "00:00",
-    // keep original schedule branch shape if present
-    branch_id: s.branch_id ?? s.branchId ?? null,
-  };
-
-  // Compute entry-level branch info. Prefer schedule branch, fall back to row.branchId
-  const rowBranchId = row?.branchId ?? row?.branch_id ?? (row?.branch?.id ?? null);
-  const rowBranchName = row?.branchName ?? row?.branchName ?? row?.branch?.name ?? row?.branch_name ?? "";
-
-  // Determine status/diffText robustly using row.startStatus if present
-  let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
-  let diffText = "";
-
-  const startStatusRaw =
-    row?.startStatus ??
-    row?.start_status ??
-    row?.startstatus ??
-    row?.startStatusText ??
-    row?.start_status_text ??
-    "";
-
-  const startStatusStr = String(startStatusRaw || "").trim();
-  const startStatusLower = startStatusStr.toLowerCase();
-
-  if (!schedule || !schedule.start_time) {
-    status = "noschedule";
-    diffText = "";
-  } else {
-    if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
-      const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
-      const mins = m ? parseInt(m[1], 10) : 0;
-      status = startStatusLower.startsWith("early") ? "early" : "late";
-      diffText = mins ? formatMinutesDiff(mins) : "";
-    } else {
-      if (!work.check_in) {
-        status = "not_checked_in";
-        diffText = "";
-      } else {
-        const schedMin = timeToMinutes(schedule.start_time || "00:00");
-        const checkMin = timeToMinutes(work.check_in || "00:00");
-        const diff = schedMin - checkMin;
-        if (diff < 0) {
-          status = "late";
-          diffText = formatMinutesDiff(-diff);
-        } else {
-          status = "early";
-          diffText = formatMinutesDiff(diff);
+      const uiEntries = schedulesToShow.map((s: any, idx: number) => {
+        const employeeObj = s.employee_id || s.employee || null;
+        const employeeId = employeeObj?._id ?? employeeObj?.id ?? employeeObj ?? s.employee_id;
+        // derive dateYMD from schedule robustly — prefer raw string slice if available
+        let dateYMD = "";
+        if (typeof s.date === 'string' && s.date.length >= 10) {
+          dateYMD = s.date.slice(0, 10);
+        } else if (s.date) {
+          try {
+            const d = new Date(s.date);
+            dateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+          } catch (e) {
+            dateYMD = "";
+          }
         }
-      }
-    }
-  }
 
-  // Build final user object (prefer employee object fields, then users cache, then report row)
-  let user = null;
-  const rowName = (row?.fullname || row?.full_name || row?.name || "").toString().trim();
+        const empIdStr = String(employeeId ?? "");
 
-  if (employeeObj && typeof employeeObj === "object" && (employeeObj._id || employeeObj.id)) {
-    const empNameParts = [
-      employeeObj.fullname,
-      employeeObj.full_name,
-      employeeObj.name,
-      (employeeObj.firstName || employeeObj.first_name) ? `${employeeObj.firstName || employeeObj.first_name}${employeeObj.lastName || employeeObj.last_name ? ` ${employeeObj.lastName || employeeObj.last_name}` : ""}` : ""
-    ];
-    const empName = (empNameParts.find(p => typeof p === 'string' && p?.trim() !== "") || "").toString().trim();
-    const finalName = rowName || empName || (employeeObj.username || employeeObj.userName || "").toString().trim() || "";
+        // find matching row (report) using map and fallbacks (reportMap built earlier)
+        let row: any = null;
+        if (dateYMD) row = reportMap.get(`${empIdStr}:${dateYMD}`) || null;
+        if (!row) row = reportMap.get(`${empIdStr}:*`) || null;
+        if (!row && Array.isArray(reportRowsArr)) {
+          row = reportRowsArr.find((r: any) => {
+            const rid = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
+            return rid && String(rid) === empIdStr;
+          }) || null;
+        }
 
-    user = {
-      id: employeeObj._id ?? employeeObj.id,
-      _id: employeeObj._id ?? employeeObj.id,
-      fullname: finalName,
-      position: employeeObj.position ?? "",
-      branch: employeeObj.branch ?? null,
-    };
-  } else {
-    user = (users || []).find((u: any) => (String(u._id) === String(employeeId) || String(u.id) === String(employeeId))) || {
-      id: employeeId,
-      _id: employeeId,
-      fullname: rowName || "",
-      position: "",
-      branch: null,
-    };
-  }
+        // Prefer report-provided ISO times but allow legacy keys:
+        const isoIn = row?.actualIn || row?.actualInTime || row?.In || row?.InTime || row?.In || null;
+        const isoOut = row?.actualOut || row?.actualOutTime || row?.Out || row?.OutTime || null;
 
-  if (!user.fullname || user.fullname.trim() === "") {
-    // eslint-disable-next-line no-console
-    console.warn("Attendance entry missing fullname", { employeeId: empIdStr, employeeObj, row });
-  }
+        const makeTimeStrFromISO = (iso?: string) => {
+          if (!iso) return "";
+          try {
+            const dt = new Date(iso);
+            if (isNaN(dt.getTime())) {
+              // API may already return HH:MM or ISO — return as-is if Date parsing fails
+              return String(iso);
+            }
+            const hh = pad2Local(dt.getHours());
+            const mm = pad2Local(dt.getMinutes());
+            const ss = pad2Local(dt.getSeconds());
+            return `${hh}:${mm}:${ss}`;
+          } catch (e) {
+            return String(iso || "");
+          }
+        };
 
-  // attach entry branch id/name for simple checks during render
-  const entryBranchId = schedule.branch_id?._id ?? schedule.branch_id ?? s.branchId ?? s.branch_id ?? rowBranchId ?? null;
-  const entryBranchName =
-    (s.branchName || s.branch_name || s.branch_id?.name) ||
-    rowBranchName ||
-    (schedule.branch_id?.name || "") ||
-    "";
+        const work: any = {
+          id: `${employeeId}_${dateYMD}_${s._id ?? s.id ?? idx}`,
+          date: dateYMD || (row?.date ? String(row.date).slice(0, 10) : ""),
+          check_in: makeTimeStrFromISO(isoIn),
+          check_out: makeTimeStrFromISO(isoOut),
+          rawActualIn: isoIn,
+          rawActualOut: isoOut,
+        };
 
-  return {
-    work,
-    user,
-    schedule,
-    status,
-    diffText,
-    rawSchedule: s,
-    rawReportRow: row,
-    entryBranchId,
-    entryBranchName,
-  };
-});
+        // Build schedule object — prefer schedule endpoint, fallback to report row fields
+        const schedule = {
+          start_time:
+            s.start_time ?? s.startTime ?? s.start ??
+            row?.scheduledStart ?? row?.scheduled_start ?? "00:00",
+          end_time:
+            s.end_time ?? s.endTime ?? s.end ??
+            row?.scheduledEnd ?? row?.scheduled_end ?? "00:00",
+          // keep original schedule branch shape if present
+          branch_id: s.branch_id ?? s.branchId ?? null,
+        };
 
-      // const sorted = uiEntries.slice().sort((a, b) => {
-      //   const aMin = timeToMinutes(a.schedule.start_time || "00:00");
-      //   const bMin = timeToMinutes(b.schedule.start_time || "00:00");
-      //   if (aMin !== bMin) return aMin - bMin;
-      //   const an = (a.user?.fullname || a.user?.username || "").toLowerCase();
-      //   const bn = (b.user?.fullname || b.user?.username || "").toLowerCase();
-      //   return an < bn ? -1 : (an > bn ? 1 : 0);
-      // });
+        // Compute entry-level branch info. Prefer schedule branch, fall back to row.branchId
+        const rowBranchId = row?.branchId ?? row?.branch_id ?? (row?.branch?.id ?? null);
+        const rowBranchName = row?.branchName ?? row?.branchName ?? row?.branch?.name ?? row?.branch_name ?? "";
+
+        // Determine status/diffText robustly using row.startStatus if present
+        let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
+        let diffText = "";
+
+        const startStatusRaw =
+          row?.startStatus ??
+          row?.start_status ??
+          row?.startstatus ??
+          row?.startStatusText ??
+          row?.start_status_text ??
+          "";
+
+        const startStatusStr = String(startStatusRaw || "").trim();
+        const startStatusLower = startStatusStr.toLowerCase();
+
+        if (!schedule || !schedule.start_time) {
+          status = "noschedule";
+          diffText = "";
+        } else {
+          if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
+            const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
+            const mins = m ? parseInt(m[1], 10) : 0;
+            status = startStatusLower.startsWith("early") ? "early" : "late";
+            diffText = mins ? formatMinutesDiff(mins) : "";
+          } else {
+            if (!work.check_in) {
+              status = "not_checked_in";
+              diffText = "";
+            } else {
+              const schedMin = timeToMinutes(schedule.start_time || "00:00");
+              const checkMin = timeToMinutes(work.check_in || "00:00");
+              const diff = schedMin - checkMin;
+              if (diff < 0) {
+                status = "late";
+                diffText = formatMinutesDiff(-diff);
+              } else {
+                status = "early";
+                diffText = formatMinutesDiff(diff);
+              }
+            }
+          }
+        }
+
+        // Build final user object (prefer employee object fields, then users cache, then report row)
+        let user = null;
+        const rowName = (row?.fullname || row?.full_name || row?.name || "").toString().trim();
+
+        if (employeeObj && typeof employeeObj === "object" && (employeeObj._id || employeeObj.id)) {
+          const empNameParts = [
+            employeeObj.fullname,
+            employeeObj.full_name,
+            employeeObj.name,
+            (employeeObj.firstName || employeeObj.first_name) ? `${employeeObj.firstName || employeeObj.first_name}${employeeObj.lastName || employeeObj.last_name ? ` ${employeeObj.lastName || employeeObj.last_name}` : ""}` : ""
+          ];
+          const empName = (empNameParts.find(p => typeof p === 'string' && p?.trim() !== "") || "").toString().trim();
+          const finalName = rowName || empName || (employeeObj.username || employeeObj.userName || "").toString().trim() || "";
+
+          user = {
+            id: employeeObj._id ?? employeeObj.id,
+            _id: employeeObj._id ?? employeeObj.id,
+            fullname: finalName,
+            position: employeeObj.position ?? "",
+            branch: employeeObj.branch ?? null,
+          };
+        } else {
+          user = (users || []).find((u: any) => (String(u._id) === String(employeeId) || String(u.id) === String(employeeId))) || {
+            id: employeeId,
+            _id: employeeId,
+            fullname: rowName || "",
+            position: "",
+            branch: null,
+          };
+        }
+
+        if (!user.fullname || user.fullname.trim() === "") {
+          // eslint-disable-next-line no-console
+          console.warn("Attendance entry missing fullname", { employeeId: empIdStr, employeeObj, row });
+        }
+
+        // attach entry branch id/name for simple checks during render
+        const entryBranchId = schedule.branch_id?._id ?? schedule.branch_id ?? s.branchId ?? s.branch_id ?? rowBranchId ?? null;
+        const entryBranchName =
+          (s.branchName || s.branch_name || s.branch_id?.name) ||
+          rowBranchName ||
+          (schedule.branch_id?.name || "") ||
+          "";
+
+        return {
+          work,
+          user,
+          schedule,
+          status,
+          diffText,
+          rawSchedule: s,
+          rawReportRow: row,
+          entryBranchId,
+          entryBranchName,
+        };
+      });
 
       // Prioritise entries with actualIn (rawActualIn) — most recent actualIn first.
-// Then fall back to previous sort (schedule start_time then name).
-const sorted = uiEntries.slice().sort((a, b) => {
-  const aHasIn = Boolean(a.work?.rawActualIn || a.work?.check_in);
-  const bHasIn = Boolean(b.work?.rawActualIn || b.work?.check_in);
+      // Then fall back to previous sort (schedule start_time then name).
+      const sorted = uiEntries.slice().sort((a, b) => {
+        const aHasIn = Boolean(a.work?.rawActualIn || a.work?.check_in);
+        const bHasIn = Boolean(b.work?.rawActualIn || b.work?.check_in);
 
-  // If one has a check-in and the other doesn't -> the one with check-in goes first
-  if (aHasIn !== bHasIn) return aHasIn ? -1 : 1;
+        // If one has a check-in and the other doesn't -> the one with check-in goes first
+        if (aHasIn !== bHasIn) return aHasIn ? -1 : 1;
 
-  // If both have check-ins, order by actualIn timestamp (most recent first)
-  if (aHasIn && bHasIn) {
-    const aTs = (() => {
-      try { return new Date(a.work.rawActualIn || a.work.check_in).getTime() || 0; } catch (e) { return 0; }
-    })();
-    const bTs = (() => {
-      try { return new Date(b.work.rawActualIn || b.work.check_in).getTime() || 0; } catch (e) { return 0; }
-    })();
-    if (aTs !== bTs) return bTs - aTs; // newer first
-  }
+        // If both have check-ins, order by actualIn timestamp (most recent first)
+        if (aHasIn && bHasIn) {
+          const aTs = (() => {
+            try { return new Date(a.work.rawActualIn || a.work.check_in).getTime() || 0; } catch (e) { return 0; }
+          })();
+          const bTs = (() => {
+            try { return new Date(b.work.rawActualIn || b.work.check_in).getTime() || 0; } catch (e) { return 0; }
+          })();
+          if (aTs !== bTs) return bTs - aTs; // newer first
+        }
 
-  // Otherwise fallback to schedule start_time then name (original behaviour)
-  const aMin = timeToMinutes(a.schedule.start_time || "00:00");
-  const bMin = timeToMinutes(b.schedule.start_time || "00:00");
-  if (aMin !== bMin) return aMin - bMin;
+        // Otherwise fallback to schedule start_time then name (original behaviour)
+        const aMin = timeToMinutes(a.schedule.start_time || "00:00");
+        const bMin = timeToMinutes(b.schedule.start_time || "00:00");
+        if (aMin !== bMin) return aMin - bMin;
 
-  const an = (a.user?.fullname || a.user?.username || "").toLowerCase();
-  const bn = (b.user?.fullname || b.user?.username || "").toLowerCase();
-  return an < bn ? -1 : (an > bn ? 1 : 0);
-});
+        const an = (a.user?.fullname || a.user?.username || "").toLowerCase();
+        const bn = (b.user?.fullname || b.user?.username || "").toLowerCase();
+        return an < bn ? -1 : (an > bn ? 1 : 0);
+      });
 
 
       const totalEmployees = (users || []).filter((u: any) => u.role === 'user' || u.role === 'employee' || !u.role).length;
@@ -954,11 +779,27 @@ const sorted = uiEntries.slice().sort((a, b) => {
       return;
     }
     try {
-      const sheetData = entries.map(item => {
+      // decide whether we need a Branch column:
+      const includeBranchColumn = (entries || []).some((it: any) => {
+        const bid = it.entryBranchId ?? it.rawReportRow?.branchId ?? null;
+        return bid && String(bid) !== String(activeBranchId);
+      });
+
+      const sheetData = (entries || []).map((item: any) => {
         const u = item.user || {};
         const wh = item.work || {};
-        const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : (item.status === "not_checked_in" ? "No check-in" : "Late");
-        return {
+        const status = item.status === "noschedule"
+          ? "No schedule"
+          : item.status === "early"
+            ? "Early"
+            : (item.status === "not_checked_in" ? "No check-in" : "Late");
+
+        // compute branch name to show only when branch is different from activeBranchId
+        const entryBranchId = item.entryBranchId ?? item.rawReportRow?.branchId ?? null;
+        const entryBranchName = item.entryBranchName ?? item.rawReportRow?.branchName ?? item.rawReportRow?.branch_name ?? "";
+        const showBranch = entryBranchId && String(entryBranchId) !== String(activeBranchId);
+
+        const baseRow: any = {
           "Staff ID": u._id || u.id || '',
           "Name": u.fullname || "",
           "Position": u.position || "",
@@ -970,6 +811,12 @@ const sorted = uiEntries.slice().sort((a, b) => {
           "Status": status,
           "Diff": item.diffText || ""
         };
+
+        if (includeBranchColumn) {
+          baseRow["Branch"] = showBranch ? (entryBranchName || String(entryBranchId)) : "";
+        }
+
+        return baseRow;
       });
 
       const ws = XLSX.utils.json_to_sheet(sheetData);
@@ -1221,111 +1068,35 @@ const sorted = uiEntries.slice().sort((a, b) => {
                 <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? "No records for selected week" : "No records for selected month")}</Text>
               ) : null}
 
-{filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule, rawReportRow, entryBranchId: entryBranchIdFromEntry, entryBranchName: entryBranchNameFromEntry }) => {
-  const rawName = extractFullname(user);
-  const displayName = rawName || "Unknown";
-
-  const position = user?.position ?? "";
-  const timeStr = `${schedule?.start_time || ''} - ${schedule?.end_time || ''}`;
-  const dateDisplay = formatYMDDisplay(work.date);
-
-  // prefer entryBranch values returned from uiEntries, but fall back to schedule/rawReportRow shapes
-  const entryBranchId =
-    entryBranchIdFromEntry ??
-    (rawSchedule?.branch_id?._id ?? rawSchedule?.branch_id ?? rawSchedule?.branchId ?? rawReportRow?.branchId ?? null);
-
-  const entryBranchName =
-    entryBranchNameFromEntry ??
-    (rawSchedule?.branchName ?? rawSchedule?.branch_name ?? rawReportRow?.branchName ?? rawReportRow?.branch_name ?? (schedule?.branch_id?.name ?? ""));
-
-  // show header only when entry has a non-empty branch id and it's different from activeBranchId
-  const showBranchHeader = entryBranchId && activeBranchId && String(entryBranchId) !== String(activeBranchId);
-  let schedBranchName = "";
-  if (showBranchHeader) {
-    schedBranchName = entryBranchName || String(entryBranchId);
-  }
-
-  // preserve the original "different employee branch" logic but make sure empBranchId is defined
-  const schedBranchId = schedule?.branch_id?._id ?? schedule?.branch_id ?? null;
-  const empBranchId = rawSchedule?.employee_id?.branch ?? rawSchedule?.employee_id?.branch_id ?? null;
-  const showDifferentEmployeeBranch = empBranchId && String(empBranchId) !== String(schedBranchId);
-  const differentBranchName = showDifferentEmployeeBranch ? (rawSchedule?.employee_id?.branchName || rawSchedule?.employee_id?.branch_name || "") : "";
-
-  return (
-    <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
-      {showBranchHeader ? (
-        <View style={styles.branchHeader}>
-          <Image
-            source={require("../../../assets/icons/branch.png")}
-            style={styles.branchIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}>{schedBranchName}</Text>
-        </View>
-      ) : null}
-
-      <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
-        <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
-            <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-          </View>
-
-          <View style={styles.name_position}>
-            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
-            <Text style={styles.time}>{timeStr}</Text>
-            <Text style={styles.time}>{dateDisplay}</Text>
-          </View>
-        </View>
-
-        <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-          {status === "late" ? (
-            <Text style={styles.status_late}>{lang.late}</Text>
-          ) : status === "early" ? (
-            <Text style={styles.status_early}>{lang.early}</Text>
-          ) : status === "not_checked_in" ? (
-            <Text style={styles.status_noschedule}>{lang.Havent_checked_in}</Text>
-          ) : (
-            <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
-          )}
-          {status !== "noschedule" && status !== "not_checked_in" ? (
-            <Text style={styles.duration}>{diffText}</Text>
-          ) : null}
-        </View>
-      </View>
-    </CartBox>
-  );
-})}
-
-              {/* {filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule }) => {
+              {filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule, rawReportRow, entryBranchId: entryBranchIdFromEntry, entryBranchName: entryBranchNameFromEntry }) => {
                 const rawName = extractFullname(user);
                 const displayName = rawName || "Unknown";
-
 
                 const position = user?.position ?? "";
                 const timeStr = `${schedule?.start_time || ''} - ${schedule?.end_time || ''}`;
                 const dateDisplay = formatYMDDisplay(work.date);
 
+                // prefer entryBranch values returned from uiEntries, but fall back to schedule/rawReportRow shapes
+                const entryBranchId =
+                  entryBranchIdFromEntry ??
+                  (rawSchedule?.branch_id?._id ?? rawSchedule?.branch_id ?? rawSchedule?.branchId ?? rawReportRow?.branchId ?? null);
+
+                const entryBranchName =
+                  entryBranchNameFromEntry ??
+                  (rawSchedule?.branchName ?? rawSchedule?.branch_name ?? rawReportRow?.branchName ?? rawReportRow?.branch_name ?? (schedule?.branch_id?.name ?? ""));
+
+                // show header only when entry has a non-empty branch id and it's different from activeBranchId
+                const showBranchHeader = entryBranchId && activeBranchId && String(entryBranchId) !== String(activeBranchId);
+                let schedBranchName = "";
+                if (showBranchHeader) {
+                  schedBranchName = entryBranchName || String(entryBranchId);
+                }
+
+                // preserve the original "different employee branch" logic but make sure empBranchId is defined
                 const schedBranchId = schedule?.branch_id?._id ?? schedule?.branch_id ?? null;
-                // const empBranchId = rawSchedule?.employee_id?.branch ?? (rawSchedule?.employee_id?.branch_id ?? null);
-                // const showBranchHeader = schedBranchId && activeBranchId && String(schedBranchId) !== String(activeBranchId);
-                // let schedBranchName = "";
-                // if (showBranchHeader) {
-                //   schedBranchName = (schedule?.branch_id?.name || rawSchedule?.branch_id?.name || String(schedBranchId));
-                // }
-
-                // inside the render map — replace the existing branch header logic with this:
-const entryBranchId = (rawSchedule?.branch_id?._id ?? rawSchedule?.branch_id ?? rawSchedule?.branchId ?? rawReportRow?.branchId ?? null);
-const entryBranchName = rawSchedule?.branchName ?? rawSchedule?.branch_name ?? rawReportRow?.branchName ?? rawReportRow?.branch_name ?? (schedule?.branch_id?.name ?? "");
-
-const showBranchHeader = entryBranchId && activeBranchId && String(entryBranchId) !== String(activeBranchId);
-// ensure empty string/undefined does not show header
-let schedBranchName = "";
-if (showBranchHeader) {
-  schedBranchName = entryBranchName || String(entryBranchId);
-}
-
+                const empBranchId = rawSchedule?.employee_id?.branch ?? rawSchedule?.employee_id?.branch_id ?? null;
                 const showDifferentEmployeeBranch = empBranchId && String(empBranchId) !== String(schedBranchId);
-                const differentBranchName = showDifferentEmployeeBranch ? (rawSchedule?.employee_id?.branchName || rawSchedule?.employee_id?.branchName || "") : "";
+                const differentBranchName = showDifferentEmployeeBranch ? (rawSchedule?.employee_id?.branchName || rawSchedule?.employee_id?.branch_name || "") : "";
 
                 return (
                   <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
@@ -1370,7 +1141,7 @@ if (showBranchHeader) {
                     </View>
                   </CartBox>
                 );
-              })} */}
+              })}
             </View>
           </ScrollView>
         </View>
