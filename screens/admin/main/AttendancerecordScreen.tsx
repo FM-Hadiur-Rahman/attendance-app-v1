@@ -1,5 +1,5 @@
 // screens/admin/main/AttendancerecordScreen.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -25,6 +25,8 @@ import CartBox from "../../../components/CartBox";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
+import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+
 
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
@@ -138,6 +140,27 @@ const formatWeekDisplayFromDate = (date: Date) => {
   return `${sFmt} - ${eFmt}`;
 };
 
+
+const getWeekRange = (date: Date) => {
+  // Clone date to avoid mutation
+  const start = new Date(date);
+  const day = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const diff = (day === 0 ? -6 : 1 - day); // Adjust so Monday is first day
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6); // Sunday is end
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+
+
+
+
+
 const formatMonthDisplayFromDate = (date: Date) => {
   return `${FULL_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 };
@@ -177,10 +200,13 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [query, setQuery] = useState<string>("");
 
   // refresh
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  
 
   // MODE: "day" | "week" | "month"
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
+    const [attendance, setAttendance] = useState<AttendanceHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // derive current admin user & branch id from incoming userId param
   const currentUser = usersArr.find(u => u.id === userId) || null;
@@ -200,6 +226,110 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [dateError, setDateError] = useState<string>("");
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(defaultToday);
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
+   const [attendanceData, setAttendanceData] = useState<AttendanceHistoryItem[]>([]);
+  const [attendanceEntries, setAttendanceEntries] = useState<AttendanceHistoryItem[]>([]);
+  const [filteredEntries, setFilteredEntries] = useState<AttendanceHistoryItem[]>([]);
+   const [filteredData, setFilteredData] = useState<AttendanceHistoryItem[]>([]);
+
+
+
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getAttendanceAllHistory();
+      setAttendanceData(data);
+      filterData(mode, data);
+    } catch (error) {
+      console.error("❌ Error fetching attendance history:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [mode]);
+
+const fetchAttendanceHistory = async () => {
+  try {
+    const data = await getAttendanceAllHistory();
+    console.log("✅ Attendance data fetched:", data.length);
+    setAttendanceEntries(data);
+    setFilteredEntries(data); // set both
+  } catch (err) {
+    console.error("❌ Failed to fetch attendance history:", err);
+  }
+};
+
+const filterByMode = (mode: 'day' | 'week' | 'month') => {
+  const now = new Date();
+  let filtered: AttendanceHistoryItem[] = [];
+
+  if (mode === 'day') {
+    filtered = attendanceEntries.filter(e => e.In.startsWith(now.toISOString().split('T')[0]));
+  } else if (mode === 'week') {
+    const weekAgo = new Date();
+    weekAgo.setDate(now.getDate() - 7);
+    filtered = attendanceEntries.filter(e => new Date(e.In) >= weekAgo);
+  } else if (mode === 'month') {
+    const monthAgo = new Date();
+    monthAgo.setMonth(now.getMonth() - 1);
+    filtered = attendanceEntries.filter(e => new Date(e.In) >= monthAgo);
+  }
+
+  setFilteredEntries(filtered);
+};
+
+
+    const filterData = (filterMode: "now" | "week" | "month", data: AttendanceHistoryItem[]) => {
+    const now = new Date();
+    let filtered: AttendanceHistoryItem[] = [];
+
+       if (filterMode === "now") {
+      const today = now.toISOString().split("T")[0];
+      filtered = data.filter((item) => item.In.startsWith(today));
+    } else if (filterMode === "week") {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - 7);
+      filtered = data.filter((item) => new Date(item.In) >= weekStart);
+    } else if (filterMode === "month") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      filtered = data.filter((item) => new Date(item.In) >= monthStart);
+    }
+
+    setFilteredData(filtered);
+  };
+
+
+    const handleModeChange = (newMode: "now" | "week" | "month") => {
+    setMode(newMode);
+    filterData(newMode, attendanceData);
+  };
+
+
+  const exportToExcel = async () => {
+    if (filteredData.length === 0) return;
+    const worksheet = XLSX.utils.json_to_sheet(
+      filteredData.map((item) => ({
+        Username: item.user?.username ?? "-",
+        Email: item.user?.email ?? "-",
+        Branch: item.branch?.name ?? "-",
+        In: item.In,
+        Out: item.Out ?? "-",
+      }))
+    );
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
+    const wbout = XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
+
+    const fileUri = FileSystem.cacheDirectory + "AttendanceHistory.xlsx";
+    await FileSystem.writeAsStringAsync(fileUri, wbout, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await Sharing.shareAsync(fileUri);
+  };
+
+
+
+
 
   // helper: handle date text change (same permissive formatting)
   const handleDateTextChange = (raw: string) => {
@@ -263,31 +393,54 @@ const AttendancerecordScreen: React.FC = (props: any) => {
 
   // native date picker handlers (simple show/hide)
   const onShowNativeDatePicker = () => setShowDatePicker(true);
-  const onNativeDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      selectedDate.setHours(0, 0, 0, 0);
-      setSelectedDateObj(selectedDate);
-      // update display depending on mode
-      if (mode === "day") {
-        const wd = WEEKDAYS[selectedDate.getDay()];
-        const mon = MONTHS[selectedDate.getMonth()];
-        const day = selectedDate.getDate();
-        const fmt = `${wd}, ${mon} ${day}`;
-        setDateInput(fmt);
-      } else if (mode === "week") {
-        setDateInput(formatWeekDisplayFromDate(selectedDate));
-      } else { // month
-        setDateInput(formatMonthDisplayFromDate(selectedDate));
-      }
-      setDateError("");
-      prevDateRef.current = dateInput;
+const onNativeDateChange = (event: any, selectedDate?: Date) => {
+  setShowDatePicker(false);
+
+  if (selectedDate) {
+    selectedDate.setHours(0, 0, 0, 0);
+    setSelectedDateObj(selectedDate);
+    setDateError("");
+
+    if (mode === "day") {
+      const wd = WEEKDAYS[selectedDate.getDay()];
+      const mon = MONTHS[selectedDate.getMonth()];
+      const day = selectedDate.getDate();
+      const fmt = `${wd}, ${mon} ${day}`;
+      setDateInput(fmt);
+
+    } else if (mode === "week") {
+      // ✅ Get Monday–Sunday range
+      const { start, end } = getWeekRange(selectedDate);
+
+      // ✅ Filter attendance entries
+      const filtered = attendanceEntries.filter(item => {
+        const entryDateStr = item.In ?? item.date ?? item.created_at;
+        if (!entryDateStr) return false;
+        const entryDate = new Date(entryDateStr);
+        return entryDate >= start && entryDate <= end;
+      });
+
+      setFilteredData(filtered);
+
+      // ✅ Update display text
+      const startStr = `${WEEKDAYS[start.getDay()]}, ${MONTHS[start.getMonth()]} ${start.getDate()}`;
+      const endStr = `${WEEKDAYS[end.getDay()]}, ${MONTHS[end.getMonth()]} ${end.getDate()}`;
+      setDateInput(`${startStr} - ${endStr}`);
+
+    } else {
+      setDateInput(formatMonthDisplayFromDate(selectedDate));
     }
-  };
+
+    prevDateRef.current = dateInput;
+  }
+};
+
+
 
   // pull to refresh — clear inputs, errors and force recompute
   const onRefresh = async () => {
     setRefreshing(true);
+      await fetchData();
     await new Promise((r) => setTimeout(r, 600));
     // reset depending on mode: keep mode but reset date to today-week-month accordingly
     setQuery("");
@@ -304,6 +457,13 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     setVersion((v) => v + 1);
     setRefreshing(false);
   };
+
+    useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+
+  
 
   // derive the selection range depending on mode
   // returns an object: { type: 'day', ymd } | { type: 'week', startYmd, endYmd } | { type: 'month', year, monthIndex } or null
@@ -503,16 +663,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
 
 
   //---------------------------------------------------------------//
-  // Search filtering for entries (optional)
-  const filteredEntries = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter(({ user }) => {
-      if (!user) return false;
-      const full = `${user.fullname}  ${user.position}`.toLowerCase();
-      return full.includes(q);
-    });
-  }, [entries, query]);
+  // Search filtering for entries (optional
 
   // toggle handlers
   const onSelectNow = () => {
@@ -544,6 +695,74 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     setDateError("");
     setVersion(v => v + 1);
   };
+
+  const fetchAttendanceData = useCallback(async () => {
+  try {
+    setLoading(true);
+    const res = await getAttendanceAllHistory();
+    setAttendanceData(res);
+    applyFilter(mode, res);
+  } catch (error) {
+    console.error("❌ Failed to fetch attendance history:", error);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [mode]);
+
+useEffect(() => {
+  fetchAttendanceData();
+}, [fetchAttendanceData]);
+
+
+
+const applyFilter = (filterMode: "day" | "week" | "month", data: AttendanceHistoryItem[]) => {
+  const now = new Date();
+  let filtered: AttendanceHistoryItem[] = [];
+
+  if (filterMode === "day") {
+    const today = now.toISOString().split("T")[0];
+    filtered = data.filter((item) => item.In.startsWith(today));
+  } else if (filterMode === "week") {
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+    filtered = data.filter((item) => new Date(item.In) >= weekStart);
+  } else {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    filtered = data.filter((item) => new Date(item.In) >= monthStart);
+  }
+
+
+    const mapped = filtered.map((item) => ({
+    work: {
+      id: item.id,
+      check_in: item.In,
+      check_out: item.Out,
+      date: item.In.split(" ")[0],
+    },
+    user: {
+      fullname: item.user?.username ?? "-",
+      position: item.user?.email ?? "",
+    },
+    schedule: {
+      branch_id: item.branch_id,
+    },
+    status: "normal",
+    diffText: item.Out ? calcDuration(item.In, item.Out) : "-",
+  }));
+
+  setFilteredEntries(mapped);
+};
+
+
+const calcDuration = (inTime: string, outTime: string) => {
+  const inDate = new Date(inTime.replace(" ", "T"));
+  const outDate = new Date(outTime.replace(" ", "T"));
+  const diffMs = outDate.getTime() - inDate.getTime();
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
+  return `${hours}h ${minutes}m`;
+};
 
   // button background logic (active = primary, inactive = background)
   const nowBg = mode === "day" ? undefined : colors.background;

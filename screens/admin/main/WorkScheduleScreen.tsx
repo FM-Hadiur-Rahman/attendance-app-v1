@@ -1,5 +1,5 @@
 // screens/admin/main/WorkScheduleScreen.tsx
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
@@ -21,6 +22,8 @@ import translations from "../../../assets/translations.json";
 import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
 import { getBranchById } from "../../../api/Branch";
+import { getSchedulesForDate } from "../../../api/checkin_checkout";
+import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -29,8 +32,10 @@ const MONTHS = [
 ];
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-const dateToYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const formatDisplayDate = (d: Date) => `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+const dateToYMD = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const formatDisplayDate = (date: Date) =>
+  date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
 const formatTime12 = (hhmmss: string) => {
   if (!hhmmss) return "";
@@ -53,28 +58,60 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   const propLangId = props?.langId;
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
-  const userId = propUserId || routeUserId;
-  const langId = propLangId || routeLangId || "en";
+  // const userId = propUserId || routeUserId;
+  // const langId = propLangId || routeLangId || "en";
+  const { userId, langId, activeBranchId } = route.params;
 
   // get branch id passed in params (superadmin may pass this)
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
   // fallback: admin's default branch from users list
   const currentAdmin = users.find((u) => u.id === userId) || null;
-  const activeBranchId = passedBranchId || currentAdmin?.branch_id || null;
+  //const activeBranchId = passedBranchId || currentAdmin?.branch_id || null;
 
 
   // translation dictionary for this screen (translations imported at the top)
   const lang = (translations as any)[langId] || (translations as any)["en"];
 
 
-  const [displayDate, setDisplayDate] = useState<Date>(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
+  const [displayDate, setDisplayDate] = useState<Date>(new Date());
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const todayYMD = new Date().toISOString().split("T")[0];
+  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [userProfiles, setUserProfiles] = useState<Record<string, ProfileUser>>({});
+  const [userPositions, setUserPositions] = useState<Record<string, string>>({});
+  const [skipNextLoad, setSkipNextLoad] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+
+
+
+  // const [displayDate, setDisplayDate] = useState<Date>(() => {
+  //   const d = new Date();
+  //   d.setHours(0, 0, 0, 0);
+  //   return d;
+  // });
   const [version, setVersion] = useState<number>(0);
 
-  const [refreshing, setRefreshing] = useState(false);
+
+
+
+
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const profile = await getProfile();
+        console.log("✅ Loaded user profile:", profile);
+        setUser(profile);
+      } catch (err) {
+        console.error("❌ Failed to load user profile:", err);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
+
 
   const uniqueSortedDates = useMemo(() => {
     const set = new Set<string>();
@@ -86,20 +123,45 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
   const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
 
-  const findPrevScheduledYMD = () => {
-    const arr = uniqueSortedDates;
-    for (let i = arr.length - 1; i >= 0; i--) {
-      if (arr[i] < displayYMD) return arr[i];
+
+  const loadSchedules = useCallback(async (date: Date) => {
+    try {
+      setLoading(true);
+      const dateYMD = date.toISOString().split("T")[0];
+      console.log("📅 Fetching schedules for:", dateYMD);
+
+      const data = await getSchedulesForDate(dateYMD);
+      console.log("✅ API response:", data);
+
+      // ✅ Store API data
+      setSchedules(data);
+
+      const displayYMD = date.toISOString().split("T")[0];
+      const filtered = data.filter((s) => {
+        const schedDate = new Date(s.date).toISOString().split("T")[0];
+        return schedDate === displayYMD;
+      });
+      //console.log("📅 Schedules for selected date:", displayYMD, filtered);
+
+    } catch (error) {
+      console.error("❌ Error loading schedules:", error);
+    } finally {
+      setLoading(false);
     }
-    return null;
+  }, []);
+
+
+
+  const findPrevScheduledYMD = () => {
+    const prev = new Date(displayDate);
+    prev.setDate(displayDate.getDate() - 1); // move one day back
+    return dateToYMD(prev);
   };
 
   const findNextScheduledYMD = () => {
-    const arr = uniqueSortedDates;
-    for (let i = 0; i < arr.length; i++) {
-      if (arr[i] > displayYMD) return arr[i];
-    }
-    return null;
+    const next = new Date(displayDate);
+    next.setDate(displayDate.getDate() + 1); // move one day forward
+    return dateToYMD(next);
   };
 
   const prevYMD = findPrevScheduledYMD();
@@ -124,34 +186,68 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   };
 
   const schedulesForDate = useMemo(() => {
-    // if no branch context, return schedules for the date (or you can return [])
-    if (!activeBranchId) {
-      // if you prefer to show nothing when no branch found, return [] instead
-      // return [];
-    }
+    if (!schedules || schedules.length === 0) return [];
 
-    const list = schedulesArr
-      .filter((s) => s.date === displayYMD)
+    const displayYMD = dateToYMD(displayDate);
+
+    // 1️⃣ Filter schedules for this date
+    const filteredSchedules = schedules
       .filter((s) => {
-        // include schedule only if schedule.branch_id matches activeBranchId
-        // OR the scheduled user's default branch matches activeBranchId
-        const u = users.find((usr) => usr.id === s.user_id) || null;
-        return (s.branch_id && s.branch_id === activeBranchId) || (u && u.branch_id === activeBranchId);
+        const schedDate = new Date(s.date).toISOString().split("T")[0];
+        return schedDate === displayYMD;
       })
-      .sort((a, b) => (a.start_time > b.start_time ? 1 : -1))
-      .map((s) => ({ schedule: s, user: users.find((u) => u.id === s.user_id) || null }))
-      .filter((x) => x.user && x.user.role === "employee");
-    return list;
-  }, [displayYMD, version, activeBranchId]);
+      .map((s) => ({
+        schedule: s,
+        user: s.employee_id || null,
+      }))
+      .filter((x) => x.user && x.user.role === "user");
 
+    // 2️⃣ Deduplicate by schedule ID, keep the last one
+    const uniqueById: Record<string, typeof filteredSchedules[0]> = {};
+    filteredSchedules.forEach((item) => {
+      const id = item.schedule._id || item.schedule.id;
+      if (id) {
+        // overwrite older duplicates automatically
+        uniqueById[id] = item;
+      }
+    });
+
+    // 3️⃣ Convert back to array
+    return Object.values(uniqueById);
+  }, [schedules, displayDate]);
 
   // If user presses the floating add button
   const openAddScreen = () => {
-    console.log("Navigate -> AddScheduleScreen", { userId, langId: langId, mode: "create" });
+    // 🧩 Derive branchId safely
+    const branchToUse =
+      activeBranchId ||
+      (typeof user?.branch === "string"
+        ? user.branch
+        : user?.branch?._id) ||
+      null;
+
+    console.log("Navigate -> AddScheduleScreen", {
+      userId,
+      langId,
+      branchId: branchToUse,
+      mode: "create",
+    });
+
     navigation.navigate("AddScheduleScreen" as any, {
-      userId, langId,
-      onSave: (newSchedule: { id?: string; user_id: string; start_time: string; end_time: string; date: string }) => {
-        // create or update
+      userId,
+      langId,
+      branchId: branchToUse, // ✅ safe branchId pass
+      onSave: (newSchedule: {
+        id?: string;
+        user_id: string;
+        start_time: string;
+        end_time: string;
+        date: string;
+        branch_id?: string;
+      }) => {
+        const branchIdFinal = newSchedule.branch_id || branchToUse;
+
+        // 🔹 update existing schedule
         if (newSchedule.id) {
           const idx = schedulesArr.findIndex((s) => s.id === newSchedule.id);
           if (idx !== -1) {
@@ -161,33 +257,35 @@ const WorkScheduleScreen: React.FC = (props: any) => {
               start_time: newSchedule.start_time,
               end_time: newSchedule.end_time,
               date: newSchedule.date,
+              branch_id: branchIdFinal,
               updateDate: new Date().toISOString(),
             };
             setVersion((v) => v + 1);
             setDisplayDate(ymdToDate(newSchedule.date));
             showSuccessToast(lang.schedule_updated);
-            console.log("Schedule updated ->", schedulesArr[idx]);
-            return;
-          } else {
-            // id provided but not found -> add as new with that id
-            const id = newSchedule.id;
-            schedulesArr.push({
-              id,
-              user_id: newSchedule.user_id,
-              start_time: newSchedule.start_time,
-              end_time: newSchedule.end_time,
-              date: newSchedule.date,
-              createDate: new Date().toISOString(),
-              updateDate: new Date().toISOString(),
-            } as any);
-            setVersion((v) => v + 1);
-            setDisplayDate(ymdToDate(newSchedule.date));
-            showSuccessToast("Schedule added");
+            console.log("✅ Schedule updated ->", schedulesArr[idx]);
             return;
           }
+
+          // id not found → add as new
+          const id = newSchedule.id;
+          schedulesArr.push({
+            id,
+            user_id: newSchedule.user_id,
+            start_time: newSchedule.start_time,
+            end_time: newSchedule.end_time,
+            date: newSchedule.date,
+            branch_id: branchIdFinal,
+            createDate: new Date().toISOString(),
+            updateDate: new Date().toISOString(),
+          } as any);
+          setVersion((v) => v + 1);
+          setDisplayDate(ymdToDate(newSchedule.date));
+          showSuccessToast("Schedule added");
+          return;
         }
 
-        // new schedule (no id) -> create
+        // 🔹 create brand new schedule (no id)
         const id = `S${(schedulesArr.length + 1).toString().padStart(3, "0")}`;
         schedulesArr.push({
           id,
@@ -195,9 +293,11 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           start_time: newSchedule.start_time,
           end_time: newSchedule.end_time,
           date: newSchedule.date,
+          branch_id: branchIdFinal,
           createDate: new Date().toISOString(),
           updateDate: new Date().toISOString(),
         } as any);
+
         setVersion((v) => v + 1);
         const dt = ymdToDate(newSchedule.date);
         setDisplayDate(dt);
@@ -205,180 +305,366 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       },
     });
   };
+
+
+
   // Refresh -> clear inputs
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    // clearAllInputs();
+    await loadSchedules(displayDate);
     setRefreshing(false);
+  }, [displayDate, loadSchedules]);
+
+
+  const goToPrevDay = () => {
+    const prev = new Date(displayDate);
+    prev.setDate(displayDate.getDate() - 1);
+    setDisplayDate(prev);
   };
+
+
+  const goToNextDay = () => {
+    const next = new Date(displayDate);
+    next.setDate(displayDate.getDate() + 1);
+    setDisplayDate(next);
+  };
+
+
+  useEffect(() => {
+    loadSchedules(displayDate);
+  }, [displayDate, loadSchedules]);
+
+
   // When tapping an existing schedule to edit
   const openEditScreen = (scheduleId: string) => {
-    console.log("Navigate -> AddScheduleScreen", { userId, langId: langId, mode: "edit", id: scheduleId });
     navigation.navigate("AddScheduleScreen" as any, {
-      userId, langId, id: scheduleId,
-      onSave: (updated: { id?: string; user_id: string; start_time: string; end_time: string; date: string }) => {
-        // update existing schedule if id present
-        if (updated.id) {
-          const idx = schedulesArr.findIndex((s) => s.id === updated.id);
-          if (idx !== -1) {
-            schedulesArr[idx] = {
-              ...schedulesArr[idx],
+      userId,
+      langId,
+      id: scheduleId,
+      onSave: async (updated: {
+        id?: string;
+        user_id: string;
+        start_time: string;
+        end_time: string;
+        date: string;
+      }) => {
+        setSchedulesArr((prev) => {
+          const updatedArr = [...prev];
+          const now = new Date().toISOString();
+
+          if (updated.id) {
+            const idx = updatedArr.findIndex((s) => s.id === updated.id);
+            if (idx !== -1) {
+              updatedArr[idx] = {
+                ...updatedArr[idx],
+                user_id: updated.user_id,
+                start_time: updated.start_time,
+                end_time: updated.end_time,
+                date: updated.date,
+                updateDate: now,
+              };
+            }
+          } else {
+            const id = `S${(updatedArr.length + 1).toString().padStart(3, "0")}`;
+            updatedArr.push({
+              id,
               user_id: updated.user_id,
               start_time: updated.start_time,
               end_time: updated.end_time,
               date: updated.date,
-              updateDate: new Date().toISOString(),
-            };
-            setVersion((v) => v + 1);
-            setDisplayDate(ymdToDate(updated.date));
-            showSuccessToast(lang.schedule_updated);
-            console.log("Schedule updated ->", schedulesArr[idx]);
-            return;
+              createDate: now,
+              updateDate: now,
+            } as any);
           }
-        }
-        // fallback: push as new
-        const id = `S${(schedulesArr.length + 1).toString().padStart(3, "0")}`;
-        schedulesArr.push({
-          id,
-          user_id: updated.user_id,
-          start_time: updated.start_time,
-          end_time: updated.end_time,
-          date: updated.date,
-          createDate: new Date().toISOString(),
-          updateDate: new Date().toISOString(),
-        } as any);
-        setVersion((v) => v + 1);
+
+          return updatedArr;
+        });
+
         setDisplayDate(ymdToDate(updated.date));
-        showSuccessToast(lang.schedule_added);
+        setVersion((v) => v + 1);
+        await loadSchedules(ymdToDate(updated.date)); // 🔁 triggers spinner automatically
+        showSuccessToast(updated.id ? lang.schedule_updated : lang.schedule_added);
       },
     });
   };
 
+
+
+
+
+  useEffect(() => {
+    const loadUserProfiles = async () => {
+      const uniqueUserIds = Array.from(new Set(schedulesForDate.map(s => s.user.user_id)));
+      const profiles: Record<string, ProfileUser> = {};
+
+      for (const id of uniqueUserIds) {
+        try {
+          const profile = await getProfile(id); // adjust getProfile to accept userId
+          profiles[id] = profile;
+        } catch (err) {
+          console.warn("Failed to fetch profile for user:", id, err);
+        }
+      }
+
+      setUserProfiles(profiles);
+    };
+
+    if (schedulesForDate.length > 0) {
+      loadUserProfiles();
+    }
+  }, [schedulesForDate]);
+
+  useEffect(() => {
+    const fetchPositions = async () => {
+      const positions: Record<string, string> = {};
+
+      for (const s of schedulesForDate) {
+        const userId = s.user?._id || s.user?.user_id;
+        if (userId && !positions[userId]) {
+          try {
+            const profile = await getUserById(userId);
+            positions[userId] = profile?.position ?? 'No Position';
+          } catch (err) {
+            console.warn('Failed to fetch profile for user', userId, err);
+            positions[userId] = 'No Position';
+          }
+        }
+      }
+
+      setUserPositions(positions);
+    };
+
+    if (schedulesForDate.length > 0) {
+      fetchPositions();
+    }
+  }, [schedulesForDate]);
+
+
+  useEffect(() => {
+    if (skipNextLoad) {
+      setSkipNextLoad(false);
+      return;
+    }
+    loadSchedules(displayDate);
+  }, [displayDate, loadSchedules]);
+
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <Header
         backgroundColor={colors.secondary}
         position="relative"
-        center={{ type: "text", value: lang.Work_Schedule, color: colors.text }}
+        center={{
+          type: "text",
+          value: lang.Work_Schedule,
+          color: colors.text,
+        }}
         right={{
           type: "image",
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Navigate -> NotificationScreen", { userId, langId: langId, activeBranchId });
-            navigation.navigate("NotificationScreen" as any, { userId, langId: langId, activeBranchId });
+            console.log("Navigate -> NotificationScreen", {
+              userId,
+              langId,
+              activeBranchId,
+            });
+            navigation.navigate("NotificationScreen" as any, {
+              userId,
+              langId,
+              activeBranchId,
+            });
           },
         }}
       />
 
+      {/* Body */}
       <View style={styles.body}>
+        {/* 🔹 Day-wise Date Navigation */}
         <View style={styles.date_Change}>
-          <TouchableOpacity activeOpacity={prevHas ? 0.7 : 1} onPress={goToPrevScheduled} disabled={!prevHas}>
-            <Image source={prevHas ? require("../../../assets/icons/d_back_b.png") : require("../../../assets/icons/d_back_g.png")} style={styles.date_Control} />
+          <TouchableOpacity
+            activeOpacity={prevHas ? 0.7 : 1}
+            onPress={goToPrevDay}
+            disabled={!prevHas}
+          >
+            <Image
+              source={
+                prevHas
+                  ? require("../../../assets/icons/d_back_b.png")
+                  : require("../../../assets/icons/d_back_g.png")
+              }
+              style={styles.date_Control}
+            />
           </TouchableOpacity>
 
           <CartBox containerStyle={styles.date_cartbox}>
-            <Image source={require("../../../assets/icons/calenderdate_b.png")} style={styles.calender} />
+            <Image
+              source={require("../../../assets/icons/calenderdate_b.png")}
+              style={styles.calender}
+            />
             <Text style={styles.dateText}>{formatDisplayDate(displayDate)}</Text>
           </CartBox>
 
-          <TouchableOpacity activeOpacity={nextHas ? 0.7 : 1} onPress={goToNextScheduled} disabled={!nextHas}>
-            <Image source={nextHas ? require("../../../assets/icons/d_front_b.png") : require("../../../assets/icons/d_front_g.png")} style={styles.date_Control} />
+          <TouchableOpacity
+            activeOpacity={nextHas ? 0.7 : 1}
+            onPress={goToNextDay}
+            disabled={!nextHas}
+          >
+            <Image
+              source={
+                nextHas
+                  ? require("../../../assets/icons/d_front_b.png")
+                  : require("../../../assets/icons/d_front_g.png")
+              }
+              style={styles.date_Control}
+            />
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ marginTop: 20, marginBottom: '15%' }}
+        {/* 🔹 Scroll list */}
+        <ScrollView
+          style={{ marginTop: 20, marginBottom: "15%" }}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+            />
           }
+
         >
-          {schedulesForDate.length === 0 ? <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text> : null}
-
-          {schedulesForDate.map(({ schedule, user }) => {
-            if (!user) return null;
-
-            const displayName = user.fullname;
-            const position = user.position ?? "";
-            //  Compute end time using duration (in hours)
-            // Compute end time based on start_time + duration (in hours)
-            const computeEndTime = (startTime: string, durationHours: number) => {
-              if (!startTime) return "";
-              const [hh, mm, ss] = startTime.split(":").map(Number);
-              const start = new Date();
-              start.setHours(hh, mm, ss || 0);
-              start.setMinutes(start.getMinutes() + (durationHours || 0) * 60);
-
-              const endHH = String(start.getHours()).padStart(2, "0");
-              const endMM = String(start.getMinutes()).padStart(2, "0");
-              const endSS = String(start.getSeconds()).padStart(2, "0");
-              return `${endHH}:${endMM}:${endSS}`;
-            };
-
-            const endTime = computeEndTime(schedule.start_time, schedule.duration);
-            const timeStr = `${formatTime12(schedule.start_time)} - ${formatTime12(endTime)}`;
+          {/* {console.log("🧩 Schedule IDs:", schedulesForDate.map(s => s.schedule._id))} */}
 
 
+          {/* Empty State */}
+          {loading ? (
+            <View
+              style={{
+                position: "absolute",
+                top: 20,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.25)",
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 9999,
+                
+              }}
+            >
+            <ActivityIndicator size="small" color={colors.primary}  />
+              <Text style={{ color: colors.text, marginTop: 10 }}>
+                {lang.loading_schedules}
+              </Text>
+                
+            </View>
+            
+          ) : schedulesForDate.length === 0 ? (
+            <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text>
+          ) : (
+            schedulesForDate.map(({ schedule, user }, index) => {
+              if (!user) return null;
 
-            // Find branch details
-            const getBranchById = (id: string) => {
-              const { branches } = require("../../../api/Branch"); // import branches here
-              return branches.find((b: any) => b.id === id);
-            };
+              // ✅ Always use a unique key (covers both backend + local)
+              const uniqueKey =
+                schedule._id ||
+                schedule.id ||
+                `${schedule.date}-${schedule.start_time}-${user.user_id}-${index}`;
 
-            const branch = getBranchById(schedule.branch_id);
-            const branchName = branch ? branch.name : "Unknown Branch";
+              // ✅ Convert to readable time format
+              const startTime = schedule.start_time || "";
+              const endTime = schedule.end_time || "";
+              const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
 
-            //  Only show branch name if schedule.branch_id ≠ user.branch_id
-            const showBranch = schedule.branch_id !== user.branch_id;
+              // ✅ Resolve branch info safely
+              const userBranchId =
+                typeof user.branch === "object" ? user.branch?._id : user.branch;
+              const scheduleBranchId =
+                typeof schedule.branch_id === "object"
+                  ? schedule.branch_id?._id
+                  : schedule.branch_id;
 
-            return (
-              <TouchableOpacity key={schedule.id} onPress={() => openEditScreen(schedule.id)}>
-                <CartBox containerStyle={styles.detail_cartbox}>
+              // ✅ Decide if branch name should be shown
+              const showBranch =
+                scheduleBranchId && userBranchId && scheduleBranchId !== userBranchId;
 
-                  {showBranch && (
-                    <View style={styles.branchHeader}>
-                      <Image
-                        source={require("../../../assets/icons/branch.png")}
-                        style={styles.branchIcon}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.branchName}>{branchName}</Text>
-                    </View>
-                  )}
+              // ✅ Safe branch name
+              const branchName =
+                typeof schedule.branch_id === "object"
+                  ? schedule.branch_id?.name
+                  : "Unknown Branch";
 
-                  <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                      <Image
-                        source={require("../../../assets/images/profile2.png")}
-                        style={styles.profileImage}
-                      />
-                      <View style={styles.name_position}>
-                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                          {displayName}
+              return (
+                <TouchableOpacity
+                  key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}`}
+                  onPress={() => openEditScreen(schedule._id)}
+
+                >
+                  <CartBox containerStyle={styles.detail_cartbox}>
+                    {/* 🔹 Branch Info */}
+                    {showBranch && (
+                      <View style={styles.branchHeader}>
+                        <Image
+                          source={require("../../../assets/icons/branch.png")}
+                          style={styles.branchIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.branchName}>{branchName || "Unknown Branch"}</Text>
+                      </View>
+                    )}
+
+                    {/* 🔹 User Info & Time */}
+                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                      {/* Profile + Name + Position */}
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image
+                          source={require("../../../assets/images/profile2.png")}
+                          style={styles.profileImage}
+                        />
+                        <View style={styles.name_position}>
+                          {/* Username */}
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                            {user?.username || user?.fullname || "Unknown User"}
+                          </Text>
+
+                          {/* Position */}
+                          <Text style={styles.position}>
+                            {userPositions[user._id || user.user_id] || user.position || 'No Position'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Time */}
+                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+                        <Text style={styles.time}>
+                          {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
                         </Text>
-                        <Text style={styles.position}>{position}</Text>
                       </View>
                     </View>
+                  </CartBox>
 
-                    <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                      <Text style={styles.time}>{timeStr}</Text>
-                    </View>
-                  </View>
-                </CartBox>
-              </TouchableOpacity>
-            );
-          })}
+                </TouchableOpacity>
+              );
+            })
+          )}
 
         </ScrollView>
       </View>
 
+
+      {/* Floating Add Button */}
       <Button3 width={60} height={60} onPress={openAddScreen} />
+
+      {/* Toast */}
       <Toast config={toastConfig} />
+
     </View>
   );
+
+
 };
 
 const styles = StyleSheet.create({

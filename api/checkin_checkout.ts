@@ -1,5 +1,6 @@
 // src/api/checkin_checkout.ts
 import axiosInstance from "./axiosInstance";
+import { ScheduleItem } from "./schedules";
 
 interface LocationPayload {
   latitude: string;
@@ -11,6 +12,16 @@ userId?: string;
 branchId?: string;
 timezone?: string; // default 'Asia/Colombo'
 };
+
+
+export interface ScheduleResponse {
+  success: boolean;
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  schedules: ScheduleItem[];
+}
 
 export const startAttendance = async (payload: LocationPayload) => {
   try {
@@ -250,4 +261,67 @@ export const showWeeklyAndMonthlySchedules = async (userId?: string) => {
   console.log(`Total hours this month: ${totalText}`);
   console.log("===============================================");
 };
+
+
+export const getSchedules = async (): Promise<ScheduleItem[]> => {
+  try {
+    const res = await axiosInstance.get<ScheduleResponse>("/schedule");
+    if (res.data?.schedules) {
+      return res.data.schedules;
+    }
+    return [];
+  } catch (err: any) {
+    console.error("getSchedules error:", err?.response?.data || err);
+    throw err?.response?.data || err;
+  }
+};
+
+export const getSchedulesForDate = async (
+  dateYMD: string,
+  opts: { userId?: string; branchId?: string; timezone?: string } = {}
+): Promise<ScheduleItem[]> => {
+  const { userId, branchId, timezone = "Asia/Colombo" } = opts;
+  let page = 1;
+  const limit = 20;
+  let totalPages = 1;
+  let allSchedules: ScheduleItem[] = [];
+
+  try {
+    while (page <= totalPages) {
+      const res = await axiosInstance.get<ScheduleResponse>("/schedule", {
+        params: { page, limit },
+      });
+
+      const schedules = res.data?.schedules ?? [];
+      allSchedules = allSchedules.concat(schedules);
+
+      if (res.data.totalPages) totalPages = res.data.totalPages;
+      else if (res.data.total && res.data.limit)
+        totalPages = Math.ceil(res.data.total / res.data.limit);
+
+      page++;
+      if (page > 50) break; // safety
+    }
+
+    // Filter schedules for the selected date
+    const filtered = allSchedules.filter((s) => {
+      const schedDate = new Date(s.date).toLocaleDateString("en-CA", { timeZone: timezone });
+      return (
+        schedDate === dateYMD &&
+        (!userId || s.employee_id?._id === userId) &&
+        (!branchId || s.branch_id?._id === branchId)
+      );
+    });
+
+    console.log(`📅 Found ${filtered.length} schedules for ${dateYMD}`);
+    return filtered;
+  } catch (err: any) {
+    console.error("❌ getSchedulesForDate failed:", err.response?.data || err.message);
+    return [];
+  }
+};
+
+
+
+
 
