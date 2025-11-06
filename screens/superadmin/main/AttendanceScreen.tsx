@@ -1,48 +1,42 @@
-// screens/admin/main/AttendancerecordScreen.tsx
-import React, { useMemo, useRef, useState } from "react";
+// screens/admin/main/AttendancerecordScreen.tsx 
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Share,
   Platform,
   Image,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import colors from "../../../styles/Colors";
 import Header from "../../../components/Header";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import SearchBar from "../../../components/SearchBar";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import { users as usersArr, User } from "../../../api/Users";
-import { branches, getBranchById } from "../../../api/Branch";
+import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
 import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
-import { workHours } from "../../../api/WorkHours";
-import { users } from '../../../api/Users';
-import { workHours as workHoursArr } from "../../../api/WorkHours";
-import { schedules as schedulesArr } from "../../../api/Schedule";
 import CartBox from "../../../components/CartBox";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 
-const { width: deviceWidth } = Dimensions.get("window");
-const base = deviceWidth / 440;
-
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-
 import { Buffer } from "buffer";
 import base64 from "base-64";
+
+import { getAttendanceReport, getSchedulesForRange, getUsersForBranch } from "../../../api/attendanceReport";
+import { getBranchById as getBranchByIdApi } from "../../../api/Branch";
+import { getUserById } from "../../../api/profile";
+import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
 
 if (typeof (global as any).Buffer === "undefined") {
   (global as any).Buffer = Buffer;
 }
-// ensure atob/btoa exist for some libs
 if (typeof (global as any).atob === "undefined") {
   (global as any).atob = (str: string) => base64.decode(str);
 }
@@ -50,26 +44,27 @@ if (typeof (global as any).btoa === "undefined") {
   (global as any).btoa = (str: string) => base64.encode(str);
 }
 
+const { width: deviceWidth } = Dimensions.get("window");
+const base = deviceWidth / 440;
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-
 const FULL_MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
 
+const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
-// format hh:mm:ss -> minutes
 const timeToMinutes = (hhmmss: string) => {
   if (!hhmmss) return 0;
-  const parts = hhmmss.split(":").map((p) => parseInt(p, 10) || 0);
+  const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 };
-// format minutes diff to "1h 30m" or "12m"
 const formatMinutesDiff = (mins: number) => {
   const abs = Math.abs(Math.round(mins));
   const h = Math.floor(abs / 60);
@@ -77,10 +72,9 @@ const formatMinutesDiff = (mins: number) => {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 };
-// format hh:mm:ss -> "h:mm AM/PM"
 const formatTime12 = (hhmmss: string) => {
   if (!hhmmss) return "";
-  const [hhStr, mmStr] = hhmmss.split(":");
+  const [hhStr, mmStr] = String(hhmmss).split(":");
   const hh = parseInt(hhStr || "0", 10);
   const mm = mmStr || "00";
   const ampm = hh >= 12 ? "PM" : "AM";
@@ -89,7 +83,26 @@ const formatTime12 = (hhmmss: string) => {
   return `${h12}:${mm} ${ampm}`;
 };
 
-// convert displayed "Thu, Aug 18" -> YYYY-MM-DD (assume current year)
+const extractFullname = (u: any): string => {
+  if (!u) return "";
+  // common variants
+  const byOrder = [
+    u.fullname,
+    u.full_name,
+    u.name,
+    // first+last combos
+    (u.firstName || u.first_name) ? `${u.firstName || u.first_name}${u.lastName || u.last_name ? ` ${u.lastName || u.last_name}` : ""}` : "",
+    u.username,
+    u.userName,
+    u.displayName,
+  ];
+  for (const v of byOrder) {
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  }
+  return "";
+};
+
+
 const dateInputToYMD = (display: string): { ok: boolean; ymd?: string; message?: string } => {
   if (!display || display.trim() === "") return { ok: false, message: "Empty date" };
   const cleaned = display.replace(",", "").trim();
@@ -114,7 +127,6 @@ const dateInputToYMD = (display: string): { ok: boolean; ymd?: string; message?:
   return { ok: true, ymd };
 };
 
-// format YYYY-MM-DD -> "Thu, Aug 18"
 const formatYMDDisplay = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
   const dt = new Date(y, (m || 1) - 1, d || 1);
@@ -122,7 +134,7 @@ const formatYMDDisplay = (ymd: string) => {
 };
 
 const getStartOfWeekSunday = (date: Date) => {
-  const day = date.getDay(); // 0 Sun ... 6 Sat
+  const day = date.getDay();
   const start = new Date(date);
   start.setDate(date.getDate() - day);
   start.setHours(0, 0, 0, 0);
@@ -148,7 +160,6 @@ const formatMonthDisplayFromDate = (date: Date) => {
   return `${FULL_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 };
 
-// parse month display like "October 2025" or "Oct" or "Oct 2025" or "October"
 const parseMonthInput = (display: string): { ok: boolean; year?: number; monthIndex?: number; message?: string } => {
   if (!display || display.trim() === "") return { ok: false, message: "Empty" };
   const tokens = display.trim().split(/\s+/);
@@ -163,11 +174,35 @@ const parseMonthInput = (display: string): { ok: boolean; year?: number; monthIn
   return { ok: true, year, monthIndex };
 };
 
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
+
+// Helper: compute check-ins for a given branch & ymd from attendance history
+const computeCheckinsForBranchAndDay = (all: AttendanceHistoryItem[] | undefined, branchId: string | null, targetYMD: string) => {
+  if (!Array.isArray(all) || !branchId) return 0;
+  let cnt = 0;
+  const now = Date.now();
+  (all || []).forEach(a => {
+    const aBranchId = a.branch?.id ?? a.branch_id ?? null;
+    if (!aBranchId) return;
+    if (String(aBranchId) !== String(branchId)) return;
+    const inVal = a.In || a.in || a.InTime || a.check_in || a.checkIn;
+    if (!inVal) return;
+    // normalize In to Date
+    const inDt = new Date(String(inVal).replace(' ', 'T'));
+    if (isNaN(inDt.getTime())) return;
+    const inYMD = toYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
+    if (inYMD !== targetYMD) return;
+    if (inDt.getTime() > now) return;
+    cnt += 1;
+  });
+  return cnt;
+};
+
+// ---------------------------- Component ---------------------------- //
 const AttendanceScreen: React.FC = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  // support both prop-based injection (from Footer) and route params
   const propUserId = props?.userId;
   const propLangId = props?.langId;
   const routeUserId = route.params?.userId ?? route.params?.id;
@@ -175,90 +210,53 @@ const AttendanceScreen: React.FC = (props: any) => {
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
   const lang = (translations as any)[langId] || (translations as any)["en"];
-  
 
-  // version to force recompute if underlying arrays mutated elsewhere
   const [version, setVersion] = useState<number>(0);
-
-  // search (not strictly required here but keeps parity with Staff screens)
   const [query, setQuery] = useState<string>("");
-
-  // refresh
   const [refreshing, setRefreshing] = useState<boolean>(false);
-
-  // MODE: "day" | "week" | "month"
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
 
-  // i think delete
-  // derive current admin user & branch id from incoming userId param
-  const currentUser = usersArr.find(u => u.id === userId) || null;
-  const currentBranchId = currentUser?.branch_id ?? null;
-
-    // ---------- NEW: use passed branch params (superadmin passes branch_id & branch_name) ----------
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
   const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
+  const activeBranchId = passedBranchId || null;
+  const [branchDisplayName, setBranchDisplayName] = useState<string>(passedBranchName ?? "Branch");
 
-  // activeBranchId = param branch_id (if provided) otherwise fallback to admin's branch (if any)
-  const activeBranchId = passedBranchId || currentBranchId || null;
+  const [totalEmployeesForBranch, setTotalEmployeesForBranch] = useState<number>(0);
+  const [todaysWorkingForBranch, setTodaysWorkingForBranch] = useState<number>(0);
 
-  // display name prefers passedBranchName, fallback to lookup by id, otherwise generic
-  const branchDisplayName =
-    passedBranchName ||
-    (activeBranchId ? getBranchById(activeBranchId)?.name : "Branch") ||
-    "Branch";
-  // ----------------------------------------------------------------------------------------------
+  const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false);
+  const [branchAttendanceCount, setBranchAttendanceCount] = useState<number>(0);
 
-    // total employees for this selected branch (used in the small CartBox)
-  const totalEmployeesForBranch = useMemo(
-    () => {
-      if (!activeBranchId) return 0;
-      return usersArr.filter(u => u.role === "employee" && u.branch_id === activeBranchId).length;
-    },
-    [version, activeBranchId]
-  );
-
-  // today's unique working employees for this branch (filter workHours for today's date and this branch)
-  const todaysWorkingForBranch = useMemo(() => {
-    if (!activeBranchId) return 0;
-
-    // compute today's Y-M-D locally (avoids ordering issues)
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    const y = t.getFullYear();
-    const m = (t.getMonth() + 1).toString().padStart(2, "0");
-    const d = t.getDate().toString().padStart(2, "0");
-    const todaysYMD = `${y}-${m}-${d}`;
-
-    const set = new Set<string>();
-    workHoursArr.forEach(w => {
-      if (w.date === todaysYMD) {
-        const u = usersArr.find(us => us.id === w.user_id);
-        if (u && u.branch_id === activeBranchId) set.add(w.user_id);
-      }
-    });
-    return set.size;
-  }, [version, activeBranchId]);
+  const isFocused = useIsFocused();
+useEffect(() => {
+  if (!isFocused) return;
+  // poll every 15s while the screen is visible (adjust ms as needed)
+  const POLL_MS = 15000;
+  const id = setInterval(() => {
+    setVersion(v => v + 1); // triggers fetchDataForRange via your existing deps
+  }, POLL_MS);
+  return () => clearInterval(id);
+}, [isFocused]);
 
 
-
-  // date input & validation
   const defaultToday = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   })();
-
-
-
   const defaultDateDisplay = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]} ${defaultToday.getDate()}`;
 
   const prevDateRef = useRef<string>(defaultDateDisplay);
-  const [dateInput, setDateInput] = useState<string>(defaultDateDisplay); // shows today by default
+  const [dateInput, setDateInput] = useState<string>(defaultDateDisplay);
   const [dateError, setDateError] = useState<string>("");
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(defaultToday);
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
 
-  // helper: handle date text change (same permissive formatting)
+  const [loading, setLoading] = useState<boolean>(false);
+  const [entries, setEntries] = useState<any[]>([]);
+  const [schedulesCache, setSchedulesCache] = useState<any[]>([]);
+  const [usersCache, setUsersCache] = useState<any[]>([]);
+
   const handleDateTextChange = (raw: string) => {
     const prev = prevDateRef.current || "";
     const isDeleting = raw.length < prev.length;
@@ -267,7 +265,6 @@ const AttendanceScreen: React.FC = (props: any) => {
     if (isDeleting) {
       setDateInput(s);
       prevDateRef.current = s;
-      // light validation only
       if (mode === "day") {
         const conv = dateInputToYMD(s);
         if (conv.ok) setDateError("");
@@ -277,7 +274,6 @@ const AttendanceScreen: React.FC = (props: any) => {
       }
       return;
     }
-    // reuse your formatting logic (day-oriented)
     const hasComma = s.indexOf(",") !== -1;
     let wdPart = "";
     let rest = "";
@@ -318,36 +314,12 @@ const AttendanceScreen: React.FC = (props: any) => {
     if (conv.ok) setDateError("");
   };
 
-      // total employees (global)
-      const totalStaff = useMemo(
-          () => users.filter((u) => u.role === "employee").length,
-          [version]
-      );
-
-      
-    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const toYMD = (d: Date) =>
-        `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-          // today's date in local timezone (Y-M-D)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayYMD = toYMD(today);
-          // staff work hours for today (global)
-          const todaysWorkHours = useMemo(
-              () => workHours.filter((w) => w.date === todayYMD),
-              [todayYMD, version]
-          );
-      
-  
-
-  // native date picker handlers (simple show/hide)
   const onShowNativeDatePicker = () => setShowDatePicker(true);
   const onNativeDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       selectedDate.setHours(0, 0, 0, 0);
       setSelectedDateObj(selectedDate);
-      // update display depending on mode
       if (mode === "day") {
         const wd = WEEKDAYS[selectedDate.getDay()];
         const mon = MONTHS[selectedDate.getMonth()];
@@ -356,7 +328,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         setDateInput(fmt);
       } else if (mode === "week") {
         setDateInput(formatWeekDisplayFromDate(selectedDate));
-      } else { // month
+      } else {
         setDateInput(formatMonthDisplayFromDate(selectedDate));
       }
       setDateError("");
@@ -364,11 +336,602 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
-  // pull to refresh — clear inputs, errors and force recompute
+  const selectedRange = useMemo(() => {
+    const baseDate = selectedDateObj ?? new Date();
+    try {
+      if (mode === "day") {
+        const conv = dateInputToYMD(dateInput.trim());
+        if (conv.ok) return { type: "day" as const, ymd: conv.ymd! };
+        if (selectedDateObj) {
+          return { type: "day" as const, ymd: `${selectedDateObj.getFullYear()}-${pad2(selectedDateObj.getMonth() + 1)}-${pad2(selectedDateObj.getDate())}` };
+        }
+        return null;
+      } else if (mode === "week") {
+        const conv = dateInputToYMD(dateInput.trim());
+        if (conv.ok) {
+          const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
+          const dt = new Date(y, m - 1, d);
+          const s = getStartOfWeekSunday(dt);
+          const e = getEndOfWeekSaturday(dt);
+          return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+        }
+        const dashIdx = dateInput.indexOf("-");
+        if (dashIdx !== -1) {
+          const left = dateInput.slice(0, dashIdx).trim();
+          const conv2 = dateInputToYMD(left.replace(",", ""));
+          if (conv2.ok) {
+            const [y, m, d] = conv2.ymd!.split("-").map(x => parseInt(x, 10));
+            const dt = new Date(y, m - 1, d);
+            const s = getStartOfWeekSunday(dt);
+            const e = getEndOfWeekSaturday(dt);
+            return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+          }
+        }
+        const s = getStartOfWeekSunday(baseDate);
+        const e = getEndOfWeekSaturday(baseDate);
+        return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
+      } else {
+        const pm = parseMonthInput(dateInput.trim());
+        if (pm.ok) {
+          return { type: "month" as const, year: pm.year!, monthIndex: pm.monthIndex! };
+        }
+        const dt = selectedDateObj ?? baseDate;
+        return { type: "month" as const, year: dt.getFullYear(), monthIndex: dt.getMonth() };
+      }
+    } catch (e) {
+      return null;
+    }
+  }, [mode, dateInput, selectedDateObj, version]);
+
+  const rangeStartEnd = useMemo(() => {
+    if (!selectedRange) return null;
+    if (selectedRange.type === "day") return { startDate: selectedRange.ymd, endDate: selectedRange.ymd };
+    if (selectedRange.type === "week") return { startDate: selectedRange.startYmd, endDate: selectedRange.endYmd };
+    if (selectedRange.type === "month") {
+      const y = selectedRange.year;
+      const mi = selectedRange.monthIndex;
+      const start = `${y}-${pad2(mi + 1)}-01`;
+      const endDt = new Date(y, mi + 1, 0);
+      const end = `${y}-${pad2(mi + 1)}-${pad2(endDt.getDate())}`;
+      return { startDate: start, endDate: end };
+    }
+    return null;
+  }, [selectedRange]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (passedBranchName) return;
+      if (!activeBranchId) return;
+      try {
+        const b = await getBranchByIdApi(activeBranchId);
+        if (!mounted) return;
+        if (b && b.name) setBranchDisplayName(b.name);
+      } catch (e) {
+        console.warn('getBranchByIdApi failed', e);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [activeBranchId, passedBranchName]);
+
+  const fetchDataForRange = async () => {
+    if (!rangeStartEnd) return;
+    if (!activeBranchId) {
+      showErrorToast('Missing branchId');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { startDate, endDate } = rangeStartEnd;
+      const [reportRows, schedules, users] = await Promise.all([
+        getAttendanceReport({ branchId: activeBranchId, startDate, endDate }),
+        getSchedulesForRange(startDate, endDate),
+        getUsersForBranch(activeBranchId),
+      ]);
+
+      setSchedulesCache(schedules || []);
+      setUsersCache(users || []);
+      const reportMap = new Map<string, any>();
+      const reportRowsArr = Array.isArray(reportRows) ? reportRows : (reportRows?.rows || []);
+      (reportRowsArr || []).forEach((r: any) => {
+        const employeeIdRaw = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
+        if (!employeeIdRaw) return;
+        const empId = String(employeeIdRaw);
+        const dateYMD = (typeof r.date === 'string' && r.date.length >= 10) ? r.date.slice(0, 10) : (r.date ? (() => {
+          try { return toYMD(new Date(r.date)); } catch (e) { return ""; }
+        })() : "");
+        if (!dateYMD) {
+          // still store by employee-only key as fallback
+          reportMap.set(`${empId}:*`, r);
+        } else {
+          reportMap.set(`${empId}:${dateYMD}`, r);
+        }
+      });
+
+
+      const scheduleItems = (schedules || []).map((s: any) => {
+        let sDateYMD = "";
+        try {
+          const d = new Date(s.date);
+          sDateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+        } catch (e) {
+          if (typeof s.date === 'string' && s.date.length >= 10) sDateYMD = s.date.slice(0, 10);
+        }
+        return { raw: s, dateYMD: sDateYMD };
+      }).filter((s: any) => {
+        if (!s.dateYMD) return false;
+        return s.dateYMD >= startDate && s.dateYMD <= endDate;
+      }).map((s: any) => s.raw);
+
+      const schedulesToShow = scheduleItems.filter((s: any) => {
+        const schedBranchId = s.branch_id?._id ?? s.branch_id;
+        const empBranch = s.employee_id?.branch;
+        return String(schedBranchId) === String(activeBranchId) || String(empBranch) === String(activeBranchId);
+      });
+
+      const otherBranchIds = new Set<string>();
+      schedulesToShow.forEach((s: any) => {
+        const schedBranchId = s.branch_id?._id ?? s.branch_id;
+        const empBranch = s.employee_id?.branch;
+        if (empBranch && String(empBranch) !== String(schedBranchId)) {
+          otherBranchIds.add(String(empBranch));
+        }
+      });
+
+      const branchNameMap = new Map<string, string>();
+      if (otherBranchIds.size > 0) {
+        try {
+          const promises: Promise<any>[] = [];
+          otherBranchIds.forEach((bid) => {
+            promises.push(getBranchByIdApi(bid).catch((e) => null));
+          });
+          const results = await Promise.all(promises);
+          Array.from(otherBranchIds).forEach((bid, idx) => {
+            const res = results[idx];
+            if (res && res.name) branchNameMap.set(bid, res.name);
+          });
+        } catch (e) {
+          console.warn('failed to fetch other branch names', e);
+        }
+      }
+
+//       const uiEntries = schedulesToShow.map((s: any, idx: number) => {
+//         const employeeObj = s.employee_id || s.employee || null;
+//         const employeeId = employeeObj?._id ?? employeeObj?.id ?? employeeObj ?? s.employee_id;
+//         // derive dateYMD from schedule robustly — prefer raw string slice if available
+//         let dateYMD = "";
+//         if (typeof s.date === 'string' && s.date.length >= 10) {
+//           dateYMD = s.date.slice(0, 10);
+//         } else if (s.date) {
+//           try {
+//             const d = new Date(s.date);
+//             dateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+//           } catch (e) {
+//             dateYMD = "";
+//           }
+//         }
+
+//         // normalize employeeId to string
+//         const empIdStr = String(employeeId ?? "");
+
+//         // exact keyed lookup first
+//         let row = null;
+//         if (dateYMD) {
+//           row = reportMap.get(`${empIdStr}:${dateYMD}`) || null;
+//         }
+//         // fallback to employee-only key from reportMap
+//         if (!row) {
+//           row = reportMap.get(`${empIdStr}:*`) || null;
+//         }
+//         // last-resort: search reportRows arr by emp id (ignoring date)
+//         if (!row && Array.isArray(reportRowsArr)) {
+//           row = reportRowsArr.find((r: any) => {
+//             const rid = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
+//             return rid && String(rid) === empIdStr;
+//           }) || null;
+//         }
+
+
+//         const isoIn = row?.actualIn || row?.actualInTime || row?.In || row?.InTime || row?.In || null;
+//         const isoOut = row?.actualOut || row?.actualOutTime || row?.Out || row?.OutTime || null;
+
+//         const makeTimeStrFromISO = (iso?: string) => {
+//           if (!iso) return "";
+//           try {
+//             const dt = new Date(iso);
+//             if (isNaN(dt.getTime())) {
+//               return String(iso);
+//             }
+//             const hh = pad2Local(dt.getHours());
+//             const mm = pad2Local(dt.getMinutes());
+//             const ss = pad2Local(dt.getSeconds());
+//             return `${hh}:${mm}:${ss}`;
+//           } catch (e) {
+//             return String(iso || "");
+//           }
+//         };
+
+//         const work: any = {
+//           id: `${employeeId}_${dateYMD}_${s._id ?? s.id ?? idx}`,
+//           date: dateYMD,
+//           check_in: makeTimeStrFromISO(isoIn),
+//           check_out: makeTimeStrFromISO(isoOut),
+//           rawActualIn: isoIn,
+//           rawActualOut: isoOut,
+//         };
+
+//         const schedule = {
+//           start_time: s.start_time ?? s.startTime ?? s.start ?? "00:00",
+//           end_time: s.end_time ?? s.endTime ?? s.end ?? "00:00",
+//           branch_id: s.branch_id,
+//         };
+// // --- REPLACE existing status/diffText block with this ---
+// let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
+// let diffText = "";
+
+// // prefer API-provided startStatus when available (robust key check)
+// const startStatusRaw =
+//   row?.startStatus ??
+//   row?.start_status ??
+//   row?.startstatus ??
+//   row?.startStatusText ??
+//   row?.start_status_text ??
+//   "";
+
+// // normalize
+// const startStatusStr = String(startStatusRaw || "").trim();
+// const startStatusLower = startStatusStr.toLowerCase();
+
+// if (!schedule || !schedule.start_time) {
+//   // no schedule info
+//   status = "noschedule";
+//   diffText = "";
+// } else {
+//   // if API explicitly gives early/late + minutes like "early (333m)" or "late (333m)"
+//   if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
+//     // extract minutes number (handles "(333m)", "333m", etc.)
+//     const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
+//     const mins = m ? parseInt(m[1], 10) : 0;
+//     status = startStatusLower.startsWith("early") ? "early" : "late";
+//     diffText = mins ? formatMinutesDiff(mins) : "";
+//   } else {
+//     // API indicates missing/other — treat as not checked in if there's no actual check-in
+//     if (!work.check_in) {
+//       status = "not_checked_in";
+//       diffText = "";
+//     } else {
+//       // fallback: compute from scheduled start vs actual check-in (keeps original behavior if needed)
+//       const schedMin = timeToMinutes(schedule.start_time || "00:00");
+//       const checkMin = timeToMinutes(work.check_in || "00:00");
+//       const diff = schedMin - checkMin;
+//       if (diff < 0) {
+//         status = "late";
+//         diffText = formatMinutesDiff(-diff);
+//       } else {
+//         status = "early";
+//         diffText = formatMinutesDiff(diff);
+//       }
+//     }
+//   }
+// }
+// // --- end replacement ---
+
+//         let user = null;
+//         // prefer name from report row if present (use report fullname first)
+//         const rowName = (row?.fullname || row?.full_name || row?.name || "").toString().trim();
+
+//         if (employeeObj && typeof employeeObj === 'object' && (employeeObj._id || employeeObj.id)) {
+//           // build employee object name from the object if possible (first/last or fullname)
+//           const empNameParts = [
+//             employeeObj.fullname,
+//             employeeObj.full_name,
+//             employeeObj.name,
+//             (employeeObj.firstName || employeeObj.first_name) ? `${employeeObj.firstName || employeeObj.first_name}${employeeObj.lastName || employeeObj.last_name ? ` ${employeeObj.lastName || employeeObj.last_name}` : ""}` : ""
+//           ];
+//           const empName = (empNameParts.find(p => typeof p === 'string' && p.trim() !== "") || "").toString().trim();
+
+//           // final precedence: report fullname (rowName) -> employee object fullname (empName) -> username (last resort)
+//           const finalName = rowName || empName || (employeeObj.username || employeeObj.userName || "").toString().trim() || "";
+
+//           user = {
+//             id: employeeObj._id ?? employeeObj.id,
+//             _id: employeeObj._id ?? employeeObj.id,
+//             fullname: finalName,
+//             position: employeeObj.position ?? "",
+//             branch: employeeObj.branch ?? null,
+//           };
+
+//         } else {
+//           // employee object missing — try users cache, otherwise use report row
+//           user = (users || []).find((u: any) => (String(u._id) === String(employeeId) || String(u.id) === String(employeeId))) || {
+//             id: employeeId,
+//             _id: employeeId,
+//             fullname: rowName || "",
+//             position: "",
+//             branch: null,
+//           };
+//         }
+
+//         // debug log for any entries with missing name — remove later
+//         if (!user.fullname || user.fullname.trim() === "") {
+//           // eslint-disable-next-line no-console
+//           console.warn("Attendance entry missing fullname", { employeeId: empIdStr, employeeObj, row });
+//         }
+
+
+//         return { work, user, schedule, status, diffText, rawSchedule: s };
+//       });
+const uiEntries = schedulesToShow.map((s: any, idx: number) => {
+  const employeeObj = s.employee_id || s.employee || null;
+  const employeeId = employeeObj?._id ?? employeeObj?.id ?? employeeObj ?? s.employee_id;
+  // derive dateYMD from schedule robustly — prefer raw string slice if available
+  let dateYMD = "";
+  if (typeof s.date === 'string' && s.date.length >= 10) {
+    dateYMD = s.date.slice(0, 10);
+  } else if (s.date) {
+    try {
+      const d = new Date(s.date);
+      dateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+    } catch (e) {
+      dateYMD = "";
+    }
+  }
+
+  const empIdStr = String(employeeId ?? "");
+
+  // find matching row (report) using map and fallbacks (reportMap built earlier)
+  let row: any = null;
+  if (dateYMD) row = reportMap.get(`${empIdStr}:${dateYMD}`) || null;
+  if (!row) row = reportMap.get(`${empIdStr}:*`) || null;
+  if (!row && Array.isArray(reportRowsArr)) {
+    row = reportRowsArr.find((r: any) => {
+      const rid = r.employeeId ?? r.employee_id ?? r._id ?? r.id;
+      return rid && String(rid) === empIdStr;
+    }) || null;
+  }
+
+  // Prefer report-provided ISO times but allow legacy keys:
+  const isoIn = row?.actualIn || row?.actualInTime || row?.In || row?.InTime || row?.In || null;
+  const isoOut = row?.actualOut || row?.actualOutTime || row?.Out || row?.OutTime || null;
+
+  const makeTimeStrFromISO = (iso?: string) => {
+    if (!iso) return "";
+    try {
+      const dt = new Date(iso);
+      if (isNaN(dt.getTime())) {
+        // API may already return HH:MM or ISO — return as-is if Date parsing fails
+        return String(iso);
+      }
+      const hh = pad2Local(dt.getHours());
+      const mm = pad2Local(dt.getMinutes());
+      const ss = pad2Local(dt.getSeconds());
+      return `${hh}:${mm}:${ss}`;
+    } catch (e) {
+      return String(iso || "");
+    }
+  };
+
+  const work: any = {
+    id: `${employeeId}_${dateYMD}_${s._id ?? s.id ?? idx}`,
+    date: dateYMD || (row?.date ? String(row.date).slice(0, 10) : ""),
+    check_in: makeTimeStrFromISO(isoIn),
+    check_out: makeTimeStrFromISO(isoOut),
+    rawActualIn: isoIn,
+    rawActualOut: isoOut,
+  };
+
+  // Build schedule object — prefer schedule endpoint, fallback to report row fields
+  const schedule = {
+    start_time:
+      s.start_time ?? s.startTime ?? s.start ??
+      row?.scheduledStart ?? row?.scheduled_start ?? "00:00",
+    end_time:
+      s.end_time ?? s.endTime ?? s.end ??
+      row?.scheduledEnd ?? row?.scheduled_end ?? "00:00",
+    // keep original schedule branch shape if present
+    branch_id: s.branch_id ?? s.branchId ?? null,
+  };
+
+  // Compute entry-level branch info. Prefer schedule branch, fall back to row.branchId
+  const rowBranchId = row?.branchId ?? row?.branch_id ?? (row?.branch?.id ?? null);
+  const rowBranchName = row?.branchName ?? row?.branchName ?? row?.branch?.name ?? row?.branch_name ?? "";
+
+  // Determine status/diffText robustly using row.startStatus if present
+  let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
+  let diffText = "";
+
+  const startStatusRaw =
+    row?.startStatus ??
+    row?.start_status ??
+    row?.startstatus ??
+    row?.startStatusText ??
+    row?.start_status_text ??
+    "";
+
+  const startStatusStr = String(startStatusRaw || "").trim();
+  const startStatusLower = startStatusStr.toLowerCase();
+
+  if (!schedule || !schedule.start_time) {
+    status = "noschedule";
+    diffText = "";
+  } else {
+    if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
+      const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
+      const mins = m ? parseInt(m[1], 10) : 0;
+      status = startStatusLower.startsWith("early") ? "early" : "late";
+      diffText = mins ? formatMinutesDiff(mins) : "";
+    } else {
+      if (!work.check_in) {
+        status = "not_checked_in";
+        diffText = "";
+      } else {
+        const schedMin = timeToMinutes(schedule.start_time || "00:00");
+        const checkMin = timeToMinutes(work.check_in || "00:00");
+        const diff = schedMin - checkMin;
+        if (diff < 0) {
+          status = "late";
+          diffText = formatMinutesDiff(-diff);
+        } else {
+          status = "early";
+          diffText = formatMinutesDiff(diff);
+        }
+      }
+    }
+  }
+
+  // Build final user object (prefer employee object fields, then users cache, then report row)
+  let user = null;
+  const rowName = (row?.fullname || row?.full_name || row?.name || "").toString().trim();
+
+  if (employeeObj && typeof employeeObj === "object" && (employeeObj._id || employeeObj.id)) {
+    const empNameParts = [
+      employeeObj.fullname,
+      employeeObj.full_name,
+      employeeObj.name,
+      (employeeObj.firstName || employeeObj.first_name) ? `${employeeObj.firstName || employeeObj.first_name}${employeeObj.lastName || employeeObj.last_name ? ` ${employeeObj.lastName || employeeObj.last_name}` : ""}` : ""
+    ];
+    const empName = (empNameParts.find(p => typeof p === 'string' && p?.trim() !== "") || "").toString().trim();
+    const finalName = rowName || empName || (employeeObj.username || employeeObj.userName || "").toString().trim() || "";
+
+    user = {
+      id: employeeObj._id ?? employeeObj.id,
+      _id: employeeObj._id ?? employeeObj.id,
+      fullname: finalName,
+      position: employeeObj.position ?? "",
+      branch: employeeObj.branch ?? null,
+    };
+  } else {
+    user = (users || []).find((u: any) => (String(u._id) === String(employeeId) || String(u.id) === String(employeeId))) || {
+      id: employeeId,
+      _id: employeeId,
+      fullname: rowName || "",
+      position: "",
+      branch: null,
+    };
+  }
+
+  if (!user.fullname || user.fullname.trim() === "") {
+    // eslint-disable-next-line no-console
+    console.warn("Attendance entry missing fullname", { employeeId: empIdStr, employeeObj, row });
+  }
+
+  // attach entry branch id/name for simple checks during render
+  const entryBranchId = schedule.branch_id?._id ?? schedule.branch_id ?? s.branchId ?? s.branch_id ?? rowBranchId ?? null;
+  const entryBranchName =
+    (s.branchName || s.branch_name || s.branch_id?.name) ||
+    rowBranchName ||
+    (schedule.branch_id?.name || "") ||
+    "";
+
+  return {
+    work,
+    user,
+    schedule,
+    status,
+    diffText,
+    rawSchedule: s,
+    rawReportRow: row,
+    entryBranchId,
+    entryBranchName,
+  };
+});
+
+      // const sorted = uiEntries.slice().sort((a, b) => {
+      //   const aMin = timeToMinutes(a.schedule.start_time || "00:00");
+      //   const bMin = timeToMinutes(b.schedule.start_time || "00:00");
+      //   if (aMin !== bMin) return aMin - bMin;
+      //   const an = (a.user?.fullname || a.user?.username || "").toLowerCase();
+      //   const bn = (b.user?.fullname || b.user?.username || "").toLowerCase();
+      //   return an < bn ? -1 : (an > bn ? 1 : 0);
+      // });
+
+      // Prioritise entries with actualIn (rawActualIn) — most recent actualIn first.
+// Then fall back to previous sort (schedule start_time then name).
+const sorted = uiEntries.slice().sort((a, b) => {
+  const aHasIn = Boolean(a.work?.rawActualIn || a.work?.check_in);
+  const bHasIn = Boolean(b.work?.rawActualIn || b.work?.check_in);
+
+  // If one has a check-in and the other doesn't -> the one with check-in goes first
+  if (aHasIn !== bHasIn) return aHasIn ? -1 : 1;
+
+  // If both have check-ins, order by actualIn timestamp (most recent first)
+  if (aHasIn && bHasIn) {
+    const aTs = (() => {
+      try { return new Date(a.work.rawActualIn || a.work.check_in).getTime() || 0; } catch (e) { return 0; }
+    })();
+    const bTs = (() => {
+      try { return new Date(b.work.rawActualIn || b.work.check_in).getTime() || 0; } catch (e) { return 0; }
+    })();
+    if (aTs !== bTs) return bTs - aTs; // newer first
+  }
+
+  // Otherwise fallback to schedule start_time then name (original behaviour)
+  const aMin = timeToMinutes(a.schedule.start_time || "00:00");
+  const bMin = timeToMinutes(b.schedule.start_time || "00:00");
+  if (aMin !== bMin) return aMin - bMin;
+
+  const an = (a.user?.fullname || a.user?.username || "").toLowerCase();
+  const bn = (b.user?.fullname || b.user?.username || "").toLowerCase();
+  return an < bn ? -1 : (an > bn ? 1 : 0);
+});
+
+
+      const totalEmployees = (users || []).filter((u: any) => u.role === 'user' || u.role === 'employee' || !u.role).length;
+      setTotalEmployeesForBranch(totalEmployees);
+
+      // compute number of scheduled staff for the selected day (only for day mode)
+      const targetYMD = (rangeStartEnd && rangeStartEnd.startDate) ? rangeStartEnd.startDate : (selectedDateObj ? toYMD(selectedDateObj) : toYMD(new Date()));
+      const todaySet = new Set<string>();
+      (scheduleItems || []).forEach((s: any) => {
+        let sDateYMD = "";
+        try {
+          const d = new Date(s.date);
+          sDateYMD = toYMD(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+        } catch (e) {
+          if (typeof s.date === 'string' && s.date.length >= 10) sDateYMD = s.date.slice(0, 10);
+        }
+        if (sDateYMD !== targetYMD) return;
+        const rid = s.employee_id?._id ?? s.employee_id;
+        if (!rid) return;
+        const schedBranchId = s.branch_id?._id ?? s.branch_id;
+        const empBranch = s.employee_id?.branch;
+        if (String(schedBranchId) === String(activeBranchId) || String(empBranch) === String(activeBranchId)) {
+          todaySet.add(String(rid));
+        }
+      });
+      setTodaysWorkingForBranch(todaySet.size);
+
+      try {
+        setAttendanceLoading(true);
+        const allAttendance = await getAttendanceAllHistory();
+        const todayCount = computeCheckinsForBranchAndDay(allAttendance, activeBranchId, targetYMD);
+        setBranchAttendanceCount(todayCount);
+      } catch (e) {
+        console.warn('fetch attendance for branch failed', e);
+        setBranchAttendanceCount(0);
+      } finally {
+        setAttendanceLoading(false);
+      }
+
+      setEntries(sorted);
+    } catch (err) {
+      console.warn('fetchDataForRange failed', err);
+      showErrorToast('Failed to load attendance data');
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeBranchId) return;
+    fetchDataForRange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId, rangeStartEnd, version]);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 600));
-    // reset depending on mode: keep mode but reset date to today-week-month accordingly
+    await new Promise((r) => setTimeout(r, 400));
     setQuery("");
     setDateError("");
     setSelectedDateObj(defaultToday);
@@ -384,147 +947,23 @@ const AttendanceScreen: React.FC = (props: any) => {
     setRefreshing(false);
   };
 
-  // derive the selection range depending on mode
-  // returns an object: { type: 'day', ymd } | { type: 'week', startYmd, endYmd } | { type: 'month', year, monthIndex } or null
-  const selectedRange = useMemo(() => {
-    // prefer selectedDateObj if present
-    const baseDate = selectedDateObj ?? new Date();
-    try {
-      if (mode === "day") {
-        // attempt to parse typed dateInput first
-        const conv = dateInputToYMD(dateInput.trim());
-        if (conv.ok) return { type: "day" as const, ymd: conv.ymd! };
-        // fallback to selectedDateObj
-        if (selectedDateObj) {
-          return { type: "day" as const, ymd: `${selectedDateObj.getFullYear()}-${pad2(selectedDateObj.getMonth() + 1)}-${pad2(selectedDateObj.getDate())}` };
-        }
-        return null;
-      } else if (mode === "week") {
-        // try to parse a single date from dateInput (day format) and compute the week
-        const conv = dateInputToYMD(dateInput.trim());
-        if (conv.ok) {
-          const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
-          const dt = new Date(y, m - 1, d);
-          const s = getStartOfWeekSunday(dt);
-          const e = getEndOfWeekSaturday(dt);
-          return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
-        }
-        // if user typed a week-range format like "Sun, Oct 12 - Sat, Oct 18" try to parse first date
-        const dashIdx = dateInput.indexOf("-");
-        if (dashIdx !== -1) {
-          const left = dateInput.slice(0, dashIdx).trim();
-          const conv2 = dateInputToYMD(left.replace(",", ""));
-          if (conv2.ok) {
-            const [y, m, d] = conv2.ymd!.split("-").map(x => parseInt(x, 10));
-            const dt = new Date(y, m - 1, d);
-            const s = getStartOfWeekSunday(dt);
-            const e = getEndOfWeekSaturday(dt);
-            return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
-          }
-        }
-        // fallback to baseDate's week
-        const s = getStartOfWeekSunday(baseDate);
-        const e = getEndOfWeekSaturday(baseDate);
-        return { type: "week" as const, startYmd: `${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())}`, endYmd: `${e.getFullYear()}-${pad2(e.getMonth() + 1)}-${pad2(e.getDate())}` };
-      } else { // month
-        // try to parse typed month input
-        const pm = parseMonthInput(dateInput.trim());
-        if (pm.ok) {
-          return { type: "month" as const, year: pm.year!, monthIndex: pm.monthIndex! };
-        }
-        // fallback to selectedDateObj or baseDate
-        const dt = selectedDateObj ?? baseDate;
-        return { type: "month" as const, year: dt.getFullYear(), monthIndex: dt.getMonth() };
-      }
-    } catch (e) {
-      return null;
-    }
-  }, [mode, dateInput, selectedDateObj, version]);
-
-  // work filtered by selected range (day, week, month). returns array of WorkHour matching range
-  // IMPORTANT: filter by currentBranchId — include only records where either:
-  //   - employee's own branch_id === currentBranchId OR
-  //   - schedule.branch_id === currentBranchId (employee working at another branch that day)
-  const workForRange = useMemo(() => {
-    if (!selectedRange) return [];
-    let base = [];
-    if (selectedRange.type === "day") {
-      base = workHoursArr.filter(w => w.date === selectedRange.ymd);
-    } else if (selectedRange.type === "week") {
-      const s = selectedRange.startYmd;
-      const e = selectedRange.endYmd;
-      base = workHoursArr.filter(w => w.date >= s && w.date <= e);
-    } else {
-      const y = selectedRange.year;
-      const mi = selectedRange.monthIndex;
-      const prefix = `${y}-${pad2(mi + 1)}-`;
-      base = workHoursArr.filter(w => w.date.startsWith(prefix));
-    }
-
-    if (!activeBranchId) return base; // if no branch passed, keep existing behavior (show everything)
-
-    // filter base by branch logic + exclude admin users (only show employee records)
-    return base.filter(w => {
-      const emp = usersArr.find(u => u.id === w.user_id) || null;
-
-      // skip if we couldn't find the user or if the user is an admin (only show employees)
-      if (!emp || emp.role === "admin") return false;
-
-      const sched = schedulesArr.find(s => s.user_id === w.user_id && s.date === w.date) || null;
-      const empBranch = emp.branch_id ?? null;
-      const schedBranch = sched?.branch_id ?? null;
-
-      // include record if either employee's primary branch matches OR schedule branch matches
-      return empBranch === activeBranchId || schedBranch === activeBranchId;
-    });
-
-
-  }, [selectedRange, version, activeBranchId]);
-
-  // Build UI list entries combining user, workHours, schedule and status/diff
-  const entries = useMemo(() => {
-    return workForRange
-      .slice()
-      .sort((a, b) => (a.check_in < b.check_in ? 1 : -1))
-      .map(wh => {
-        const user = usersArr.find(u => u.id === wh.user_id) || null;
-        const sched = schedulesArr.find(s => s.user_id === wh.user_id && s.date === wh.date) || null;
-        let status: "early" | "late" | "noschedule" = "noschedule";
-        let diffText = "";
-        if (sched) {
-          const schedMin = timeToMinutes(sched.start_time);
-          const checkMin = timeToMinutes(wh.check_in);
-          const diff = checkMin - schedMin;
-          if (diff > 0) {
-            status = "late";
-            diffText = formatMinutesDiff(diff);
-          } else {
-            status = "early";
-            diffText = formatMinutesDiff(diff);
-          }
-        }
-        return { work: wh, user, schedule: sched, status, diffText };
-      });
-  }, [workForRange, version]);
-
-  //------------------------------------------------------------------//
   const onGenerateCSV = async () => {
-    if (!selectedRange) {
-      setDateError(lang.please_select_valid_date);
-      showErrorToast(lang.please_select_valid_date);
+    if (!rangeStartEnd) {
+      setDateError(lang.please_select_valid_date || 'Select a valid date');
+      showErrorToast(lang.please_select_valid_date || 'Select a valid date');
       return;
     }
-
     try {
-      // build structured data
       const sheetData = entries.map(item => {
         const u = item.user || {};
         const wh = item.work || {};
-        const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : "Late";
+        const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : (item.status === "not_checked_in" ? "No check-in" : "Late");
         return {
-          "Staff ID": u.id || "",
+          "Staff ID": u._id || u.id || '',
           "Name": u.fullname || "",
           "Position": u.position || "",
+          "Scheduled Start": item.schedule?.start_time || "",
+          "Scheduled End": item.schedule?.end_time || "",
           "Check In": wh.check_in || "",
           "Check Out": wh.check_out || "",
           "Date": wh.date || "",
@@ -533,39 +972,26 @@ const AttendanceScreen: React.FC = (props: any) => {
         };
       });
 
-      // create workbook + worksheet
       const ws = XLSX.utils.json_to_sheet(sheetData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-
-      // prefer writing binary then converting via Buffer (more robust)
       const wboutBinary = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
-
-      // convert binary string to base64 using Buffer
       const buf = Buffer.from(wboutBinary, "binary");
       const wboutBase64 = buf.toString("base64");
 
-      // filename
       let filename = "attendance.xlsx";
-      if (selectedRange.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
-      else if (selectedRange.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
+      if (selectedRange?.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
+      else if (selectedRange?.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
       else filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
 
       const fileUri = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + filename;
-
-      // DEBUG: log EncodingType if available
-      console.log("FileSystem.EncodingType (debug):", (FileSystem as any).EncodingType);
-
-      // choose encoding fallback (legacy import should have EncodingType)
       const enc: any =
         (FileSystem as any).EncodingType && (FileSystem as any).EncodingType.Base64
           ? (FileSystem as any).EncodingType.Base64
           : "base64";
 
-      // write file
       await FileSystem.writeAsStringAsync(fileUri, wboutBase64, { encoding: enc });
 
-      // share
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -581,20 +1007,16 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
-
-  //---------------------------------------------------------------//
-  // Search filtering for entries (optional)
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return entries;
     return entries.filter(({ user }) => {
       if (!user) return false;
-      const full = `${user.fullname}  ${user.position}`.toLowerCase();
+      const full = `${user.fullname || ''}  ${user.position || ''}`.toLowerCase();
       return full.includes(q);
     });
   }, [entries, query]);
 
-  // toggle handlers
   const onSelectNow = () => {
     setMode("day");
     const today = new Date();
@@ -608,7 +1030,6 @@ const AttendanceScreen: React.FC = (props: any) => {
 
   const onSelectWeek = () => {
     setMode("week");
-    // if a date is selected, use it; otherwise use today
     const dt = selectedDateObj ?? new Date();
     const fmt = formatWeekDisplayFromDate(dt);
     setDateInput(fmt);
@@ -625,12 +1046,9 @@ const AttendanceScreen: React.FC = (props: any) => {
     setVersion(v => v + 1);
   };
 
-  // button background logic (active = primary, inactive = background)
   const nowBg = mode === "day" ? undefined : colors.background;
   const weekBg = mode === "week" ? undefined : colors.background;
   const monthBg = mode === "month" ? undefined : colors.background;
-
-  // text color for each toggle: active -> colors.secondary, inactive -> colors.subtext
   const nowTextColor = mode === "day" ? colors.secondary : colors.subtext;
   const weekTextColor = mode === "week" ? colors.secondary : colors.subtext;
   const monthTextColor = mode === "month" ? colors.secondary : colors.subtext;
@@ -652,13 +1070,14 @@ const AttendanceScreen: React.FC = (props: any) => {
 
       <View style={styles.container}>
         <View style={styles.body}>
-          <View style={{ flexDirection: 'row', marginBottom: 12, alignItems: "center",  width:'90%'  }}>
+          <View style={{ flexDirection: 'row', marginBottom: 12, alignItems: "center", width: '90%' }}>
             <Image
               source={require("../../../assets/icons/branch_b_withbg.png")}
               style={styles.icon}
             />
             <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}> {branchDisplayName}</Text>
           </View>
+
           <View style={styles.Date_control_Buttons}>
             <Button1 text={lang.Now}
               onPress={onSelectNow}
@@ -691,7 +1110,6 @@ const AttendanceScreen: React.FC = (props: any) => {
               value={dateInput}
               setValue={handleDateTextChange}
               onBlur={() => {
-                // validation & set selectedDateObj depending on mode
                 if (!dateInput || dateInput.trim() === "") {
                   setDateError(lang.date_required);
                   return;
@@ -711,7 +1129,6 @@ const AttendanceScreen: React.FC = (props: any) => {
                   dt.setHours(0, 0, 0, 0);
                   setSelectedDateObj(dt);
                 } else if (mode === "week") {
-                  // try to parse a day inside the week
                   const conv = dateInputToYMD(dateInput.trim());
                   if (conv.ok) {
                     const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
@@ -719,11 +1136,9 @@ const AttendanceScreen: React.FC = (props: any) => {
                     dt.setHours(0, 0, 0, 0);
                     setSelectedDateObj(dt);
                     setDateError("");
-                    // normalize display
                     setDateInput(formatWeekDisplayFromDate(dt));
                     return;
                   }
-                  // try to parse left side of " - "
                   const dashIdx = dateInput.indexOf("-");
                   if (dashIdx !== -1) {
                     const left = dateInput.slice(0, dashIdx).trim();
@@ -738,25 +1153,21 @@ const AttendanceScreen: React.FC = (props: any) => {
                       return;
                     }
                   }
-                  // fallback: set to today-week
                   const dt = new Date();
                   dt.setHours(0, 0, 0, 0);
                   setSelectedDateObj(dt);
                   setDateInput(formatWeekDisplayFromDate(dt));
-                } else { // month
+                } else {
                   const pm = parseMonthInput(dateInput.trim());
                   if (!pm.ok) {
                     setDateError(pm.message || "Invalid month");
-                    // clear selected date
                     setSelectedDateObj(null);
                     return;
                   }
-                  // set selectedDateObj to first day of month (useful for date picker)
                   const dt = new Date(pm.year!, pm.monthIndex!, 1);
                   dt.setHours(0, 0, 0, 0);
                   setSelectedDateObj(dt);
                   setDateError("");
-                  // normalize display
                   setDateInput(formatMonthDisplayFromDate(dt));
                 }
               }}
@@ -765,34 +1176,35 @@ const AttendanceScreen: React.FC = (props: any) => {
               errorMessage={dateError}
               rightIconStyle={{ tintColor: colors.primary }}
             />
- {mode === "day" && (
-  <View style={styles.boxes}>
-    <CartBox containerStyle={styles.staff}>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <Image
-          source={require("../../../assets/icons/totalstaff_b.png")}
-          style={styles.icon}
-        />
-        <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
-      </View>
-      <Text style={styles.total_count}>{totalEmployeesForBranch}</Text>
-    </CartBox>
 
-    <CartBox containerStyle={styles.staff}>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <Image
-          source={require("../../../assets/icons/staff_tik_g.png")}
-          style={styles.icon}
-        />
-        <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
-      </View>
+            {mode === "day" && (
+              <View style={styles.boxes}>
+                <CartBox containerStyle={styles.staff}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Image
+                      source={require("../../../assets/icons/totalstaff_b.png")}
+                      style={styles.icon}
+                    />
+                    <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
+                  </View>
+                  <Text style={styles.total_count}>{todaysWorkingForBranch}</Text>
+                </CartBox>
 
-      <Text style={styles.shift_count}>{todaysWorkingForBranch}</Text>
-    </CartBox>
-  </View>
-)}
+                <CartBox containerStyle={styles.staff}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Image
+                      source={require("../../../assets/icons/staff_tik_g.png")}
+                      style={styles.icon}
+                    />
+                    <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
+                  </View>
 
-
+                  <Text style={styles.shift_count}>
+                    {attendanceLoading ? "..." : String(branchAttendanceCount)}
+                  </Text>
+                </CartBox>
+              </View>
+            )}
           </View>
 
           <View style={styles.buttonWrap}>
@@ -800,7 +1212,7 @@ const AttendanceScreen: React.FC = (props: any) => {
           </View>
 
           <ScrollView
-            style={{  }}
+            style={{}}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
           >
@@ -809,17 +1221,111 @@ const AttendanceScreen: React.FC = (props: any) => {
                 <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? "No records for selected week" : "No records for selected month")}</Text>
               ) : null}
 
-              {filteredEntries.map(({ work, user, schedule, status, diffText }) => {
-                const displayName = user ? `${user.fullname}` : "Unknown";
+{filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule, rawReportRow, entryBranchId: entryBranchIdFromEntry, entryBranchName: entryBranchNameFromEntry }) => {
+  const rawName = extractFullname(user);
+  const displayName = rawName || "Unknown";
+
+  const position = user?.position ?? "";
+  const timeStr = `${schedule?.start_time || ''} - ${schedule?.end_time || ''}`;
+  const dateDisplay = formatYMDDisplay(work.date);
+
+  // prefer entryBranch values returned from uiEntries, but fall back to schedule/rawReportRow shapes
+  const entryBranchId =
+    entryBranchIdFromEntry ??
+    (rawSchedule?.branch_id?._id ?? rawSchedule?.branch_id ?? rawSchedule?.branchId ?? rawReportRow?.branchId ?? null);
+
+  const entryBranchName =
+    entryBranchNameFromEntry ??
+    (rawSchedule?.branchName ?? rawSchedule?.branch_name ?? rawReportRow?.branchName ?? rawReportRow?.branch_name ?? (schedule?.branch_id?.name ?? ""));
+
+  // show header only when entry has a non-empty branch id and it's different from activeBranchId
+  const showBranchHeader = entryBranchId && activeBranchId && String(entryBranchId) !== String(activeBranchId);
+  let schedBranchName = "";
+  if (showBranchHeader) {
+    schedBranchName = entryBranchName || String(entryBranchId);
+  }
+
+  // preserve the original "different employee branch" logic but make sure empBranchId is defined
+  const schedBranchId = schedule?.branch_id?._id ?? schedule?.branch_id ?? null;
+  const empBranchId = rawSchedule?.employee_id?.branch ?? rawSchedule?.employee_id?.branch_id ?? null;
+  const showDifferentEmployeeBranch = empBranchId && String(empBranchId) !== String(schedBranchId);
+  const differentBranchName = showDifferentEmployeeBranch ? (rawSchedule?.employee_id?.branchName || rawSchedule?.employee_id?.branch_name || "") : "";
+
+  return (
+    <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
+      {showBranchHeader ? (
+        <View style={styles.branchHeader}>
+          <Image
+            source={require("../../../assets/icons/branch.png")}
+            style={styles.branchIcon}
+            resizeMode="contain"
+          />
+          <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}>{schedBranchName}</Text>
+        </View>
+      ) : null}
+
+      <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
+            <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+          </View>
+
+          <View style={styles.name_position}>
+            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
+            <Text style={styles.time}>{timeStr}</Text>
+            <Text style={styles.time}>{dateDisplay}</Text>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+          {status === "late" ? (
+            <Text style={styles.status_late}>{lang.late}</Text>
+          ) : status === "early" ? (
+            <Text style={styles.status_early}>{lang.early}</Text>
+          ) : status === "not_checked_in" ? (
+            <Text style={styles.status_noschedule}>{lang.Havent_checked_in}</Text>
+          ) : (
+            <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
+          )}
+          {status !== "noschedule" && status !== "not_checked_in" ? (
+            <Text style={styles.duration}>{diffText}</Text>
+          ) : null}
+        </View>
+      </View>
+    </CartBox>
+  );
+})}
+
+              {/* {filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule }) => {
+                const rawName = extractFullname(user);
+                const displayName = rawName || "Unknown";
+
+
                 const position = user?.position ?? "";
-                const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(work.check_out)}`;
+                const timeStr = `${schedule?.start_time || ''} - ${schedule?.end_time || ''}`;
                 const dateDisplay = formatYMDDisplay(work.date);
 
-                // Decide whether to show branch header: only when schedule branch exists and differs from admin's branch
-const schedBranchId = schedule?.branch_id ?? null;
-const showBranchHeader = schedBranchId && activeBranchId && schedBranchId !== activeBranchId;
+                const schedBranchId = schedule?.branch_id?._id ?? schedule?.branch_id ?? null;
+                // const empBranchId = rawSchedule?.employee_id?.branch ?? (rawSchedule?.employee_id?.branch_id ?? null);
+                // const showBranchHeader = schedBranchId && activeBranchId && String(schedBranchId) !== String(activeBranchId);
+                // let schedBranchName = "";
+                // if (showBranchHeader) {
+                //   schedBranchName = (schedule?.branch_id?.name || rawSchedule?.branch_id?.name || String(schedBranchId));
+                // }
 
-                const schedBranchName = showBranchHeader ? (getBranchById(schedBranchId)?.name || schedBranchId) : "";
+                // inside the render map — replace the existing branch header logic with this:
+const entryBranchId = (rawSchedule?.branch_id?._id ?? rawSchedule?.branch_id ?? rawSchedule?.branchId ?? rawReportRow?.branchId ?? null);
+const entryBranchName = rawSchedule?.branchName ?? rawSchedule?.branch_name ?? rawReportRow?.branchName ?? rawReportRow?.branch_name ?? (schedule?.branch_id?.name ?? "");
+
+const showBranchHeader = entryBranchId && activeBranchId && String(entryBranchId) !== String(activeBranchId);
+// ensure empty string/undefined does not show header
+let schedBranchName = "";
+if (showBranchHeader) {
+  schedBranchName = entryBranchName || String(entryBranchId);
+}
+
+                const showDifferentEmployeeBranch = empBranchId && String(empBranchId) !== String(schedBranchId);
+                const differentBranchName = showDifferentEmployeeBranch ? (rawSchedule?.employee_id?.branchName || rawSchedule?.employee_id?.branchName || "") : "";
 
                 return (
                   <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
@@ -837,7 +1343,6 @@ const showBranchHeader = schedBranchId && activeBranchId && schedBranchId !== ac
                     <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
                       <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
                         <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
-                          {/* placeholder image */}
                           <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
                         </View>
 
@@ -853,21 +1358,24 @@ const showBranchHeader = schedBranchId && activeBranchId && schedBranchId !== ac
                           <Text style={styles.status_late}>{lang.late}</Text>
                         ) : status === "early" ? (
                           <Text style={styles.status_early}>{lang.early}</Text>
+                        ) : status === "not_checked_in" ? (
+                          <Text style={styles.status_noschedule}>{lang.Havent_checked_in}</Text>
                         ) : (
                           <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
                         )}
-                        {status !== "noschedule" ? (
+                        {status !== "noschedule" && status !== "not_checked_in" ? (
                           <Text style={styles.duration}>{diffText}</Text>
                         ) : null}
                       </View>
                     </View>
                   </CartBox>
                 );
-              })}
+              })} */}
             </View>
           </ScrollView>
         </View>
       </View>
+
       {showDatePicker && (
         <DateTimePicker
           value={selectedDateObj ?? new Date()}
@@ -875,6 +1383,12 @@ const showBranchHeader = schedBranchId && activeBranchId && schedBranchId !== ac
           display={Platform.OS === "ios" ? "spinner" : "calendar"}
           onChange={onNativeDateChange}
         />
+      )}
+
+      {loading && (
+        <View style={{ justifyContent: 'center', alignItems: 'center', position: 'absolute', left: 0, top: '30%', right: 0, bottom: 0, }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       )}
 
       <Toast config={toastConfig} />
@@ -886,7 +1400,7 @@ const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: colors.secondary },
   container: { marginHorizontal: 20, flex: 1 },
   body: { flex: 1, paddingTop: 20, },
-  Date_control_Buttons: { marginBottom: 20, flexDirection: 'row', width: '100%', justifyContent: 'space-between',  },
+  Date_control_Buttons: { marginBottom: 20, flexDirection: 'row', width: '100%', justifyContent: 'space-between', },
   searchWrap: { marginBottom: 12, },
   inputWrap: { paddingBottom: 8, },
   buttonWrap: { paddingBottom: 20, },
@@ -955,45 +1469,45 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular as any,
   },
-      icon: {
-        width: 30 ,
-        height: 30,
-        marginRight:8
-    },
-        boxes: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 12,
-    },
-        total_staff: {
-        color: colors.search,
-        fontWeight: fonts.weight.regular as any,
-        fontSize: 14,
-        width: "75%"
-    },
-    total_count: {
-        fontWeight: fonts.weight.medium as any,
-        fontSize: fonts.size.xxl,
-        color: colors.primary,
-        marginTop: 8,
-    },
-    shift_count: {
-        fontWeight: fonts.weight.medium as any,
-        fontSize: fonts.size.xxl,
-        color: colors.text,
-        marginTop: 8,
-    },
-    staff: {
-        backgroundColor: colors.secondary,
-        borderWidth: 1,
-        borderColor: colors.border1,
-        width: 190 * base,
-        paddingTop: 12,
-        paddingBottom: 12,
-        paddingLeft: 12,
-        alignItems: "flex-start",
-        borderEndWidth:1
-    },
+  icon: {
+    width: 30,
+    height: 30,
+    marginRight: 8
+  },
+  boxes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  total_staff: {
+    color: colors.search,
+    fontWeight: fonts.weight.regular as any,
+    fontSize: 14,
+    width: "75%"
+  },
+  total_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.primary,
+    marginTop: 8,
+  },
+  shift_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.text,
+    marginTop: 8,
+  },
+  staff: {
+    backgroundColor: colors.secondary,
+    borderWidth: 1,
+    borderColor: colors.border1,
+    width: 190 * base,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingLeft: 12,
+    alignItems: "flex-start",
+    borderEndWidth: 1
+  },
 
 });
 

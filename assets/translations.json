@@ -304,8 +304,10 @@
     "invalid_start_time": "Enter valid start time (HH:MM:SS)",
     "invalid_duration": "Enter duration in hours",
     "staff_created_success": "Staff created successfully",
-    "no_recent_checkins":"No recent check-ins"
+    "no_recent_checkins":"No recent check-ins",
+    "Havent_checked_in":"Haven't checked-in"
   },
+  
   "de": {
     "profile": "Profil",
     "general": "Allgemein",
@@ -609,6 +611,7 @@
     "invalid_start_time": "Geben Sie eine gültige Startzeit ein (HH:MM:SS)",
     "invalid_duration": "Geben Sie die Dauer in Stunden ein",
     "staff_created_success": "Mitarbeiter erfolgreich erstellt",
-    "no_recent_checkins":"Keine kürzlichen Check-ins"
+    "no_recent_checkins":"Keine kürzlichen Check-ins",
+    "Havent_checked_in":"Nicht eingecheckt"
   }
 }

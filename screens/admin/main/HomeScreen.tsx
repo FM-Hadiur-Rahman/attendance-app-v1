@@ -376,7 +376,8 @@ const HomeScreen_A = (props: any) => {
               <Image source={require("../../../assets/icons/totalstaff_b.png")} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text>
+            {/* <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text> */}
+             <Text style={styles.total_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text>
           </CartBox>
 
           <CartBox containerStyle={styles.staff}>
@@ -385,7 +386,9 @@ const HomeScreen_A = (props: any) => {
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text>
+            {/* <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text> */}
+            <Text style={styles.shift_count}>{loadingShiftData ? "..." : String(recentCheckins.length)}</Text>
+          
           </CartBox>
         </View>
 
@@ -465,59 +468,6 @@ const HomeScreen_A = (props: any) => {
             )}
           </View>
         </ScrollView>
-
-        {/* <ScrollView
-          style={{ marginBottom: '15%' }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
-        >
-          <View style={styles.details}>
-            {recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
-              const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
-              const timeStr = `${formatTime12(attendance.In)}${attendance.Out ? ` - ${formatTime12(attendance.Out)}` : ''}`;
-              const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
-
-              return (
-                <CartBox key={attendance.id} containerStyle={styles.detail_cartbox}>
-                  {branchNameToShow && (
-                    <View style={styles.branchHeader}>
-                      <Image source={require("../../../assets/icons/branch.png")} style={styles.branchIcon} resizeMode="contain" />
-                      <Text style={styles.branchName} numberOfLines={1} ellipsizeMode="tail">{branchNameToShow}</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.profileRow}>
-                    <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-
-                    <View style={styles.middleRightContainer}>
-                      <View style={styles.name_position}>
-                        <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
-                        <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{timeStr}</Text>
-                        <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{dateDisplay}</Text>
-                      </View>
-
-                      <View style={styles.statusInline}>
-                        {status === "late" ? (
-                          <Text style={styles.status_late} numberOfLines={1} ellipsizeMode="tail">{lang.late}</Text>
-                        ) : status === "early" ? (
-                          <Text style={styles.status_early} numberOfLines={1} ellipsizeMode="tail">{lang.early}</Text>
-                        ) : (
-                          <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
-                        )}
-                        {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
-                      </View>
-                    </View>
-                  </View>
-                </CartBox>
-              );
-            })}
-            {recentCheckins.length === 0 && (
-              <Text style={{ textAlign: 'center', marginTop: 12 * base, color: colors.subtext }}>
-                {lang.no_recent_checkins || 'No recent check-ins'}
-              </Text>
-            )}
-          </View>
-        </ScrollView> */}
       </View>
     </View>
   );
