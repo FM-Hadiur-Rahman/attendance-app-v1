@@ -9,6 +9,7 @@ import {
   Share,
   Platform,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import colors from "../../../styles/Colors";
 import Header from "../../../components/Header";
@@ -21,12 +22,13 @@ import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
 import { workHours as workHoursArr } from "../../../api/WorkHours";
 import { schedules as schedulesArr } from "../../../api/Schedule";
+
 import CartBox from "../../../components/CartBox";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
-
+import { getAttendanceReport, AttendanceReportItem } from '../../../api/checkin_checkout';
 
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
@@ -34,6 +36,30 @@ import * as Sharing from "expo-sharing";
 
 import { Buffer } from "buffer";
 import base64 from "base-64";
+import axiosInstance from "../../../api/axiosInstance";
+import { getProfile, ProfileUser, getUserById } from '../../../api/profile';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getSchedulesForDate } from "../../../api/schedules";
+import moment from "moment"; // if you already use moment, otherwise use JS Date
+
+
+function parseLocalDateTime(datetimeString) {
+  if (!datetimeString) return null;
+  const [datePart, timePart] = datetimeString.split(" ");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute, second] = timePart.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute, second);
+}
+
+function formatTime12h(dateObj) {
+  if (!dateObj) return "-";
+  const hours = dateObj.getHours();
+  const minutes = dateObj.getMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  const displayMinute = minutes.toString().padStart(2, "0");
+  return `${displayHour}:${displayMinute} ${ampm}`;
+}
 
 if (typeof (global as any).Buffer === "undefined") {
   (global as any).Buffer = Buffer;
@@ -66,8 +92,8 @@ const timeToMinutes = (hhmmss: string) => {
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 };
 // format minutes diff to "1h 30m" or "12m"
-const formatMinutesDiff = (mins: number) => {
-  const abs = Math.abs(Math.round(mins));
+const formatMinutesDiff = (min: number) => {
+  const abs = Math.abs(min);
   const h = Math.floor(abs / 60);
   const m = abs % 60;
   if (h > 0) return `${h}h ${m}m`;
@@ -111,11 +137,7 @@ const dateInputToYMD = (display: string): { ok: boolean; ymd?: string; message?:
 };
 
 // format YYYY-MM-DD -> "Thu, Aug 18"
-const formatYMDDisplay = (ymd: string) => {
-  const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
-  const dt = new Date(y, (m || 1) - 1, d || 1);
-  return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
-};
+
 
 const getStartOfWeekSunday = (date: Date) => {
   const day = date.getDay(); // 0 Sun ... 6 Sat
@@ -132,33 +154,54 @@ const getEndOfWeekSaturday = (date: Date) => {
   return end;
 };
 
-const formatWeekDisplayFromDate = (date: Date) => {
-  const s = getStartOfWeekSunday(date);
-  const e = getEndOfWeekSaturday(date);
-  const sFmt = `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()}`;
-  const eFmt = `${WEEKDAYS[e.getDay()]}, ${MONTHS[e.getMonth()]} ${e.getDate()}`;
-  return `${sFmt} - ${eFmt}`;
-};
+function formatWeekDisplayFromDate(date: Date): string {
+  // Clone date
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+
+  // Find Sunday (start of week)
+  const day = d.getDay(); // Sunday = 0
+  const start = new Date(d);
+  start.setDate(d.getDate() - day);
+
+  // Find Saturday (end of week)
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  const startStr = start.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const endStr = end.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  return `${startStr} - ${endStr}`;
+}
+
 
 
 const getWeekRange = (date: Date) => {
-  // Clone date to avoid mutation
   const start = new Date(date);
-  const day = start.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const diff = (day === 0 ? -6 : 1 - day); // Adjust so Monday is first day
-  start.setDate(start.getDate() + diff);
+  start.setDate(start.getDate() - start.getDay());
   start.setHours(0, 0, 0, 0);
-
   const end = new Date(start);
-  end.setDate(start.getDate() + 6); // Sunday is end
+  end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
-
   return { start, end };
 };
 
 
 
-
+const getMonthRange = (date: Date) => {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
 
 
 const formatMonthDisplayFromDate = (date: Date) => {
@@ -197,16 +240,12 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [version, setVersion] = useState<number>(0);
 
   // search (not strictly required here but keeps parity with Staff screens)
-  const [query, setQuery] = useState<string>("");
+  const [query, setQuery] = useState<string>("")
+   const [records, setRecords] = useState<AttendanceReportItem[]>([]);
 
-  // refresh
-  
 
   // MODE: "day" | "week" | "month"
-  const [mode, setMode] = useState<"day" | "week" | "month">("day");
-    const [attendance, setAttendance] = useState<AttendanceHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+
 
   // derive current admin user & branch id from incoming userId param
   const currentUser = usersArr.find(u => u.id === userId) || null;
@@ -220,17 +259,40 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   })();
 
   const defaultDateDisplay = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]} ${defaultToday.getDate()}`;
-
   const prevDateRef = useRef<string>(defaultDateDisplay);
   const [dateInput, setDateInput] = useState<string>(defaultDateDisplay); // shows today by default
   const [dateError, setDateError] = useState<string>("");
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(defaultToday);
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
-   const [attendanceData, setAttendanceData] = useState<AttendanceHistoryItem[]>([]);
+  const [attendanceData, setAttendanceData] = useState<AttendanceHistoryItem[]>([]);
   const [attendanceEntries, setAttendanceEntries] = useState<AttendanceHistoryItem[]>([]);
   const [filteredEntries, setFilteredEntries] = useState<AttendanceHistoryItem[]>([]);
-   const [filteredData, setFilteredData] = useState<AttendanceHistoryItem[]>([]);
+  const [filteredData, setFilteredData] = useState<AttendanceHistoryItem[]>([]);
+  const [profile, setProfile] = useState<ProfileUser | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [mode, setMode] = useState<"day" | "week" | "month">("day");
 
+  const [weekRecords, setWeekRecords] = useState<any[]>([]);
+  const [monthRecords, setMonthRecords] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      const cached = await AsyncStorage.getItem("cachedProfile");
+      if (cached) setProfile(JSON.parse(cached));
+
+      try {
+        const user = await getProfile();
+        setProfile(user);
+        await AsyncStorage.setItem("cachedProfile", JSON.stringify(user));
+      } catch (err) {
+        console.error("Profile fetch failed:", err);
+      }
+    };
+    loadProfile();
+  }, []);
 
 
 
@@ -248,42 +310,14 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     }
   }, [mode]);
 
-const fetchAttendanceHistory = async () => {
-  try {
-    const data = await getAttendanceAllHistory();
-    console.log("✅ Attendance data fetched:", data.length);
-    setAttendanceEntries(data);
-    setFilteredEntries(data); // set both
-  } catch (err) {
-    console.error("❌ Failed to fetch attendance history:", err);
-  }
-};
-
-const filterByMode = (mode: 'day' | 'week' | 'month') => {
-  const now = new Date();
-  let filtered: AttendanceHistoryItem[] = [];
-
-  if (mode === 'day') {
-    filtered = attendanceEntries.filter(e => e.In.startsWith(now.toISOString().split('T')[0]));
-  } else if (mode === 'week') {
-    const weekAgo = new Date();
-    weekAgo.setDate(now.getDate() - 7);
-    filtered = attendanceEntries.filter(e => new Date(e.In) >= weekAgo);
-  } else if (mode === 'month') {
-    const monthAgo = new Date();
-    monthAgo.setMonth(now.getMonth() - 1);
-    filtered = attendanceEntries.filter(e => new Date(e.In) >= monthAgo);
-  }
-
-  setFilteredEntries(filtered);
-};
 
 
-    const filterData = (filterMode: "now" | "week" | "month", data: AttendanceHistoryItem[]) => {
+
+  const filterData = (filterMode: "now" | "week" | "month", data: AttendanceHistoryItem[]) => {
     const now = new Date();
     let filtered: AttendanceHistoryItem[] = [];
 
-       if (filterMode === "now") {
+    if (filterMode === "now") {
       const today = now.toISOString().split("T")[0];
       filtered = data.filter((item) => item.In.startsWith(today));
     } else if (filterMode === "week") {
@@ -299,33 +333,7 @@ const filterByMode = (mode: 'day' | 'week' | 'month') => {
   };
 
 
-    const handleModeChange = (newMode: "now" | "week" | "month") => {
-    setMode(newMode);
-    filterData(newMode, attendanceData);
-  };
 
-
-  const exportToExcel = async () => {
-    if (filteredData.length === 0) return;
-    const worksheet = XLSX.utils.json_to_sheet(
-      filteredData.map((item) => ({
-        Username: item.user?.username ?? "-",
-        Email: item.user?.email ?? "-",
-        Branch: item.branch?.name ?? "-",
-        In: item.In,
-        Out: item.Out ?? "-",
-      }))
-    );
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
-    const wbout = XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
-
-    const fileUri = FileSystem.cacheDirectory + "AttendanceHistory.xlsx";
-    await FileSystem.writeAsStringAsync(fileUri, wbout, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    await Sharing.shareAsync(fileUri);
-  };
 
 
 
@@ -393,54 +401,54 @@ const filterByMode = (mode: 'day' | 'week' | 'month') => {
 
   // native date picker handlers (simple show/hide)
   const onShowNativeDatePicker = () => setShowDatePicker(true);
-const onNativeDateChange = (event: any, selectedDate?: Date) => {
-  setShowDatePicker(false);
+  const onNativeDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
 
-  if (selectedDate) {
-    selectedDate.setHours(0, 0, 0, 0);
-    setSelectedDateObj(selectedDate);
-    setDateError("");
+    if (selectedDate) {
+      selectedDate.setHours(0, 0, 0, 0);
+      setSelectedDateObj(selectedDate);
+      setDateError("");
 
-    if (mode === "day") {
-      const wd = WEEKDAYS[selectedDate.getDay()];
-      const mon = MONTHS[selectedDate.getMonth()];
-      const day = selectedDate.getDate();
-      const fmt = `${wd}, ${mon} ${day}`;
-      setDateInput(fmt);
+      if (mode === "day") {
+        const wd = WEEKDAYS[selectedDate.getDay()];
+        const mon = MONTHS[selectedDate.getMonth()];
+        const day = selectedDate.getDate();
+        const fmt = `${wd}, ${mon} ${day}`;
+        setDateInput(fmt);
 
-    } else if (mode === "week") {
-      // ✅ Get Monday–Sunday range
-      const { start, end } = getWeekRange(selectedDate);
+      } else if (mode === "week") {
+        // ✅ Get Monday–Sunday range
+        const { start, end } = getWeekRange(selectedDate);
 
-      // ✅ Filter attendance entries
-      const filtered = attendanceEntries.filter(item => {
-        const entryDateStr = item.In ?? item.date ?? item.created_at;
-        if (!entryDateStr) return false;
-        const entryDate = new Date(entryDateStr);
-        return entryDate >= start && entryDate <= end;
-      });
+        // ✅ Filter attendance entries
+        const filtered = attendanceEntries.filter(item => {
+          const entryDateStr = item.In ?? item.date ?? item.created_at;
+          if (!entryDateStr) return false;
+          const entryDate = new Date(entryDateStr);
+          return entryDate >= start && entryDate <= end;
+        });
 
-      setFilteredData(filtered);
+        setFilteredData(filtered);
 
-      // ✅ Update display text
-      const startStr = `${WEEKDAYS[start.getDay()]}, ${MONTHS[start.getMonth()]} ${start.getDate()}`;
-      const endStr = `${WEEKDAYS[end.getDay()]}, ${MONTHS[end.getMonth()]} ${end.getDate()}`;
-      setDateInput(`${startStr} - ${endStr}`);
+        // ✅ Update display text
+        const startStr = `${WEEKDAYS[start.getDay()]}, ${MONTHS[start.getMonth()]} ${start.getDate()}`;
+        const endStr = `${WEEKDAYS[end.getDay()]}, ${MONTHS[end.getMonth()]} ${end.getDate()}`;
+        setDateInput(`${startStr} - ${endStr}`);
 
-    } else {
-      setDateInput(formatMonthDisplayFromDate(selectedDate));
+      } else {
+        setDateInput(formatMonthDisplayFromDate(selectedDate));
+      }
+
+      prevDateRef.current = dateInput;
     }
-
-    prevDateRef.current = dateInput;
-  }
-};
+  };
 
 
 
   // pull to refresh — clear inputs, errors and force recompute
   const onRefresh = async () => {
     setRefreshing(true);
-      await fetchData();
+    await fetchData();
     await new Promise((r) => setTimeout(r, 600));
     // reset depending on mode: keep mode but reset date to today-week-month accordingly
     setQuery("");
@@ -458,12 +466,42 @@ const onNativeDateChange = (event: any, selectedDate?: Date) => {
     setRefreshing(false);
   };
 
-    useEffect(() => {
+  useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // 🔹 Converts a Date object → "YYYY-MM-DD"
+  const toYMD = (d: Date) => d.toISOString().split("T")[0];
 
-  
+
+  // 🔹 Converts "HH:mm" string → total minutes
+  const hhmmToMinutes = (t: string) => {
+    if (!t) return 0;
+    const [h, m, s] = t.split(":").map(Number);
+    return h * 60 + m + (s ? s / 60 : 0);
+  };
+
+  // 🔹 Converts full datetime → minutes (from midnight)
+  const datetimeToMinutes = (dt: string) => {
+    const d = new Date(dt);
+    return d.getHours() * 60 + d.getMinutes();
+  };
+
+
+
+
+
+
+  // 🔹 Formats time difference (e.g., "12m late" or "8m early")
+  const formatMinutesDiff = (min: number) => {
+    const abs = Math.abs(min);
+    const sign = min > 0 ? "late" : "early";
+    const hours = Math.floor(abs / 60);
+    const minutes = abs % 60;
+    return hours > 0 ? `${hours}h ${minutes}m ${sign}` : `${minutes}m ${sign}`;
+  };
+
+
 
   // derive the selection range depending on mode
   // returns an object: { type: 'day', ymd } | { type: 'week', startYmd, endYmd } | { type: 'month', year, monthIndex } or null
@@ -589,69 +627,81 @@ const onNativeDateChange = (event: any, selectedDate?: Date) => {
 
   //------------------------------------------------------------------//
   const onGenerateCSV = async () => {
-    if (!selectedRange) {
-      setDateError(lang.please_select_valid_date);
-      showErrorToast(lang.please_select_valid_date);
-      return;
-    }
-
     try {
-      // build structured data
-      const sheetData = entries.map(item => {
-        const u = item.user || {};
-        const wh = item.work || {};
-        const status = item.status === "noschedule" ? "No schedule" : item.status === "early" ? "Early" : "Late";
+      if (!todayRecords || todayRecords.length === 0) {
+        showErrorToast("No attendance records available to export");
+        return;
+      }
+
+      // Build structured data from the same array you display in UI
+      const sheetData = todayRecords.map((item) => {
+        const status =
+          item.status === "late"
+            ? "Late"
+            : item.status === "early"
+              ? "Early"
+              : "On time";
+
         return {
-          "Staff ID": u.id || "",
-          "Name": u.fullname || "",
-          "Position": u.position || "",
-          "Check In": wh.check_in || "",
-          "Check Out": wh.check_out || "",
-          "Date": wh.date || "",
+          "Name": item.name || "",
+          "Date": item.date || "",
+          "Scheduled Start": item.start || "",
+          "Scheduled End": item.end || "",
+          "Check In": item.checkIn || "",
+          "Check Out": item.checkOut || "",
           "Status": status,
-          "Diff": item.diffText || ""
+          "Diff": item.diffText || "",
         };
       });
 
-      // create workbook + worksheet
+      // ✅ Create workbook + worksheet
       const ws = XLSX.utils.json_to_sheet(sheetData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Attendance");
 
-      // prefer writing binary then converting via Buffer (more robust)
+      // Write binary Excel output
       const wboutBinary = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
-
-      // convert binary string to base64 using Buffer
       const buf = Buffer.from(wboutBinary, "binary");
       const wboutBase64 = buf.toString("base64");
 
-      // filename
+      // ✅ Filename based on mode
+      const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
       let filename = "attendance.xlsx";
-      if (selectedRange.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
-      else if (selectedRange.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
-      else filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
+      const now = new Date();
+
+      if (mode === "day" || mode === "now") {
+        const ymd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+        filename = `attendance_${ymd}.xlsx`;
+      } else if (mode === "week") {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay()); // Sunday
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        const startYmd = `${weekStart.getFullYear()}-${pad2(weekStart.getMonth() + 1)}-${pad2(weekStart.getDate())}`;
+        const endYmd = `${weekEnd.getFullYear()}-${pad2(weekEnd.getMonth() + 1)}-${pad2(weekEnd.getDate())}`;
+        filename = `attendance_${startYmd}_to_${endYmd}.xlsx`;
+      } else if (mode === "month") {
+        filename = `attendance_${now.getFullYear()}-${pad2(now.getMonth() + 1)}.xlsx`;
+      }
 
       const fileUri = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + filename;
 
-      // DEBUG: log EncodingType if available
-      console.log("FileSystem.EncodingType (debug):", (FileSystem as any).EncodingType);
-
-      // choose encoding fallback (legacy import should have EncodingType)
+      // Choose encoding fallback
       const enc: any =
         (FileSystem as any).EncodingType && (FileSystem as any).EncodingType.Base64
           ? (FileSystem as any).EncodingType.Base64
           : "base64";
 
-      // write file
+      // ✅ Write Excel file to device
       await FileSystem.writeAsStringAsync(fileUri, wboutBase64, { encoding: enc });
 
-      // share
+      // ✅ Share or save file
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           dialogTitle: filename,
         });
-        showSuccessToast(lang.csv_prepared || "Excel prepared");
+        showSuccessToast("✅ Excel file prepared successfully");
       } else {
         showSuccessToast("File saved to: " + fileUri);
       }
@@ -660,6 +710,7 @@ const onNativeDateChange = (event: any, selectedDate?: Date) => {
       showErrorToast("Failed to prepare Excel file");
     }
   };
+
 
 
   //---------------------------------------------------------------//
@@ -697,72 +748,77 @@ const onNativeDateChange = (event: any, selectedDate?: Date) => {
   };
 
   const fetchAttendanceData = useCallback(async () => {
-  try {
-    setLoading(true);
-    const res = await getAttendanceAllHistory();
-    setAttendanceData(res);
-    applyFilter(mode, res);
-  } catch (error) {
-    console.error("❌ Failed to fetch attendance history:", error);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-}, [mode]);
+    try {
+      setLoading(true);
+      const res = await getAttendanceAllHistory();
+      setAttendanceData(res);
+      applyFilter(mode, res);
+    } catch (error) {
+      console.error("❌ Failed to fetch attendance history:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [mode]);
 
-useEffect(() => {
-  fetchAttendanceData();
-}, [fetchAttendanceData]);
+  useEffect(() => {
+    fetchAttendanceData();
+  }, [fetchAttendanceData]);
 
 
+  const formatDateYMD = (d: Date) => {
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
 
-const applyFilter = (filterMode: "day" | "week" | "month", data: AttendanceHistoryItem[]) => {
-  const now = new Date();
-  let filtered: AttendanceHistoryItem[] = [];
 
-  if (filterMode === "day") {
-    const today = now.toISOString().split("T")[0];
-    filtered = data.filter((item) => item.In.startsWith(today));
-  } else if (filterMode === "week") {
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
-    filtered = data.filter((item) => new Date(item.In) >= weekStart);
-  } else {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    filtered = data.filter((item) => new Date(item.In) >= monthStart);
-  }
+  const applyFilter = (filterMode: "day" | "week" | "month", data: AttendanceHistoryItem[]) => {
+    const now = new Date();
+    let filtered: AttendanceHistoryItem[] = [];
+
+    if (filterMode === "day") {
+      const today = now.toISOString().split("T")[0];
+      filtered = data.filter((item) => item.In.startsWith(today));
+    } else if (filterMode === "week") {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - 7);
+      filtered = data.filter((item) => new Date(item.In) >= weekStart);
+    } else {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      filtered = data.filter((item) => new Date(item.In) >= monthStart);
+    }
 
 
     const mapped = filtered.map((item) => ({
-    work: {
-      id: item.id,
-      check_in: item.In,
-      check_out: item.Out,
-      date: item.In.split(" ")[0],
-    },
-    user: {
-      fullname: item.user?.username ?? "-",
-      position: item.user?.email ?? "",
-    },
-    schedule: {
-      branch_id: item.branch_id,
-    },
-    status: "normal",
-    diffText: item.Out ? calcDuration(item.In, item.Out) : "-",
-  }));
+      work: {
+        id: item.id,
+        check_in: item.In,
+        check_out: item.Out,
+        date: item.In.split(" ")[0],
+      },
+      user: {
+        fullname: item.user?.username ?? "-",
+        position: item.user?.email ?? "",
+      },
+      schedule: {
+        branch_id: item.branch_id,
+      },
+      status: "normal",
+      diffText: item.Out ? calcDuration(item.In, item.Out) : "-",
+    }));
 
-  setFilteredEntries(mapped);
-};
+    setFilteredEntries(mapped);
+  };
 
 
-const calcDuration = (inTime: string, outTime: string) => {
-  const inDate = new Date(inTime.replace(" ", "T"));
-  const outDate = new Date(outTime.replace(" ", "T"));
-  const diffMs = outDate.getTime() - inDate.getTime();
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
-  return `${hours}h ${minutes}m`;
-};
+  const calcDuration = (inTime: string, outTime: string) => {
+    const inDate = new Date(inTime.replace(" ", "T"));
+    const outDate = new Date(outTime.replace(" ", "T"));
+    const diffMs = outDate.getTime() - inDate.getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
+    return `${hours}h ${minutes}m`;
+  };
 
   // button background logic (active = primary, inactive = background)
   const nowBg = mode === "day" ? undefined : colors.background;
@@ -773,6 +829,426 @@ const calcDuration = (inTime: string, outTime: string) => {
   const nowTextColor = mode === "day" ? colors.secondary : colors.subtext;
   const weekTextColor = mode === "week" ? colors.secondary : colors.subtext;
   const monthTextColor = mode === "month" ? colors.secondary : colors.subtext;
+
+  const fetchAttendance = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getAttendanceAllHistory();
+      setAttendanceData(data);
+      applyFilter(mode, data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [fetchAttendance]);
+
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [version, mode, selectedDateObj]);
+
+  const filteredRecords = useMemo(() => {
+    if (!filteredEntries?.length || !selectedDateObj) return [];
+
+    const selectedDate = new Date(selectedDateObj);
+    const modeLower = mode?.toLowerCase?.() ?? "week";
+
+    let start = new Date(selectedDate);
+    let end = new Date(selectedDate);
+
+    // 🗓️ Determine start/end date range
+    if (modeLower === "week") {
+      const day = selectedDate.getDay(); // Sunday = 0
+      start.setDate(selectedDate.getDate() - day); // Go to previous Sunday
+      start.setHours(0, 0, 0, 0);
+
+      end.setDate(start.getDate() + 6); // Saturday
+      end.setHours(23, 59, 59, 999);
+    } else if (modeLower === "month") {
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (modeLower === "day") {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    console.log(`🕒 Filter range (${modeLower}): ${start.toISOString()} → ${end.toISOString()}`);
+
+    // 🧭 Filter records by selected date range
+    let results = filteredEntries.filter(({ work }) => {
+      const recordDate = new Date(work.date);
+      return recordDate >= start && recordDate <= end;
+    });
+
+    // 🔍 Apply search filter if query exists
+    if (query?.trim()) {
+      const lower = query.trim().toLowerCase();
+      results = results.filter(({ user }) => {
+        const name = user?.fullname?.toLowerCase?.() || "";
+        return name.includes(lower)
+      });
+    }
+
+    return results;
+  }, [filteredEntries, selectedDateObj, mode, query]);
+
+
+
+  useEffect(() => {
+    const fetchAttendanceData = async () => {
+      try {
+        const allAttendance = await getAttendanceAllHistory();
+        const todayYMD = toYMD(new Date());
+
+        const schedulesState = []; // e.g. useSelector((s) => s.schedules.list)
+        const usersState = []; // e.g. useSelector((s) => s.users.list)
+
+        const enriched = await Promise.all(
+          allAttendance.map(async (att) => {
+            // ✅ Get user ID correctly from multiple possible keys
+            const uid =
+              att.user?._id ??
+              att.user?.id ??
+              att.user?.userId ??
+              att.user_id ??
+              null;
+
+            // ✅ Find or fetch user profile
+            let userProfile =
+              usersState.find(
+                (u) =>
+                  String(u._id) === String(uid) ||
+                  String(u.id) === String(uid)
+              ) ?? null;
+
+            if (!userProfile && uid) {
+              try {
+                userProfile = await getUserById(uid);
+              } catch {
+                userProfile = null;
+              }
+            }
+
+            // ✅ Build proper display name (fullname → name → fallback)
+            const displayName =
+              userProfile?.fullname ??
+              userProfile?.name ??
+              att.user?.fullname ??
+              att.user?.name ??
+              "Unknown User";
+
+            // ✅ Match today's schedule for this user
+            const schedule =
+              schedulesState.find((s) => {
+                const empId =
+                  s.employee_id?._id ??
+                  s.employee_id?.id ??
+                  s.employee_id ??
+                  null;
+                const sDate = s.date ? toYMD(new Date(s.date)) : null;
+                return empId && uid && String(empId) === String(uid) && sDate === todayYMD;
+              }) ?? null;
+
+            // ✅ Determine status (early/late/noschedule)
+            let status: "early" | "late" | "noschedule" = "noschedule";
+            let diffText = "";
+
+            if (schedule?.start_time && att.In) {
+              const schedMin = hhmmToMinutes(schedule.start_time);
+              const inMin = datetimeToMinutes(att.In);
+              const diff = inMin - schedMin;
+              if (diff > 0) {
+                status = "late";
+                diffText = formatMinutesDiff(diff);
+              } else {
+                status = "early";
+                diffText = formatMinutesDiff(diff);
+              }
+            }
+
+            // ✅ Branch name logic
+            let branchNameToShow: string | null = null;
+
+            if (att.branch?.name) {
+              branchNameToShow = att.branch.name;
+            } else if (att.branch_id) {
+              try {
+                const b = await getBranchById(att.branch_id);
+                branchNameToShow = b?.name ?? "Unknown Branch";
+              } catch {
+                branchNameToShow = "Unknown Branch";
+              }
+            } else {
+              branchNameToShow = "Default Branch";
+            }
+
+            return {
+              userName: displayName, // ✅ fullname saved here
+              scheduledTime: schedule?.start_time ?? "N/A",
+              checkInTime: att.In ?? "N/A",
+              status,
+              diffText,
+              branchNameToShow,
+            };
+          })
+        );
+
+        // ✅ Filter only today's records
+        const todayRecords = enriched.filter((e) => {
+          const inDate = e.checkInTime ? toYMD(new Date(e.checkInTime)) : "";
+          return inDate === todayYMD;
+        });
+
+        // ✅ Pretty console output
+        if (todayRecords.length === 0) {
+          console.log("📭 No attendance records for today.");
+        } else {
+          todayRecords.forEach((item) => {
+            console.log(`
+📅 Today's Attendance Record:
+-----------------------------
+👤 User: ${userId}  
+🕒 Status: ${item.status.toUpperCase()} ${item.diffText ? `(${item.diffText})` : ""}
+📍 Scheduled Time: ${item.scheduledTime}
+✅ Check-in Time: ${new Date(item.checkInTime).toLocaleTimeString()}
+🏢 Branch: ${item.branchNameToShow || "Default Branch"}
+-----------------------------
+`);
+          });
+        }
+
+        setAttendanceData(todayRecords);
+      } catch (err) {
+        console.error("Error fetching attendance data:", err);
+      }
+    };
+
+    fetchAttendanceData();
+  }, []);
+
+
+  useEffect(() => {
+    const fetchUsersForRecords = async () => {
+      const updated = await Promise.all(
+        filteredRecords.map(async r => {
+          if (!r.user && r.work?.employee_id) {
+            const u = await getUserById(r.work.employee_id);
+            return { ...r, user: u };
+          }
+          return r;
+        })
+      );
+      setFilteredRecords(updated);
+    };
+    fetchUsersForRecords();
+  }, [filteredRecords]);
+
+  useEffect(() => {
+    const fetchTodaySchedules = async () => {
+      try {
+        const today = new Date();
+        const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+        const dateYMD = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+
+        const schedules = await getSchedulesForDate(dateYMD);
+
+        console.log("📅 Today’s Date:", dateYMD);
+        console.log("📋 Today’s Schedules:");
+
+        schedules.forEach((s, index) => {
+          const employeeName =
+            typeof s.employee_id === "object"
+              ? s.employee_id?.username || s.employee_id?.fullname || "Unknown"
+              : s.employee_id;
+
+          const start = s.start_time || "N/A";
+          const end = s.end_time || "N/A";
+
+          console.log(
+            `#${index + 1} 👤 ${employeeName}\n🕒 ${start} - ${end}\n`
+          );
+        });
+      } catch (err) {
+        console.error("fetchTodaySchedules error:", err);
+      }
+    };
+
+    fetchTodaySchedules();
+  }, []);
+
+  const [todayRecords, setTodayRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchAttendanceRecords = async () => {
+      setLoading(true); // 👈 Start spinner
+      try {
+        const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+        const formatYMD = (d: Date) =>
+          `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+        const allAttendance = await getAttendanceAllHistory();
+
+        // ✅ Determine base date
+        const baseDate = selectedDateObj ?? new Date(); // Use selected date if available
+
+        let startDate = new Date(baseDate);
+        let endDate = new Date(baseDate);
+
+        // ✅ Decide range based on mode
+        if (mode === "day") {
+          // Exact date (selected date)
+          startDate = new Date(baseDate);
+          endDate = new Date(baseDate);
+        } else if (mode === "week") {
+          const dayOfWeek = baseDate.getDay(); // Sunday=0
+          startDate = new Date(baseDate);
+          startDate.setDate(baseDate.getDate() - dayOfWeek); // Start of week (Sunday)
+          endDate = new Date(startDate);
+          endDate.setDate(startDate.getDate() + 6); // End of week (Saturday)
+        } else if (mode === "month") {
+          startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+          endDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+        }
+
+        const startYMD = formatYMD(startDate);
+        const endYMD = formatYMD(endDate);
+
+        console.log(`📅 Mode: ${mode}`);
+        console.log(`📆 Fetching attendance between ${startYMD} → ${endYMD}`);
+
+        // ✅ Filter attendance records by selected range
+        const filteredAttendances = allAttendance.filter((a) => {
+          if (!a?.In) return false;
+          const inDateStr = a.In.split(" ")[0].replace(/\//g, "-");
+          if (!inDateStr) return false;
+
+          const inDate = new Date(inDateStr);
+          const sDate = new Date(startYMD);
+          const eDate = new Date(endYMD);
+
+          sDate.setHours(0, 0, 0, 0);
+          eDate.setHours(23, 59, 59, 999);
+
+          return inDate >= sDate && inDate <= eDate;
+        });
+
+        if (filteredAttendances.length === 0) {
+          console.log("⚠️ No records found for this range.");
+        }
+
+        // ✅ Collect all unique attendance dates
+        const uniqueDates = [
+          ...new Set(filteredAttendances.map((a) => a.In.split(" ")[0])),
+        ];
+
+        // ✅ Fetch schedules for all those days
+        const scheduleArrays = await Promise.all(
+          uniqueDates.map((d) => getSchedulesForDate(d))
+        );
+        const allSchedules = scheduleArrays.flat();
+
+        // ✅ Prepare final list for UI
+        const finalList = filteredAttendances
+          .map((att) => {
+            const inDate = att.In.split(" ")[0].replace(/\//g, "-");
+            const checkIn = att.In.split(" ")[1];
+            const checkOut = att.Out ? att.Out.split(" ")[1] : null;
+
+            const schedule = allSchedules.find((s) => {
+              if (!s.employee_id) return false;
+              const schedId =
+                typeof s.employee_id === "object"
+                  ? s.employee_id._id
+                  : s.employee_id;
+              return schedId === att.user.id;
+            });
+
+            if (!schedule) return null;
+
+            const name =
+              att.user?.fullname ||
+              att.user?.username ||
+              (typeof schedule.employee_id === "object" &&
+                schedule.employee_id.username) ||
+              "Unknown";
+
+            const start = schedule.start_time || "N/A";
+            const end = schedule.end_time || "N/A";
+
+            // 🧮 Calculate early/late difference
+            let status = "no_schedule";
+            let diffText = "";
+
+            if (start && checkIn && start !== "N/A") {
+              const scheduleTime = new Date(`${inDate}T${start}:00`);
+              const checkInTime = new Date(`${inDate}T${checkIn}`);
+              const diffMinutes = Math.round((checkInTime - scheduleTime) / 60000);
+              const absDiff = Math.abs(diffMinutes);
+              const h = Math.floor(absDiff / 60);
+              const m = absDiff % 60;
+              const hhmm = `${h.toString().padStart(2, "0")}h ${m
+                .toString()
+                .padStart(2, "0")}m`; // 👈 Added space between h and m
+
+              if (diffMinutes > 1) {
+                status = "late";
+                diffText = hhmm;
+              } else if (diffMinutes < -1) {
+                status = "early";
+                diffText = hhmm;
+              } else {
+                status = "on_time";
+                diffText = "00h 00m";
+              }
+            }
+
+            console.log(`👤 ${name}
+📅 Date: ${inDate}
+🕒 Schedule: ${start} - ${end}
+✅ Check-in: ${checkIn}
+🏁 Check-out: ${checkOut || "N/A"}
+📋 Status: ${status === "late"
+                ? "⏰ Late"
+                : status === "early"
+                  ? "🕒 Early"
+                  : "✅ On time"
+              }
+📏 Difference: ${diffText}
+-----------------------------`);
+
+            return {
+              name,
+              date: inDate,
+              start,
+              end,
+              checkIn,
+              checkOut,
+              status,
+              diffText,
+            };
+          })
+          .filter(Boolean);
+
+        setTodayRecords(finalList);
+      } catch (err) {
+        console.error("fetchAttendanceRecords error:", err);
+      } finally {
+        setLoading(false); // 👈 Stop spinner
+      }
+    };
+
+    fetchAttendanceRecords();
+  }, [mode, selectedDateObj]);
+
+
+
+
 
   return (
     <View style={styles.outer}>
@@ -909,69 +1385,177 @@ const calcDuration = (inTime: string, outTime: string) => {
           <ScrollView
             style={{ marginBottom: '15%' }}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+              />
+            }
           >
             <View style={styles.details}>
-              {filteredEntries.length === 0 ? (
-                <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? "No records for selected week" : "No records for selected month")}</Text>
-              ) : null}
+              {loading ? (
+                // 🔹 Spinner while data loads
+                <View style={{ alignItems: "center", }}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={{ marginTop: 12, color: colors.text }}>
+                    Loading attendance records...
+                  </Text>
+                </View>
+              ) : todayRecords.length === 0 ? (
+                // 🔹 Message for no data
+                <Text style={styles.noDataText}>
+                  {mode === "day"
+                    ? "No records found for today"
+                    : mode === "week"
+                      ? "No records for selected week"
+                      : "No records for selected month"}
+                </Text>
+              ) : (
+                // 🔹 Render records
+                todayRecords.map(
+                  ({ name, start, end, checkIn, checkOut, status, date }, index) => {
+                    // ✅ Format 24h → 12h
+                    const formatTime12h = (time: string | null) => {
+                      if (!time || !time.includes(":")) return "";
+                      const [hourStr, minuteStr] = time.split(":");
+                      let hour = parseInt(hourStr, 10);
+                      const minute = parseInt(minuteStr, 10);
+                      const ampm = hour >= 12 ? "PM" : "AM";
+                      hour = hour % 12 || 12;
+                      return `${hour.toString().padStart(2, "0")}:${minute
+                        .toString()
+                        .padStart(2, "0")} ${ampm}`;
+                    };
 
-              {filteredEntries.map(({ work, user, schedule, status, diffText }) => {
-                const displayName = user ? `${user.fullname}` : "Unknown";
-                const position = user?.position ?? "";
-                const timeStr = `${formatTime12(work.check_in)} - ${formatTime12(work.check_out)}`;
-                const dateDisplay = formatYMDDisplay(work.date);
+                    // ✅ Format date → "Fri. Nov 7"
+                    const formatYMDDisplay = (dateStr: string) => {
+                      if (!dateStr) return "";
+                      const d = new Date(dateStr);
+                      if (isNaN(d.getTime())) return dateStr;
+                      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                      const months = [
+                        "Jan",
+                        "Feb",
+                        "Mar",
+                        "Apr",
+                        "May",
+                        "Jun",
+                        "Jul",
+                        "Aug",
+                        "Sep",
+                        "Oct",
+                        "Nov",
+                        "Dec",
+                      ];
+                      const dayName = days[d.getDay()];
+                      const monthName = months[d.getMonth()];
+                      const dateNum = d.getDate();
+                      return `${dayName}. ${monthName} ${dateNum}`;
+                    };
 
-                // Decide whether to show branch header: only when schedule branch exists and differs from admin's branch
-                const schedBranchId = schedule?.branch_id ?? null;
-                const showBranchHeader = schedBranchId && currentBranchId && schedBranchId !== currentBranchId;
-                const schedBranchName = showBranchHeader ? (getBranchById(schedBranchId)?.name || schedBranchId) : "";
+                    const dateDisplay = formatYMDDisplay(date);
 
-                return (
-                  <CartBox key={work.id} containerStyle={styles.detail_cartbox}>
-                    {showBranchHeader ? (
-                      <View style={styles.branchHeader}>
-                        <Image
-                          source={require("../../../assets/icons/branch.png")}
-                          style={styles.branchIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}>{schedBranchName}</Text>
-                      </View>
-                    ) : null}
+                    // ✅ Time difference (hhmm)
+                    const getTimeDifference = (scheduledTime: string, checkInTime: string) => {
+                      if (!scheduledTime || !checkInTime) return "";
+                      const [sH, sM] = scheduledTime.split(":").map(Number);
+                      const [cH, cM] = checkInTime.split(":").map(Number);
+                      const scheduleTotal = sH * 60 + sM;
+                      const checkInTotal = cH * 60 + cM;
+                      const diff = Math.abs(checkInTotal - scheduleTotal);
+                      const diffHours = Math.floor(diff / 60);
+                      const diffMinutes = diff % 60;
+                      return `${diffHours.toString().padStart(2, "0")}h ${diffMinutes
+                        .toString()
+                        .padStart(2, "0")}m`; // 🔹 Added space between h and m
+                    };
 
-                    <View style={{ flexDirection: "row", alignItems: "flex-start", }}>
-                      <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
-                        <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: "#eee", justifyContent: "center", alignItems: "center" }}>
-                          {/* placeholder image */}
-                          <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
+                    const scheduledTimeStr =
+                      start && end
+                        ? `${formatTime12h(start)} - ${formatTime12h(end)}`
+                        : "No Schedule";
+
+                    const actualInStr = checkIn ? formatTime12h(checkIn) : "N/A";
+                    const actualOutStr = checkOut ? formatTime12h(checkOut) : "N/A";
+                    const diffText = getTimeDifference(start, checkIn);
+
+                    const statusDisplay =
+                      status === "late"
+                        ? "Late"
+                        : status === "early"
+                          ? "Early"
+                          : status === "on_time"
+                            ? "On Time"
+                            : "No Schedule";
+
+                    return (
+                      <CartBox key={index} containerStyle={styles.detail_cartbox}>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "flex-start",
+                              flex: 1,
+                            }}
+                          >
+                            <View
+                              style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 20,
+                                overflow: "hidden",
+                                backgroundColor: "#eee",
+                                justifyContent: "center",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Image
+                                source={require("../../../assets/images/profile2.png")}
+                                style={styles.profileImage}
+                              />
+                            </View>
+
+                            <View style={styles.name_position}>
+                              <Text style={styles.name}>{name}</Text>
+                              <Text style={styles.time}>{scheduledTimeStr}</Text>
+                              <Text style={styles.time}>{dateDisplay}</Text>
+                            </View>
+                          </View>
+
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                            }}
+                          >
+                            <Text
+                              style={
+                                status === "late"
+                                  ? styles.status_late
+                                  : status === "early"
+                                    ? styles.status_early
+                                    : styles.time
+                              }
+                            >
+                              {statusDisplay}
+                            </Text>
+
+                            {diffText ? (
+                              <Text style={[styles.time1, { marginLeft: 8 }]}>
+                                {diffText}
+                              </Text>
+                            ) : null}
+                          </View>
                         </View>
-
-                        <View style={styles.name_position}>
-                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
-                          <Text style={styles.time}>{timeStr}</Text>
-                          <Text style={styles.time}>{dateDisplay}</Text>
-                        </View>
-                      </View>
-
-                      <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-                        {status === "late" ? (
-                          <Text style={styles.status_late}>{lang.late}</Text>
-                        ) : status === "early" ? (
-                          <Text style={styles.status_early}>{lang.early}</Text>
-                        ) : (
-                          <Text style={styles.status_noschedule}>{lang.no_schedule}</Text>
-                        )}
-                        {status !== "noschedule" ? (
-                          <Text style={styles.duration}>{diffText}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  </CartBox>
-                );
-              })}
+                      </CartBox>
+                    );
+                  }
+                )
+              )}
             </View>
           </ScrollView>
+
         </View>
       </View>
       {showDatePicker && (
@@ -1010,29 +1594,35 @@ const styles = StyleSheet.create({
   name_position: { marginLeft: 10, width: "65%" },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
-  duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8 },
+  time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
+  duration: { color: colors.primary, fontWeight: fonts.weight.medium as any, fontSize: 14, marginLeft: 8 },
   status_early: {
-    fontWeight: fonts.weight.regular as any,
-    color:colors.status_early,
+    fontWeight: fonts.weight.medium as any,
+    color: colors.status_early, // dark green text
     fontSize: fonts.size.xs,
-    paddingVertical: 2,
-    paddingHorizontal: 12,
-    backgroundColor: colors.status_early_bg,
-    borderRadius: 10,
-    marginRight: 7,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
+    backgroundColor: colors.status_early_bg, // light green background
+    borderRadius: 20, // makes it pill-shaped
     textAlign: "center",
+    overflow: "hidden",
+    alignSelf: "flex-start",
   },
+
   status_late: {
-    fontWeight: fonts.weight.regular as any,
-    color: colors.status_late,
+    fontWeight: fonts.weight.medium as any,
+    color: colors.status_late, // dark orange/red text
     fontSize: fonts.size.xs,
-    paddingVertical: 2,
-    paddingHorizontal: 12,
-    backgroundColor: colors.status_late_bg,
-    borderRadius: 10,
-    marginRight: 7,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
+    backgroundColor: colors.status_late_bg, // light orange/red background
+    borderRadius: 20, // pill shape
     textAlign: "center",
+    marginRight: 7,
+    overflow: "hidden",
+    alignSelf: "flex-start",
   },
+
   status_noschedule: {
     fontWeight: fonts.weight.regular as any,
     color: colors.subtext,
