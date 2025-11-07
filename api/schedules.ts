@@ -72,3 +72,24 @@ export const getEmployeeSchedules = async (employee_id: string, startDate: strin
   });
   return res.data.schedules as EmployeeSchedule[];
 };
+
+// src/api/schedule.ts (append near other exports)
+export const postSchedulesBulk = async (
+  employee_id: string,
+  branch_id: string,
+  schedules: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }>
+) => {
+  try {
+    const payload = {
+      employee_id: employee_id || "",
+      branch_id: branch_id || "",
+      schedules,
+    };
+    const res = await axiosInstance.post("/schedule/bulk", payload);
+    return res.data;
+  } catch (err: any) {
+    console.error("postSchedulesBulk error", err?.response?.data ?? err);
+    throw err?.response?.data || err;
+  }
+};
+

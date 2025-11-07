@@ -1,5 +1,4 @@
 // screens/admin/main/more/AddScheduleScreen.tsx
-
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -19,10 +18,10 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-// API imports (real data)
 import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; // fetchUsers returns { users, page, ... }
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, getSchedulesForDate, ScheduleItem } from "../../../../api/schedules";
+import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk } from "../../../../api/schedules";
+
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
 import CartBox from "../../../../components/CartBox";
@@ -33,7 +32,6 @@ import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
 
-// --- Local "normalized" types used by this screen ---
 type LocalUser = {
   id: string;
   fullname: string;
@@ -59,20 +57,15 @@ export default function AddScheduleScreen(props: any) {
   const langId = propLangId || routeLangId || "en";
   const lang = (translations as any)[langId] || (translations as any)["en"];
   const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
-
-  // NOTE: screenBranchId is taken from navigation params (the previous screen passes branchId)
   const screenBranchId: string = (route.params?.branch_id as string) ?? (route.params?.branchId as string) ?? "";
-
   // loading states
   const [loading, setLoading] = useState(false);
   const [effectiveBranchId, setEffectiveBranchId] = useState<string>(""); // <- NEW
-
   // Local data arrays (start empty, will be populated from API)
   const [localUsers, setLocalUsers] = useState<LocalUser[]>([]);
   const [localBranches, setLocalBranches] = useState<LocalBranch[]>([]);
   // schedules will be fetched from api/schedules.ts
   const [localSchedules, setLocalSchedules] = useState<Array<any>>([]);
-
   // derived schedules map
   const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, any[]>>({});
   // UI state
@@ -95,17 +88,12 @@ export default function AddScheduleScreen(props: any) {
   const [durationHours, setDurationHours] = useState<string>("");
   const [durationError, setDurationError] = useState<string>("");
   const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
-
-
   const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update"; schedule: any }>>([]);
-
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
- const [weekOffset, setWeekOffset] = useState<number>(0); 
+  const [weekOffset, setWeekOffset] = useState<number>(0);
 
-  // ------------------------
   // Utility: normalize API shapes to the local shape this screen expects
-  // ------------------------
   const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
     return users.map((u) => {
       const id = (u as any)._id ?? (u as any).id ?? "";
@@ -114,11 +102,9 @@ export default function AddScheduleScreen(props: any) {
       return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
     });
   };
-
   const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
     return branches.map((b) => ({ id: (b as any)._id ?? (b as any).id ?? "", name: (b as any).name ?? (b as any).branch_name ?? "", raw: b }));
   };
-
   const normalizeSchedules = (schedules: ScheduleItem[] = []): any[] => {
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     const computeFromStartAndDuration = (start: string, dur: number) => {
@@ -151,7 +137,6 @@ export default function AddScheduleScreen(props: any) {
 
       const apiEnd = (s as any).end_time ?? (s as any).end ?? '';
       const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
-
       // Convert API date (ISO) to local Y-M-D so it matches weekDates derived from local timezone
       const dateYmd = toLocalYmd((s as any).date ?? (s as any).day ?? '');
 
@@ -167,13 +152,11 @@ export default function AddScheduleScreen(props: any) {
       } as any;
     });
   };
-
   const loadInitialData = async () => {
     setLoading(true);
     try {
       // Determine branch: prefer route param (screenBranchId), otherwise use logged-in user's profile branch
       let branchToUse: string | undefined = screenBranchId || undefined;
-
       try {
         const profile = await getProfile();
         const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?._id ?? undefined;
@@ -223,7 +206,6 @@ export default function AddScheduleScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screenBranchId]);
 
-  // keep schedules-by-date map up to date when schedules change
   useEffect(() => {
     if (!localSchedules?.length) {
       setLocalSchedulesByDate({});
@@ -252,7 +234,6 @@ export default function AddScheduleScreen(props: any) {
       setLoading(false);
     }
   };
-
   // --- helpers (time formatting, pickers, validators) ---
   const formatTime12 = (hhmmss: string) => {
     if (!hhmmss) return "";
@@ -274,11 +255,8 @@ export default function AddScheduleScreen(props: any) {
     now.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
     return now;
   };
-
   const dateToYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  // WEEK helper
-
-const getWeekDates = (offsetWeeks = 0) => {
+  const getWeekDates = (offsetWeeks = 0) => {
     const base = new Date();
     if (offsetWeeks && Number.isFinite(offsetWeeks)) {
       base.setDate(base.getDate() + offsetWeeks * 7);
@@ -299,6 +277,7 @@ const getWeekDates = (offsetWeeks = 0) => {
 
   // derive weekDates from current offset
   const weekDates = getWeekDates(weekOffset);
+  const displayWeekDates = getWeekDates(0);
 
   // computeEndTime, isBeforeToday, onAddSchedule, openAddModalForDate, etc. — keep unchanged logic but adapted to normalized fields
   const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
@@ -314,8 +293,42 @@ const getWeekDates = (offsetWeeks = 0) => {
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
   };
+  // return "HH:MM" trimmed (input may be "HH:MM:SS" or "HH:MM")
+  const timeToHHMM = (t: string) => {
+    if (!t) return "";
+    const parts = String(t).split(":");
+    if (parts.length >= 2) return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+    return t;
+  };
 
-
+  const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayOfWeekFromYmd = (ymd: string) => {
+    try {
+      const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
+      const dt = new Date(y, m - 1, d);
+      return WEEKDAY_FULL[dt.getDay()] || "";
+    } catch (e) {
+      return "";
+    }
+  };
+  const computeDurationFromStartEnd = (start: string, end: string): number => {
+    if (!start || !end) return 0;
+    const toSeconds = (t: string) => {
+      const parts = t.split(':').map((p) => parseInt(p, 10) || 0);
+      const hh = parts[0] || 0;
+      const mm = parts[1] || 0;
+      const ss = parts[2] || 0;
+      return hh * 3600 + mm * 60 + ss;
+    };
+    const sSec = toSeconds(start);
+    const eSec = toSeconds(end);
+    let diff = eSec - sSec;
+    // if negative, assume end is next day (wrap midnight)
+    if (diff < 0) diff += 24 * 3600;
+    const hours = diff / 3600;
+    // round to 2 decimals (e.g., 3.5 => 3.5; 3.3333 => 3.33)
+    return Math.round(hours * 100) / 100;
+  };
   const isBeforeToday = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
     const dt = new Date(y, m - 1, d);
@@ -324,7 +337,6 @@ const getWeekDates = (offsetWeeks = 0) => {
     today.setHours(0, 0, 0, 0);
     return dt.getTime() < today.getTime();
   };
-
   const onAddSchedule = () => {
     let hasError = false;
     if (!selectedStaffId) {
@@ -484,7 +496,18 @@ const getWeekDates = (offsetWeeks = 0) => {
 
     if (staffSchedule) {
       setTimeFrom(staffSchedule.start_time || "");
-      setDurationHours(String(staffSchedule.duration ?? ""));
+      // prefer explicit duration if provided; otherwise compute from start & end
+      const durFromApi = staffSchedule.duration ?? null;
+      const endFromApi = staffSchedule.end_time ?? staffSchedule.end ?? "";
+      let finalDuration = 0;
+      if (typeof durFromApi === "number" && !isNaN(durFromApi) && durFromApi > 0) {
+        finalDuration = Number(durFromApi);
+      } else if (endFromApi && staffSchedule.start_time) {
+        finalDuration = computeDurationFromStartEnd(staffSchedule.start_time, endFromApi);
+      } else {
+        finalDuration = 0;
+      }
+      setDurationHours(finalDuration ? String(finalDuration) : "");
       const br = localBranches.find((b) => b.id === staffSchedule.branch_id);
       if (br) {
         setSelectedBranch(br.name);
@@ -507,7 +530,6 @@ const getWeekDates = (offsetWeeks = 0) => {
         }
       }
     }
-
     setAddScheduleModalVisible(true);
   };
 
@@ -538,103 +560,167 @@ const getWeekDates = (offsetWeeks = 0) => {
     setModalEditingId(editingId || null);
   }, [route.params?.id, localSchedules, localUsers, localBranches]);
 
-const handleStaffPick = async (u: LocalUser) => {
-  try {
-    setSelectedStaff(u.fullname);
-    setSelectedStaffId(u.id);
-    setStaffError("");
-    setStaffFilterOpen(false);
-    setStaffInputLayout(null);
+  const handleStaffPick = async (u: LocalUser) => {
+    try {
+      setSelectedStaff(u.fullname);
+      setSelectedStaffId(u.id);
+      setStaffError("");
+      setStaffFilterOpen(false);
+      setStaffInputLayout(null);
 
-    // set default branch
-    const br = localBranches.find((b) => b.id === u.branch_id);
-    if (br) {
-      setSelectedBranch(br.name);
-      setSelectedBranchId(br.id);
-    } else {
-      setSelectedBranch("");
-      setSelectedBranchId(null);
-    }
+      const br = localBranches.find((b) => b.id === u.branch_id);
+      if (br) {
+        setSelectedBranch(br.name);
+        setSelectedBranchId(br.id);
+      } else {
+        setSelectedBranch("");
+        setSelectedBranchId(null);
+      }
+      if (!u.id) return;
 
-    if (!u.id) return;
+      // unwrap various API shapes
+      const unwrapSchedules = (resp: any): any[] => {
+        if (!resp) return [];
+        if (Array.isArray(resp)) return resp;
+        if (Array.isArray(resp.schedules)) return resp.schedules;
+        if (resp.data && Array.isArray(resp.data.schedules)) return resp.data.schedules;
+        return [];
+      };
 
-    // compute current-week YMD set (based on current weekOffset)
-    const currentWeekDates = weekDates.map((d) => dateToYMD(d));
-    const currentWeekSet = new Set(currentWeekDates);
+      const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const toLocalYmdFromIso = (iso?: string) => {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "";
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+      };
 
-    const currentStart = currentWeekDates[0];
-    const currentEnd = currentWeekDates[currentWeekDates.length - 1];
+      // how many previous weeks to probe (0=current only, 1=current+prev, 2=current+prev+prev2, ...)
+      const maxLookbackWeeks = 4;
+      // fetch raw items for a week offset, filter to that week's local YMDs and return normalized array
+      const fetchWeekForOffset = async (offsetWeeks: number) => {
+        const weekDates = getWeekDates(offsetWeeks).map((d) => dateToYMD(d));
+        const start = weekDates[0];
+        const end = weekDates[weekDates.length - 1];
+        console.log(`[DEBUG] fetchWeekForOffset offset=${offsetWeeks} start=${start} end=${end}`);
 
-    // 1) fetch schedules (API may return wide range)
-    const schedules = await getEmployeeSchedules(u.id, currentStart, currentEnd);
-    let fetchedNormalized = normalizeSchedules(Array.isArray(schedules) ? schedules : []);
+        const resp = await getEmployeeSchedules(u.id, start, end);
+        console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
 
-    console.log('[DEBUG] handleStaffPick: raw fetchedNormalized length=', fetchedNormalized.length);
+        const rawArr = unwrapSchedules(resp) || [];
+        // debug list: id, iso, localYmd
+        const debugList = rawArr.map((r: any) => {
+          const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
+          return { id: r?._id ?? r?.id, iso, localYmd: toLocalYmdFromIso(iso) };
+        });
+        console.log(`[DEBUG] raw items (id, iso, localYmd) for offset=${offsetWeeks}`, debugList);
 
-    // 2) filter to only items that fall inside the CURRENT week (local YMD)
-    const currentWeekItems = (fetchedNormalized || []).filter((s) => s && s.date && currentWeekSet.has(s.date));
-    console.log('[DEBUG] handleStaffPick: currentWeekItems.length=', currentWeekItems.length, 'currentWeekDates=', currentWeekDates);
+        // filter raw arr by localYmd inside [start..end]
+        const filtered = rawArr.filter((r: any) => {
+          const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
+          const localYmd = toLocalYmdFromIso(iso);
+          if (!localYmd) return false;
+          return localYmd >= start && localYmd <= end;
+        });
+        console.log(`[DEBUG] filtered.length for offset=${offsetWeeks} =`, filtered.length, "ids:", filtered.map((f: any) => f._id ?? f.id));
+        // normalize and return
+        return normalizeSchedules(filtered || []);
+      };
 
-    // 3) if none in current week, try previous week (and if found, switch weekOffset)
-    if (!currentWeekItems || currentWeekItems.length === 0) {
-      const prevWeekDates = getWeekDates(weekOffset - 1).map((d) => dateToYMD(d));
-      const prevStart = prevWeekDates[0];
-      const prevEnd = prevWeekDates[prevWeekDates.length - 1];
+      // QUICK LOCAL CHECK: if localSchedulesByDate already contains current-week entries for this user, use them
+      const currentWeekDates = getWeekDates(0).map((d) => dateToYMD(d));
+      let localHasCurrent = false;
+      for (const ymd of currentWeekDates) {
+        const arr = localSchedulesByDate[ymd] || [];
+        if (arr.some((s) => String(s.user_id) === String(u.id))) {
+          localHasCurrent = true;
+          break;
+        }
+      }
+      if (localHasCurrent) {
+        console.log("[DEBUG] handleStaffPick: using local current-week schedules (no fetch)");
+        setWeekOffset(0);
+        console.info(`[INFO] Showing current week schedules for ${u.id} (from local state)`);
+        return;
+      }
+
+      // search current then older weeks
+      let found = false;
+      let chosenOffset = 0;
+      let finalSchedulesNormalized: any[] = [];
 
       try {
-        const prevSchedules = await getEmployeeSchedules(u.id, prevStart, prevEnd);
-        const prevNormalized = normalizeSchedules(Array.isArray(prevSchedules) ? prevSchedules : []);
-        const prevWeekItems = (prevNormalized || []).filter((s) => s && s.date && prevWeekDates.includes(s.date));
-
-        console.log('[DEBUG] handleStaffPick: prevWeekItems.length=', prevWeekItems.length, 'prevWeekDates=', prevWeekDates);
-
-        if (prevWeekItems && prevWeekItems.length > 0) {
-          // switch UI to previous week so tiles show those dates
-          setWeekOffset((o) => o - 1);
-          // use prevNormalized as the fetchedNormalized for merging (or keep both)
-          fetchedNormalized = prevNormalized;
+        const cur = await fetchWeekForOffset(0);
+        if (cur.length > 0) {
+          found = true;
+          chosenOffset = 0;
+          finalSchedulesNormalized = cur;
         } else {
-          // no prev-week items either -> keep weekOffset as-is (show current week with no schedules)
-          console.log('[DEBUG] handleStaffPick: no schedules in current or previous week');
+          console.log("[DEBUG] no current-week remote items");
         }
-      } catch (prevErr) {
-        console.warn('[WARN] handleStaffPick: failed prev week fetch', prevErr);
+      } catch (e) {
+        console.warn("[WARN] fetch current week failed", e);
       }
-    } else {
-      // current week had items — ensure UI shows current week
-      if (weekOffset !== 0) setWeekOffset(0);
+
+      if (!found) {
+        for (let i = 1; i <= maxLookbackWeeks; i++) {
+          try {
+            const off = -i;
+            const items = await fetchWeekForOffset(off);
+            if (items.length > 0) {
+              found = true;
+              chosenOffset = off;
+              finalSchedulesNormalized = items;
+              break;
+            }
+          } catch (e) {
+            console.warn(`[WARN] fetch offset ${-i} failed`, e);
+          }
+        }
+      }
+
+      // Decide weekOffset first so UI will re-render to that week
+      if (found) {
+        console.log(`[DEBUG] handleStaffPick: found schedules at offset ${chosenOffset}`);
+        setWeekOffset(chosenOffset);
+        console.info(`[INFO] Showing ${chosenOffset === 0 ? "current" : `week offset ${chosenOffset}`} schedules for ${u.id}`);
+      } else {
+        // nothing found -> stay current (empty)
+        setWeekOffset(0);
+        console.info(`[INFO] No schedules found within ${maxLookbackWeeks} weeks; staying on current week for ${u.id}`);
+      }
+
+      // MERGE: normalize existing to ensure consistent shape, then override by finalSchedulesNormalized
+      setLocalSchedules((existing) => {
+        // re-normalize existing items to get consistent { id, user_id, date, ... }
+        const existingNormalized = normalizeSchedules((existing || []).map((e: any) => e.raw ?? e));
+        const byId: Record<string, any> = {};
+        existingNormalized.forEach((s) => {
+          if (s && s.id) byId[s.id] = s;
+        });
+        (finalSchedulesNormalized || []).forEach((s) => {
+          if (s && s.id) byId[s.id] = s;
+        });
+        const mergedNormalized = Object.values(byId);
+
+        // rebuild map keyed by local YMD
+        const map: Record<string, any[]> = {};
+        mergedNormalized.forEach((s) => {
+          if (!s?.date) return;
+          const dateKey = s.date; // already YYYY-MM-DD from normalizeSchedules
+          if (!map[dateKey]) map[dateKey] = [];
+          map[dateKey].push(s);
+        });
+
+        setLocalSchedulesByDate(map);
+        console.log("[DEBUG] handleStaffPick: merged total =", mergedNormalized.length, "dateKeys =", Object.keys(map));
+        return mergedNormalized;
+
+      });
+    } catch (err) {
+      console.error("[ERROR] handleStaffPick unexpected error", err);
     }
-
-    // 4) merge fetchedNormalized into localSchedules and rebuild date map
-    setLocalSchedules((existing) => {
-      const byId: Record<string, any> = {};
-      (existing || []).forEach((s) => {
-        if (s && s.id) byId[String(s.id)] = s;
-      });
-      (fetchedNormalized || []).forEach((s) => {
-        if (s && s.id) byId[String(s.id)] = s;
-      });
-      const merged = Object.values(byId);
-
-      const map: Record<string, any[]> = {};
-      merged.forEach((s) => {
-        if (!s?.date) return;
-        const dateKey = s.date; // normalizeSchedules sets YYYY-MM-DD (local)
-        if (!map[dateKey]) map[dateKey] = [];
-        map[dateKey].push(s);
-      });
-
-      setLocalSchedulesByDate(map);
-      console.log('[DEBUG] handleStaffPick: merged total=', merged.length, 'dateKeys=', Object.keys(map).slice(0, 30));
-      return merged;
-    });
-
-  } catch (err) {
-    console.error('[ERROR] handleStaffPick unexpected error', err);
-  }
-};
-
-
+  };
 
   const onFooterSaveAndBack = () => {
     if (changeLog.length === 0) {
@@ -660,7 +746,7 @@ const handleStaffPick = async (u: LocalUser) => {
   const screenW = Dimensions.get("window").width;
   const employeeList = localUsers.filter((u) => {
     const role = (u.role || "").toLowerCase();
-    // Roles we consider "staff" for scheduling purposes. Extend if your backend uses other role names.
+
     const staffRoles = new Set(["employee", "user", "staff", "cashier", "worker", "clerk", "attendant"]);
     if (!staffRoles.has(role)) return false;
     if (effectiveBranchId) {
@@ -763,23 +849,27 @@ const handleStaffPick = async (u: LocalUser) => {
             />
           </View>
           <View style={{ marginTop: 0 }}>
-            {weekDates.map((d) => {
-              const ymd = dateToYMD(d);
-              const dateNum = d.getDate();
-              const wk = WEEKDAYS[d.getDay()];
-              const daySchedules = localSchedulesByDate[ymd] || [];
+            {Array.from({ length: 7 }).map((_, idx) => {
+              const displayD = displayWeekDates[idx]; // current-week date for showing number & weekday
+              const dataD = weekDates[idx];           // schedule lookup date (may be offset week)
+              const displayYmd = dateToYMD(displayD); // for UI/expired logic
+              const ymd = dateToYMD(dataD);           // for schedule lookup
+              const dateNum = displayD.getDate();
+              const wk = WEEKDAYS[displayD.getDay()];
+              const daySchedules = localSchedulesByDate[ymd] || []; // 查找 schedule by data-week ymd
               const staffSchedule = selectedStaffId ? daySchedules.find((s) => s.user_id === selectedStaffId) : null;
               const hasScheduleForStaff = !!staffSchedule;
-              const expired = isBeforeToday(ymd);
+              const expired = isBeforeToday(displayYmd); // expired 判定 use display date
               const displayTime = hasScheduleForStaff
                 ? `${formatTime12(staffSchedule.start_time)} – ${formatTime12(staffSchedule.end_time || computeEndTime(staffSchedule.start_time, staffSchedule.duration))}`
                 : null;
+
               const userObj = localUsers.find((uu) => uu.id === selectedStaffId) || null;
               const branchNameForSchedule = hasScheduleForStaff && userObj && staffSchedule.branch_id && (staffSchedule.branch_id !== userObj.branch_id)
                 ? (localBranches.find((b) => b.id === staffSchedule.branch_id)?.name ?? "")
                 : "";
               return (
-                <View key={ymd} style={styles.each_day}>
+                <View key={displayYmd} style={styles.each_day}>
                   <CartBox
                     width="auto"
                     containerStyle={[styles.day, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}
@@ -790,7 +880,7 @@ const handleStaffPick = async (u: LocalUser) => {
                   <TouchableOpacity
                     style={{ flex: 1 }}
                     activeOpacity={expired ? 1 : 0.8}
-                    onPress={() => { if (expired) return; openAddModalForDate(ymd); }}
+                    onPress={() => { if (expired) return; openAddModalForDate(displayYmd); }} // open modal for the displayed (current-week) date
                   >
                     <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
@@ -815,17 +905,15 @@ const handleStaffPick = async (u: LocalUser) => {
               );
             })}
           </View>
-
           <View style={{ height: 0 }} />
         </View>
       </ScrollView>
       <View style={styles.footerButtonWrap}>
         <Button1 text={route.params?.id ? (lang.Save_Changes) : (lang.Add_Schedule)} width={"100%"} onPress={onFooterSaveAndBack} />
       </View>
-
-      {/* Add Schedule Modal (unchanged except branch suggestion overlay uses normalized branch data) */}
       <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
-        <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
+        <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); setModalEditingId(null); }} pointerEvents="auto">
+
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{modalEditingId ? lang.Edit_Schedule : lang.Add_Schedule}</Text>
@@ -858,7 +946,8 @@ const handleStaffPick = async (u: LocalUser) => {
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}
                     onRightIconPress={() => {
-                      setBranchFilterOpen((s) => !s);
+                      setSelectedBranch("");
+                      setBranchFilterOpen(true);
                       setTimeout(() => {
                         if (!branchInputLayout) {
                           const handle = findNodeHandle(branchInputWrapperRef.current);
@@ -948,7 +1037,6 @@ const handleStaffPick = async (u: LocalUser) => {
           onChange={onNativeTimeChange}
         />
       )}
-
       {staffFilterOpen && staffInputLayout && (
         <Pressable
           style={styles.overlayBackdrop}
@@ -997,19 +1085,71 @@ const handleStaffPick = async (u: LocalUser) => {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
           <Button1
             text={lang.yes || "Yes"}
-            onPress={() => {
+            onPress={async () => {
               setSaveConfirmVisible(false);
-              try {
-                navigation.navigate("WorkScheduleScreen" as any, { userId, langId, changes: changeLog });
-              } catch (e) {
-                console.warn("navigate to WorkScheduleScreen failed", e);
+              const adds = (changeLog || []).filter((c) => c.type === "add").map((c) => c.schedule);
+              if (!adds || adds.length === 0) {
+                showErrorToast(lang.no_changes_to_save || "No changes to save");
+                return;
               }
-              navigation.goBack();
+              const employeeIdToUse = selectedStaffId || userId || (adds[0]?.user_id ?? "");
+              const branchIdToUse = selectedBranchId || effectiveBranchId || (adds[0]?.branch_id ?? "");
+              const schedulesPayload: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }> = [];
+
+              for (const s of adds) {
+                const dateYmd = s.date; // expect YYYY-MM-DD already
+                if (!dateYmd) continue;
+
+                const day_of_week = dayOfWeekFromYmd(dateYmd);
+                const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
+                const start_time = timeToHHMM(startRaw);
+
+                // Determine end_time: prefer explicit end_time, otherwise compute from duration
+                let endRaw = s.end_time ?? s.end ?? "";
+                if (!endRaw && s.duration && startRaw) {
+                  // computeEndTime returns HH:MM:SS — trim to HH:MM
+                  const computed = computeEndTime(startRaw, Number(s.duration));
+                  endRaw = computed;
+                }
+                const end_time = timeToHHMM(endRaw);
+
+                // Push only if we have start_time and end_time (end_time may be empty if not computable)
+                schedulesPayload.push({
+                  date: dateYmd,
+                  day_of_week: day_of_week,
+                  start_time: start_time || "",
+                  end_time: end_time || "",
+                });
+              }
+
+              if (schedulesPayload.length === 0) {
+                showErrorToast("No valid schedules to create");
+                return;
+              }
+
+              try {
+                setLoading(true);
+                const resp = await postSchedulesBulk(employeeIdToUse, branchIdToUse, schedulesPayload);
+                // success feedback
+                showSuccessToast(lang.schedule_added || "Schedules created");
+                navigation.navigate("Footer_A", {
+                  selectedTab: "WorkSchedule",
+                  userId,
+                  langId,
+                  toastMessage: "Schedules created successfully",
+                });
+              } catch (err: any) {
+                console.error("Failed to postSchedulesBulk", err);
+                showErrorToast(lang.failed_to_save || "Failed to save schedules");
+              } finally {
+                setLoading(false);
+              }
             }}
             backgroundColor={colors.primary}
             width={'48%'}
             textStyle={{ color: colors.secondary }}
           />
+
           <Button1
             text={lang.no || "No"}
             onPress={() => setSaveConfirmVisible(false)}
@@ -1022,7 +1162,6 @@ const handleStaffPick = async (u: LocalUser) => {
     </View>
   );
 }
-
 /* Styles */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
@@ -1033,8 +1172,8 @@ const styles = StyleSheet.create({
   groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular as any, fontSize: fonts.size.s, marginTop: 6 },
 
   /* modal styles reused from your other screens */
-  modalOverlay: { flex: 1, justifyContent: "flex-end" },
-  modalOverlayAbsolute: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
+  modalOverlay: { flex: 1, justifyContent: "flex-end", },
+  modalOverlayAbsolute: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, },
   modalContainer: {
     backgroundColor: colors.secondary,
     borderTopLeftRadius: 30,
@@ -1066,6 +1205,7 @@ const styles = StyleSheet.create({
   overlayBackdrop: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
   overlayContainer: {
     position: "absolute",
+    height: "80%",
     backgroundColor: colors.secondary,
     borderRadius: 8,
     borderWidth: 1,
