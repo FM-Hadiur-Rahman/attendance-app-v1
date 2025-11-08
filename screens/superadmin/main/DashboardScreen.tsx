@@ -23,6 +23,7 @@ import { getUsers, ProfileUser } from '../../../api/profile';
 import { getAllBranches, Branch } from '../../../api/Branchs';
 import { getSchedulesForDate, ScheduleItem } from '../../../api/schedules';
 import { clearAllAuthData } from '../../../api/auth/authToken';
+import { getAttendanceAllHistory, AttendanceHistoryItem } from '../../../api/attendanceAllHistory';
 
 import translations from "../../../assets/translations.json";
 import CartBox from '../../../components/CartBox';
@@ -59,6 +60,52 @@ const DashboardScreen = (props: any) => {
   const [branchesState, setBranchesState] = useState<Branch[]>([]);
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
 
+  const [attendanceAll, setAttendanceAll] = useState<AttendanceHistoryItem[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false);
+  const [branchAttendanceCounts, setBranchAttendanceCounts] = useState<Record<string, number>>({});
+  const [totalAttendanceCount, setTotalAttendanceCount] = useState<number>(0);
+
+  // ADD these helper + fetch function
+
+  const computeAttendanceCounts = (all: AttendanceHistoryItem[]) => {
+    const counts: Record<string, number> = {};
+    const now = Date.now();
+
+    (all || []).forEach((a) => {
+      const branchId = a.branch?.id ?? a.branch_id ?? null;
+      if (!branchId) return;
+      if (!a.In) return;
+
+      // normalize and ensure same-day and not future
+      const inDt = new Date(String(a.In).replace(' ', 'T'));
+      const inYMD = toYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
+      if (inYMD !== todayYMD) return;
+      if (inDt.getTime() > now) return;
+
+      counts[String(branchId)] = (counts[String(branchId)] || 0) + 1;
+    });
+
+    const total = Object.values(counts).reduce((s, v) => s + (v || 0), 0);
+    return { counts, total };
+  };
+
+  const fetchAttendanceCounts = async () => {
+    setAttendanceLoading(true);
+    try {
+      const all = await getAttendanceAllHistory();
+      setAttendanceAll(all || []);
+      const { counts, total } = computeAttendanceCounts(all || []);
+      setBranchAttendanceCounts(counts);
+      setTotalAttendanceCount(total);
+    } catch (e) {
+      console.warn('fetchAttendanceCounts failed', e);
+      setBranchAttendanceCounts({});
+      setTotalAttendanceCount(0);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (propLangId && propLangId !== selectedLanguage) {
       setSelectedLanguage(propLangId as LangId);
@@ -88,6 +135,9 @@ const DashboardScreen = (props: any) => {
       setBranchesState(branchesRes ?? []);
       setUsersState(usersRes ?? []);
       setSchedulesState(schedulesRes ?? []);
+      // <-- NEW: load attendance counts AFTER we've loaded branches/users/schedules
+      await fetchAttendanceCounts();
+
     } catch (err) {
       console.warn('Dashboard loadData failed', err);
     } finally {
@@ -206,7 +256,8 @@ const DashboardScreen = (props: any) => {
               />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            <Text style={styles.total_count}>{totalStaff}</Text>
+            {/* <Text style={styles.total_count}>{totalStaff}</Text> */}
+            <Text style={styles.total_count}>{todaysUniqueStaffCount}</Text>
           </CartBox>
 
           <CartBox containerStyle={styles.staff}>
@@ -218,7 +269,11 @@ const DashboardScreen = (props: any) => {
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            <Text style={styles.shift_count}>{todaysUniqueStaffCount}</Text>
+            {/* <Text style={styles.shift_count}>{todaysUniqueStaffCount}</Text> */}
+            <Text style={styles.shift_count} ellipsizeMode='tail' numberOfLines={1}>
+              {attendanceLoading ? "..." : totalAttendanceCount}
+            </Text>
+
           </CartBox>
         </View>
 
@@ -263,9 +318,14 @@ const DashboardScreen = (props: any) => {
                       <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{b.branchName}</Text>
                     </View>
                     <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
-                      <Text style={styles.count}>{b.todayWorking}</Text>
+                      {/* <Text style={styles.count}>{b.todayWorking}</Text> */}
+                      <Text style={styles.count}>
+                        {attendanceLoading ? "..." : (branchAttendanceCounts[String(b.branchId)] ?? 0)}
+                      </Text>
                       <Text style={styles.count}>/</Text>
-                      <Text style={styles.count}>{b.totalEmployees}</Text>
+                      {/* <Text style={styles.count}>{b.totalEmployees}</Text> */}
+                      <Text style={styles.count}>{b.todayWorking}</Text>
+
                     </View>
                   </CartBox>
                 </TouchableOpacity>
@@ -287,46 +347,32 @@ const DashboardScreen = (props: any) => {
           {lang.logout_confirm}
         </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-          {/* <Button1
+          <Button1
             text={lang.yes}
-            onPress={() => {
+            onPress={async () => {
               setLogoutPopupVisible(false);
+
+              try {
+                // clear stored token & user id
+                await clearAllAuthData();
+                console.log('Cleared auth data (token & userId).');
+              } catch (err) {
+                console.warn('Failed to clear auth data on logout:', err);
+                // continue to navigate even if clearing fails
+              }
+
+              // reset navigation to login screen
               navigation.reset({
                 index: 0,
                 routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
               });
-              console.log('Logout -> received params:', { userId, langId: selectedLanguage });
+
+              console.log('Logout -> navigated to LoginScreen with params:', { userId, langId: selectedLanguage });
             }}
             backgroundColor={colors.primary}
             width={'48%'}
             textStyle={{ color: colors.secondary }}
-          /> */}
-          <Button1
-  text={lang.yes}
-  onPress={async () => {
-    setLogoutPopupVisible(false);
-
-    try {
-      // clear stored token & user id
-      await clearAllAuthData();
-      console.log('Cleared auth data (token & userId).');
-    } catch (err) {
-      console.warn('Failed to clear auth data on logout:', err);
-      // continue to navigate even if clearing fails
-    }
-
-    // reset navigation to login screen
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
-    });
-
-    console.log('Logout -> navigated to LoginScreen with params:', { userId, langId: selectedLanguage });
-  }}
-  backgroundColor={colors.primary}
-  width={'48%'}
-  textStyle={{ color: colors.secondary }}
-/>
+          />
 
           <Button1
             text={lang.no}
@@ -345,79 +391,79 @@ export default DashboardScreen;
 
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.secondary,
-    },
-    popupsubtext: {
-        color: colors.subtext,
-        fontSize: fonts.size.s,
-        fontWeight: fonts.weight.regular as any,
-        marginBottom: 30,
-        alignSelf: 'center'
-    },
-    body: {
-        marginTop: 20,
-        marginHorizontal: 20,
-        flex: 1,
-    },
-    boxes: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 12
-    },
-    icon: {
-        width: 30 * base,
-        height: 30,
-    },
-    total_staff: {
-        color: colors.search,
-        fontWeight: fonts.weight.regular as any,
-        fontSize: 14,
-        marginLeft: 8,
-        width: "75%"
-    },
-    total_count: {
-        fontWeight: fonts.weight.medium as any,
-        fontSize: fonts.size.xxl,
-        color: colors.primary,
-        marginTop: 8,
-    },
-    shift_count: {
-        fontWeight: fonts.weight.medium as any,
-        fontSize: fonts.size.xxl,
-        color: colors.text,
-        marginTop: 8,
-    },
-    staff: {
-        backgroundColor: colors.secondary,
-        borderWidth: 1,
-        borderColor: colors.border1,
-        width: 190 * base,
-        paddingTop: 12,
-        paddingBottom: 12,
-        paddingLeft: 12,
-        alignItems: "flex-start",
-    },
-    all_branches: {
-    },
-    branch: {
-        alignItems: 'flex-start',
-        paddingTop: 12,
-        paddingLeft: 12,
-        paddingBottom: 12,
-        marginBottom: 12,
-        borderRadius: 10
-    },
-    branch_name: {
-        marginLeft: 10,
-        color: colors.subtext2,
-        fontSize: fonts.size.m,
-        fontWeight: fonts.weight.regular as any,
-    },
-    count: {
-        color: colors.primary,
-        fontSize: fonts.size.xxl,
-        fontWeight: fonts.weight.medium as any,
-    },
+  container: {
+    flex: 1,
+    backgroundColor: colors.secondary,
+  },
+  popupsubtext: {
+    color: colors.subtext,
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.regular as any,
+    marginBottom: 30,
+    alignSelf: 'center'
+  },
+  body: {
+    marginTop: 20,
+    marginHorizontal: 20,
+    flex: 1,
+  },
+  boxes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12
+  },
+  icon: {
+    width: 30 * base,
+    height: 30,
+  },
+  total_staff: {
+    color: colors.search,
+    fontWeight: fonts.weight.regular as any,
+    fontSize: 14,
+    marginLeft: 8,
+    width: "75%"
+  },
+  total_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.primary,
+    marginTop: 8,
+  },
+  shift_count: {
+    fontWeight: fonts.weight.medium as any,
+    fontSize: fonts.size.xxl,
+    color: colors.text,
+    marginTop: 8,
+  },
+  staff: {
+    backgroundColor: colors.secondary,
+    borderWidth: 1,
+    borderColor: colors.border1,
+    width: 190 * base,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingLeft: 12,
+    alignItems: "flex-start",
+  },
+  all_branches: {
+  },
+  branch: {
+    alignItems: 'flex-start',
+    paddingTop: 12,
+    paddingLeft: 12,
+    paddingBottom: 12,
+    marginBottom: 12,
+    borderRadius: 10
+  },
+  branch_name: {
+    marginLeft: 10,
+    color: colors.subtext2,
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+  },
+  count: {
+    color: colors.primary,
+    fontSize: fonts.size.xxl,
+    fontWeight: fonts.weight.medium as any,
+  },
 });
