@@ -86,33 +86,86 @@ const BranchScreen: React.FC = (props: any) => {
   };
 
   // --- geocode once (no caching) with safer headers and timeout fallback ---
+  // const geocodeOnce = async (lat: number, lon: number): Promise<string> => {
+  //   // Nominatim etc. may fail; return lat,lon fallback on any failure
+  //   try {
+  //     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+  //     // small timeout helper
+  //     const controller = new AbortController();
+  //     const timeout = setTimeout(() => controller.abort(), 8000); // 8s
+  //     const res = await fetch(url, {
+  //       method: 'GET',
+  //       signal: controller.signal,
+  //       headers: {
+  //         'User-Agent': 'Mr-Baker-App/1.0 (your-email@example.com)',
+  //         Accept: 'application/json',
+  //       },
+  //     });
+  //     clearTimeout(timeout);
+  //     if (!res.ok) {
+  //       // fallback to coords string
+  //       return `${lat}, ${lon}`;
+  //     }
+  //     const json = await res.json();
+  //     return (json?.display_name as string) || `${lat}, ${lon}`;
+  //   } catch (e) {
+  //     // network error, timeout, or abort
+  //     return `${lat}, ${lon}`;
+  //   }
+  // };
+
+  // REPLACE the existing geocodeOnce with this version
   const geocodeOnce = async (lat: number, lon: number): Promise<string> => {
-    // Nominatim etc. may fail; return lat,lon fallback on any failure
-    try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
-      // small timeout helper
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000); // 8s
-      const res = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mr-Baker-App/1.0 (your-email@example.com)',
-          Accept: 'application/json',
-        },
-      });
-      clearTimeout(timeout);
-      if (!res.ok) {
-        // fallback to coords string
-        return `${lat}, ${lon}`;
+    // try primary order (lat, lon), then fallback to swapped if result is not usable
+    const tryReverse = async (latArg: number, lonArg: number) => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latArg}&lon=${lonArg}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000); // 8s
+        const res = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            // keep simple headers; User-Agent may be ignored by some RN environments,
+            // but including it is polite per Nominatim usage policy.
+            'User-Agent': 'Mr-Baker-App/1.0 (your-email@example.com)',
+            Accept: 'application/json',
+          },
+        });
+        clearTimeout(timeout);
+        if (!res || !res.ok) {
+          return null;
+        }
+        const json = await res.json();
+        const display = json?.display_name ?? null;
+        return display;
+      } catch (e) {
+        return null;
       }
-      const json = await res.json();
-      return (json?.display_name as string) || `${lat}, ${lon}`;
+    };
+
+    try {
+      // primary attempt - assume lat, lon
+      const primary = await tryReverse(lat, lon);
+      if (primary) {
+        return primary;
+      }
+
+      // second attempt - maybe coordinates are stored reversed in DB; try swapped
+      const swapped = await tryReverse(lon, lat);
+      if (swapped) {
+        // log that we had to swap — useful for debugging; remove in prod if noisy
+        console.warn(`geocodeOnce: swapped coords used for reverse-geocode (${lat},${lon}) -> (${lon},${lat})`);
+        return swapped;
+      }
+
+      // both attempts failed -> fallback to readable coords string
+      return `${lat}, ${lon}`;
     } catch (e) {
-      // network error, timeout, or abort
       return `${lat}, ${lon}`;
     }
   };
+
 
   // --- geocode with local AsyncStorage cache + TTL ---
   // (replace your existing geocodeWithCache with this)
@@ -127,15 +180,23 @@ const BranchScreen: React.FC = (props: any) => {
       if (existing && existing.lat != null && existing.lon != null) {
         const cachedLat = Number(existing.lat);
         const cachedLon = Number(existing.lon);
-
         const coordsMatch = Number(cachedLat) === Number(lat) && Number(cachedLon) === Number(lon);
 
-        // if coords match and not stale -> return cached address
         if (coordsMatch && existing.savedAt && (now - existing.savedAt < GEO_CACHE_TTL_MS)) {
-          return existing.addr;
+          // If cached addr looks like "lat, lon" then it was a fallback — try re-geocoding instead of returning that string.
+          const isFallbackCoords =
+            typeof existing.addr === 'string' &&
+            /^\s*-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?\s*$/.test(existing.addr);
+
+          if (!isFallbackCoords) {
+            // cached address is a real human-readable address and fresh -> return it
+            return existing.addr;
+          }
+          // else: cached value is a fallback coords string -> fallthrough to re-geocode
         }
-        // if coords don't match OR cache is stale -> we'll re-geocode and replace below
+        // if coords don't match or cache stale -> fallthrough to re-geocode
       }
+
 
       // Not cached, coords changed, or cache stale -> perform geocode
       const addr = await geocodeOnce(lat, lon);
@@ -170,6 +231,12 @@ const BranchScreen: React.FC = (props: any) => {
           const lon = Number(coords[0]);
           const lat = Number(coords[1]);
           toGeocode.push({ idx: i, branchId: b._id ?? b.id ?? String(i), lat, lon });
+          //           console.log('Branch coords queued for geocode:', {
+          //   branchId: b._id ?? b.id ?? String(i),
+          //   rawCoords: b?.location?.coordinates,
+          //   interpretedLon: Number(coords[0]),
+          //   interpretedLat: Number(coords[1]),
+          // });
         }
       });
 
@@ -179,7 +246,10 @@ const BranchScreen: React.FC = (props: any) => {
         const batch = toGeocode.slice(i, i + BATCH_SIZE);
         const promises = batch.map(async (item) => {
           const cached = await geocodeWithCache(item.branchId, item.lat, item.lon);
-          resultsAddr[item.branchId] = cached ?? `${item.lat}, ${item.lon}`;
+          const addrVal = cached ?? `${item.lat}, ${item.lon}`;
+          resultsAddr[item.branchId] = addrVal;
+          //console.log('Reverse-geocode result', { branchId: item.branchId, requested: [item.lat, item.lon], addr: addrVal });
+
         });
         // await this batch then continue
         await Promise.all(promises);
@@ -242,7 +312,7 @@ const BranchScreen: React.FC = (props: any) => {
       <View style={styles.body}>
         {loading && branches.length === 0 ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <FlatList
