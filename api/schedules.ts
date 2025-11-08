@@ -72,3 +72,4 @@ export const getEmployeeSchedules = async (employee_id: string, startDate: strin
   });
   return res.data.schedules as EmployeeSchedule[];
 };
+

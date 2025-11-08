@@ -23,6 +23,36 @@ export interface ScheduleResponse {
   schedules: ScheduleItem[];
 }
 
+export interface AttendanceRecord {
+  employeeId: string;
+  username: string;
+  fullname: string;
+  date: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  actualIn: string;
+  actualOut: string;
+  branchId: string;
+  branchName: string;
+  startStatus: string;
+  endStatus: string;
+}
+
+export interface AttendanceReportItem {
+  employeeId: string;
+  username: string;
+  fullname: string;
+  date: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  actualIn: string;
+  actualOut: string;
+  branchId: string;
+  branchName: string;
+  startStatus: string;
+  endStatus: string;
+}
+
 export const startAttendance = async (payload: LocationPayload) => {
   try {
     const response = await axiosInstance.post("/attendance/start", payload);
@@ -321,6 +351,25 @@ export const getSchedulesForDate = async (
   }
 };
 
+
+export const getAttendanceReport = async (
+  employeeId?: string,
+  date?: string
+): Promise<AttendanceReportItem[]> => {
+  try {
+    const params: any = {};
+    if (employeeId) params.employeeId = employeeId;
+    if (date) params.date = date;
+
+    const response = await axiosInstance.get('/admin/attendance/report', { params });
+    const data = response?.data?.data;
+    if (!Array.isArray(data)) return []; // fallback if API returns undefined or object
+    return data;
+  } catch (error) {
+    console.error('Error fetching attendance report:', error);
+    return [];
+  }
+};
 
 
 
