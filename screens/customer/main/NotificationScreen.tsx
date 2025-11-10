@@ -1,4 +1,4 @@
-// screens/customer/main/NotificationScreen.tsx
+//screens/customer/main/NotificationScreen.tsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
@@ -113,7 +113,6 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
       setNotifications([]);
       return;
     }
-
     const inboxRef = collection(db, "notifications", effectiveUserId, "inbox");
     const q = query(inboxRef, orderBy("createdAt", "desc"));
 
