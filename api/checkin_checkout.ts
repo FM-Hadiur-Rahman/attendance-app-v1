@@ -38,20 +38,20 @@ export interface AttendanceRecord {
   endStatus: string;
 }
 
-export interface AttendanceReportItem {
-  employeeId: string;
-  username: string;
-  fullname: string;
-  date: string;
-  scheduledStart: string;
-  scheduledEnd: string;
-  actualIn: string;
-  actualOut: string;
-  branchId: string;
-  branchName: string;
-  startStatus: string;
-  endStatus: string;
-}
+// export interface AttendanceReportItem {
+//   employeeId: string;
+//   username: string;
+//   fullname: string;
+//   date: string;
+//   scheduledStart: string;
+//   scheduledEnd: string;
+//   actualIn: string;
+//   actualOut: string;
+//   branchId: string;
+//   branchName: string;
+//   startStatus: string;
+//   endStatus: string;
+// }
 
 export const startAttendance = async (payload: LocationPayload) => {
   try {
@@ -352,22 +352,67 @@ export const getSchedulesForDate = async (
 };
 
 
+// export const getAttendanceReport = async (
+//   employeeId?: string,
+//   date?: string
+// ): Promise<AttendanceReportItem[]> => {
+//   try {
+//     const params: any = {};
+//     if (employeeId) params.employeeId = employeeId;
+//     if (date) params.date = date;
+
+//     const response = await axiosInstance.get('/admin/attendance/report', { params });
+//     const data = response?.data?.data;
+//     if (!Array.isArray(data)) return []; // fallback if API returns undefined or object
+//     return data;
+//   } catch (error) {
+//     console.error('Error fetching attendance report:', error);
+//     return [];
+//   }
+// };
+
+
+
+
+
+export interface AttendanceReportItem {
+  employeeId: string;
+  username?: string;
+  fullname?: string;
+  date?: string; // YYYY-MM-DD
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  actualIn?: string | null;
+  actualOut?: string | null;
+  branchId?: string;
+  branchName?: string;
+  startStatus?: string | null;
+  endStatus?: string | null;
+  [key: string]: any;
+}
+
+/**
+ * Fetch attendance report between startDate and endDate.
+ * Optionally pass branchId to limit to a branch.
+ */
 export const getAttendanceReport = async (
-  employeeId?: string,
-  date?: string
+  startDate: string,
+  endDate: string,
+  branchId?: string
 ): Promise<AttendanceReportItem[]> => {
   try {
-    const params: any = {};
-    if (employeeId) params.employeeId = employeeId;
-    if (date) params.date = date;
+    const res = await axiosInstance.get("/admin/attendance/report", {
+      params: { startDate, endDate, branchId },
+    });
 
-    const response = await axiosInstance.get('/admin/attendance/report', { params });
-    const data = response?.data?.data;
-    if (!Array.isArray(data)) return []; // fallback if API returns undefined or object
+    // 👇 Extract correctly from rows
+    const data = Array.isArray(res.data?.rows) ? res.data.rows : [];
+
+    console.log("✅ Parsed attendance array length:", data.length);
     return data;
-  } catch (error) {
-    console.error('Error fetching attendance report:', error);
-    return [];
+  } catch (error: any) {
+    console.error("❌ Failed to fetch attendance report:", error.response?.data || error.message);
+    throw error;
   }
 };
 
