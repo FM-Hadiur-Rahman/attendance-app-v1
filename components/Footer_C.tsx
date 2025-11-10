@@ -18,10 +18,12 @@ import colors from '../styles/Colors';
 import ScheduleScreen from '../screens/customer/main/ScheduleScreen';
 
 const Footer_C = () => {
-  const [selectedTab, setSelectedTab] = useState<string>('Home');
+  // const [selectedTab, setSelectedTab] = useState<string>('Home');
+  const route = useRoute<any>();
+  const [selectedTab, setSelectedTab] = useState<string>(route.params?.selectedTab ?? 'Home');
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
-  const route = useRoute<any>();
+  
 
   const userId = route.params?.userId;
   const langId = route.params?.langId ?? 'en';
