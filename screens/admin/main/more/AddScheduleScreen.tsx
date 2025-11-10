@@ -81,7 +81,8 @@ export default function AddScheduleScreen(props: any) {
   const [staffInputLayout, setStaffInputLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const branchInputWrapperRef = useRef<View | null>(null);
   const [branchInputLayout, setBranchInputLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [selectedDayYmd, setSelectedDayYmd] = useState<string | null>(null);
+  const [selectedDayYmd, setSelectedDayYmd] = useState<string | null>(null); // template origin date (may be previous-week)
+  const [selectedDisplayYmd, setSelectedDisplayYmd] = useState<string | null>(null); // the actual date we want to create/edit (usually current-week)
   const [timeFrom, setTimeFrom] = useState<string>("");
   const [timeFromError, setTimeFromError] = useState<string>("");
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -92,6 +93,8 @@ export default function AddScheduleScreen(props: any) {
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const [weekOffset, setWeekOffset] = useState<number>(0);
+
+
 
   // Utility: normalize API shapes to the local shape this screen expects
   const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
@@ -152,6 +155,9 @@ export default function AddScheduleScreen(props: any) {
       } as any;
     });
   };
+
+
+
   const loadInitialData = async () => {
     setLoading(true);
     try {
@@ -279,6 +285,17 @@ export default function AddScheduleScreen(props: any) {
   const weekDates = getWeekDates(weekOffset);
   const displayWeekDates = getWeekDates(0);
 
+  const buildMapFromList = (list: any[]) => {
+  const map: Record<string, any[]> = {};
+  (list || []).forEach((s) => {
+    if (!s?.date) return;
+    const dateKey = String(s.date).split("T")[0];
+    if (!map[dateKey]) map[dateKey] = [];
+    map[dateKey].push(s);
+  });
+  return map;
+};
+
   // computeEndTime, isBeforeToday, onAddSchedule, openAddModalForDate, etc. — keep unchanged logic but adapted to normalized fields
   const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
     if (!startHHMMSS) return "";
@@ -338,111 +355,171 @@ export default function AddScheduleScreen(props: any) {
     return dt.getTime() < today.getTime();
   };
   const onAddSchedule = () => {
-    let hasError = false;
-    if (!selectedStaffId) {
-      setStaffError(lang.Select_staff || "Please select staff");
-      showErrorToast(lang.Please_select_staff || "Select staff");
-      hasError = true;
-    }
-    if (!selectedDayYmd) {
-      showErrorToast("No date selected");
-      hasError = true;
-    }
-    if (!selectedBranchId) {
-      showErrorToast("Please select branch");
-      hasError = true;
-      setBranchFilterOpen(true);
-    }
-    if (!timeFrom || timeFrom.trim() === "") {
-      setTimeFromError(lang.Required || "Required");
-      showErrorToast(lang.Please_enter_start_time || "Enter start time");
-      hasError = true;
-    }
-    const dur = parseFloat(durationHours || "0");
-    if (isNaN(dur) || dur <= 0) {
-      setDurationError("Invalid duration");
-      showErrorToast("Invalid duration");
-      hasError = true;
-    }
-    if (hasError) return;
-    const payload: any = {
-      user_id: selectedStaffId,
-      start_time: timeFrom,
-      duration: dur,
-      date: selectedDayYmd,
-      branch_id: selectedBranchId,
-    };
-    if (modalEditingId) payload.id = modalEditingId;
+  let hasError = false;
+  if (!selectedStaffId) {
+    setStaffError(lang.Select_staff || "Please select staff");
+    showErrorToast(lang.Please_select_staff || "Select staff");
+    hasError = true;
+  }
+  if (!selectedDayYmd) {
+    showErrorToast("No date selected");
+    hasError = true;
+  }
+  if (!selectedBranchId) {
+    showErrorToast("Please select branch");
+    hasError = true;
+    setBranchFilterOpen(true);
+  }
+  if (!timeFrom || timeFrom.trim() === "") {
+    setTimeFromError(lang.Required || "Required");
+    showErrorToast(lang.Please_enter_start_time || "Enter start time");
+    hasError = true;
+  }
+  const dur = parseFloat(durationHours || "0");
+  if (isNaN(dur) || dur <= 0) {
+    setDurationError("Invalid duration");
+    showErrorToast("Invalid duration");
+    hasError = true;
+  }
+  if (hasError) return;
 
-    if (typeof route.params?.onSave === "function") {
-      try {
-        route.params.onSave(payload);
-        showSuccessToast(modalEditingId ? lang.schedule_updated || "Schedule updated" : lang.schedule_added || "Schedule added");
-      } catch (e) {
-        console.warn("onSave callback threw:", e);
-      }
-      // update localSchedules for UI immediately
-      setLocalSchedules((prev) => {
-        const copy = prev.map((p) => ({ ...p }));
-        if (payload.id) {
-          const idx = copy.findIndex((s) => s.id === payload.id);
-          if (idx !== -1) {
-            copy[idx] = { ...copy[idx], ...payload, updateDate: new Date().toISOString() };
-            setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
-          } else {
-            const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() } as any;
-            copy.push(newSch);
-            setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-          }
+  // target date should be the displayed/current-week date (fallback to template date)
+  const targetDate = selectedDisplayYmd || selectedDayYmd || null;
+
+  const payload: any = {
+    user_id: selectedStaffId,
+    start_time: timeFrom,
+    duration: dur,
+    date: targetDate,
+    branch_id: selectedBranchId,
+  };
+  if (modalEditingId) payload.id = modalEditingId;
+
+  // helper: rebuild date keyed map from a schedule list
+  const buildMapFromList = (list: any[]) => {
+    const map: Record<string, any[]> = {};
+    (list || []).forEach((s) => {
+      if (!s?.date) return;
+      const dateKey = String(s.date).split("T")[0];
+      if (!map[dateKey]) map[dateKey] = [];
+      map[dateKey].push(s);
+    });
+    return map;
+  };
+
+  // Helper: create a temporary schedule object (consistent shape)
+  const makeTempSchedule = (base: any, overrideId?: string) => {
+    const id = overrideId ?? `S${(Math.max(0, ...(localSchedules || []).map((x) => {
+      const m = String(x.id || "").match(/^S(\d+)$/);
+      return m ? Number(m[1]) : 0;
+    })) + 1).toString().padStart(3, "0")}`;
+    return {
+      id,
+      user_id: base.user_id,
+      start_time: base.start_time,
+      duration: base.duration,
+      date: base.date,
+      branch_id: base.branch_id,
+      createDate: base.createDate ?? new Date().toISOString(),
+      updateDate: new Date().toISOString(),
+    } as any;
+  };
+
+  if (typeof route.params?.onSave === "function") {
+    try {
+      // ensure callback receives the DISPLAY date (current-week) for create/update
+      route.params.onSave(payload);
+      showSuccessToast(modalEditingId ? lang.schedule_updated || "Schedule updated" : lang.schedule_added || "Schedule added");
+    } catch (e) {
+      console.warn("onSave callback threw:", e);
+    }
+
+    // Update localSchedules + localSchedulesByDate for immediate UI reflection
+    setLocalSchedules((prev = []) => {
+      const copy = prev.map((p) => ({ ...p }));
+      if (payload.id) {
+        const idx = copy.findIndex((s) => s.id === payload.id);
+        if (idx !== -1) {
+          copy[idx] = { ...copy[idx], ...payload, updateDate: new Date().toISOString() };
+          setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
         } else {
-          const newSch = { id: `S${(copy.length + 1).toString().padStart(3, "0")}`, ...payload, createDate: new Date().toISOString(), updateDate: new Date().toISOString() } as any;
+          // not found: create new temp schedule with payload date (display date)
+          const newSch = makeTempSchedule(payload);
           copy.push(newSch);
           setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
         }
-        return copy;
-      });
-      setAddScheduleModalVisible(false);
-      setModalEditingId(null);
-      return;
-    }
-    if (!modalEditingId) {
-      const id = `S${(localSchedules.length + 1).toString().padStart(3, "0")}`;
-      const newSch = {
-        id,
-        user_id: payload.user_id,
-        start_time: payload.start_time,
-        duration: payload.duration,
-        date: payload.date,
-        branch_id: payload.branch_id,
-        createDate: new Date().toISOString(),
-        updateDate: new Date().toISOString(),
-      } as any;
-      setLocalSchedules((prev) => [...prev, newSch]);
-      setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-      showSuccessToast("Schedule added");
-    } else {
-      setLocalSchedules((prev) => {
-        const copy = prev.map((s) => ({ ...s }));
-        const idx = copy.findIndex((sch) => sch.id === modalEditingId);
-        if (idx !== -1) {
-          copy[idx] = {
-            ...copy[idx],
-            user_id: payload.user_id,
-            start_time: payload.start_time,
-            duration: payload.duration,
-            date: payload.date,
-            branch_id: payload.branch_id,
-            updateDate: new Date().toISOString(),
-          };
-          setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
-        }
-        return copy;
-      });
-      showSuccessToast("Schedule updated");
-    }
+      } else {
+        // create
+        const newSch = makeTempSchedule(payload);
+        copy.push(newSch);
+        setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+      }
+      // rebuild map used by UI
+      const map = buildMapFromList(copy);
+      setLocalSchedulesByDate(map);
+      return copy;
+    });
+
+    // close modal
     setAddScheduleModalVisible(false);
     setModalEditingId(null);
-  };
+
+    // ensure current week is visible if we created/updated for current week
+    const cwDates = displayWeekDates.map((d) => dateToYMD(d));
+    if (targetDate && cwDates.includes(targetDate)) {
+      setWeekOffset(0);
+    }
+    return;
+  }
+
+  // No route callback — update local state and changeLog locally
+  if (!modalEditingId) {
+    const newSch = makeTempSchedule({ ...payload });
+    setLocalSchedules((prev = []) => {
+      const merged = [...prev, newSch];
+      const map = buildMapFromList(merged);
+      setLocalSchedulesByDate(map);
+      return merged;
+    });
+    setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+    showSuccessToast("Schedule added");
+  } else {
+    setLocalSchedules((prev = []) => {
+      const copy = prev.map((s) => ({ ...s }));
+      const idx = copy.findIndex((sch) => sch.id === modalEditingId);
+      if (idx !== -1) {
+        copy[idx] = {
+          ...copy[idx],
+          user_id: payload.user_id,
+          start_time: payload.start_time,
+          duration: payload.duration,
+          date: payload.date,
+          branch_id: payload.branch_id,
+          updateDate: new Date().toISOString(),
+        };
+        setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
+      } else {
+        // if not found, push as new
+        const newSch = makeTempSchedule({ ...payload });
+        copy.push(newSch);
+        setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+      }
+      const map = buildMapFromList(copy);
+      setLocalSchedulesByDate(map);
+      return copy;
+    });
+    showSuccessToast("Schedule updated");
+  }
+
+  // close modal & ensure week view
+  setAddScheduleModalVisible(false);
+  setModalEditingId(null);
+  const cwDates = displayWeekDates.map((d) => dateToYMD(d));
+  if (targetDate && cwDates.includes(targetDate)) {
+    setWeekOffset(0);
+  }
+};
+
 
   const measureStaffInput = () => {
     const handle = findNodeHandle(staffInputWrapperRef.current);
@@ -478,8 +555,11 @@ export default function AddScheduleScreen(props: any) {
     }
   }, [branchFilterOpen, selectedBranch, addScheduleModalVisible]);
 
-  const openAddModalForDate = (ymd: string) => {
-    if (isBeforeToday(ymd)) return;
+  const openAddModalForDate = (dataYmd: string, displayYmd?: string) => {
+    // displayYmd = UI date (current-week shown date)
+    const uiYmd = displayYmd || dataYmd;
+    if (isBeforeToday(uiYmd)) return;
+
     if (!selectedStaffId) {
       setStaffError(lang.Select_staff || "Please select staff first");
       showErrorToast(lang.Please_select_staff || "Select staff first");
@@ -487,16 +567,20 @@ export default function AddScheduleScreen(props: any) {
       setTimeout(measureStaffInput, 40);
       return;
     }
-    const daySchedules = localSchedulesByDate[ymd] || [];
+
+    // lookup schedules by the data-week date (may be previous week)
+    const daySchedules = localSchedulesByDate[dataYmd] || [];
     const staffSchedule = daySchedules.find((s) => s.user_id === selectedStaffId) || null;
 
-    setSelectedDayYmd(ymd);
+    // store both: data origin (template) and displayed date
+    setSelectedDayYmd(dataYmd);        // template origin
+    setSelectedDisplayYmd(uiYmd);      // date we want to actually create/edit
     setDurationError("");
     setTimeFromError("");
 
     if (staffSchedule) {
+      // Prefill fields from template (previous-week schedule)
       setTimeFrom(staffSchedule.start_time || "");
-      // prefer explicit duration if provided; otherwise compute from start & end
       const durFromApi = staffSchedule.duration ?? null;
       const endFromApi = staffSchedule.end_time ?? staffSchedule.end ?? "";
       let finalDuration = 0;
@@ -516,8 +600,15 @@ export default function AddScheduleScreen(props: any) {
         setSelectedBranch("");
         setSelectedBranchId(null);
       }
-      setModalEditingId(staffSchedule.id || null);
+
+      // ✅ KEY CHANGE: always force CREATE if template's date !== current-week UI
+      if (staffSchedule.date && staffSchedule.date === uiYmd) {
+        setModalEditingId(staffSchedule.id || null);
+      } else {
+        setModalEditingId(null); // treat as NEW schedule (create)
+      }
     } else {
+      // no template -> fresh create with default user branch
       setTimeFrom("");
       setDurationHours("");
       setModalEditingId(null);
@@ -530,8 +621,11 @@ export default function AddScheduleScreen(props: any) {
         }
       }
     }
+
     setAddScheduleModalVisible(true);
   };
+
+
 
   useEffect(() => {
     if (!route.params?.id) return;
@@ -723,24 +817,38 @@ export default function AddScheduleScreen(props: any) {
   };
 
   const onFooterSaveAndBack = () => {
-    if (changeLog.length === 0) {
-      showErrorToast(lang.no_changes_to_save);
-      return;
-    }
+    // 1. If add/edit modal is open, finish it first
     if (addScheduleModalVisible) {
       showErrorToast("Please finish editing the schedule");
       return;
     }
+
+    // 2. Check for field errors
     if (staffError || timeFromError || durationError) {
       showErrorToast("Please fix errors before saving");
       return;
     }
-    if (!Array.isArray(changeLog) || changeLog.length === 0) {
-      showErrorToast("No changes to save");
+
+    // 3. Check if there are any real changes in changeLog
+    const hasChanges = Array.isArray(changeLog) && changeLog.length > 0;
+
+    // ✅ 4. If no changes in changeLog, still check if any new schedules exist for current week
+    const currentWeekDates = getWeekDates(0).map((d) => dateToYMD(d));
+    const newCurrentWeekSchedules = localSchedules.filter(
+      (s) =>
+        !s.id?.startsWith("S") || // temp IDs we generate for new schedules
+        currentWeekDates.includes(s.date)
+    );
+
+    if (!hasChanges && newCurrentWeekSchedules.length === 0) {
+      showErrorToast(lang.no_changes_to_save);
       return;
     }
+
+    // 5. Show confirmation
     setSaveConfirmVisible(true);
   };
+
 
   const screenH = Dimensions.get("window").height;
   const screenW = Dimensions.get("window").width;
@@ -780,6 +888,8 @@ export default function AddScheduleScreen(props: any) {
     setTimeFrom(`${hh}:${mm}:${ss}`);
     setTimeFromError("");
   };
+
+
 
   return (
     <View style={styles.container}>
@@ -869,7 +979,7 @@ export default function AddScheduleScreen(props: any) {
                 ? (localBranches.find((b) => b.id === staffSchedule.branch_id)?.name ?? "")
                 : "";
               return (
-                <View key={displayYmd} style={styles.each_day}>
+                <View key={`${ymd}_${displayYmd}`} style={styles.each_day}>
                   <CartBox
                     width="auto"
                     containerStyle={[styles.day, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}
@@ -878,9 +988,9 @@ export default function AddScheduleScreen(props: any) {
                     <Text style={styles.day_text}>{`${wk}`}</Text>
                   </CartBox>
                   <TouchableOpacity
-                    style={{ flex: 1 }}
+                    style={{ flex: 1}}
                     activeOpacity={expired ? 1 : 0.8}
-                    onPress={() => { if (expired) return; openAddModalForDate(displayYmd); }} // open modal for the displayed (current-week) date
+                    onPress={() => { if (expired) return; openAddModalForDate(ymd, displayYmd); }} // open modal for the displayed (current-week) date
                   >
                     <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
@@ -978,7 +1088,6 @@ export default function AddScheduleScreen(props: any) {
                   onRightIconPress={onShowNativeTimePicker}
                   onPress={onShowNativeTimePicker}
                 />
-
                 <InputBox
                   label={lang.Duration}
                   placeholder={"Eg: 8"}
@@ -1087,50 +1196,109 @@ export default function AddScheduleScreen(props: any) {
             text={lang.yes || "Yes"}
             onPress={async () => {
               setSaveConfirmVisible(false);
-              const adds = (changeLog || []).filter((c) => c.type === "add").map((c) => c.schedule);
-              if (!adds || adds.length === 0) {
+
+              // 1) Gather user changes & templates
+              const userChanges = (changeLog || [])
+                .filter((c) => c.type === "add" || c.type === "update")
+                .map((c) => ({ ...JSON.parse(JSON.stringify(c.schedule)) })); // deep clone
+
+              const prevWeekSchedules = Object.values(localSchedulesByDate)
+                .flat()
+                .filter((s) => s.user_id === selectedStaffId)
+                .map((s) => JSON.parse(JSON.stringify(s))); // clone!
+
+              // map previous-week templates' day-of-week to current-week dates
+              const currentWeekDayMap: Record<string, string> = {};
+              displayWeekDates.forEach((d) => {
+                const dow = WEEKDAYS[d.getDay()];
+                currentWeekDayMap[dow] = dateToYMD(d);
+              });
+
+              const prevToCurrentWeekSchedules = prevWeekSchedules
+                .map((s) => {
+                  const prevDow = WEEKDAYS[new Date(s.date).getDay()];
+                  const targetDate = currentWeekDayMap[prevDow];
+                  if (!targetDate) return null;
+                  return { ...s, date: targetDate }; // safe copy mapped to current-week date
+                })
+                .filter(Boolean);
+              const userChangeKeys = new Set(
+                userChanges.map((u) => `${u.user_id}-${u.date}`)
+              );
+              let templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
+                const key = `${t.user_id}-${t.date}`;
+                return !userChangeKeys.has(key);
+              });
+              let schedulesToSaveRaw = [...templatesToKeep, ...userChanges];
+
+              const currentWeekDatesYMD = displayWeekDates.map((d) => dateToYMD(d));
+              schedulesToSaveRaw = schedulesToSaveRaw.filter((s) => currentWeekDatesYMD.includes(s.date));
+
+              // 4) Normalize times for dedupe: ensure start_time and end_time are HH:MM
+              const normalizeForDedupe = (s: any) => {
+                const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
+                const computedEnd = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+                const start = timeToHHMM(String(startRaw));
+                const end = timeToHHMM(String(computedEnd));
+                return {
+                  ...s,
+                  start_time: start,
+                  end_time: end,
+                  _dedupeStart: start,
+                  _dedupeEnd: end,
+                };
+              };
+
+              const normalizedList = schedulesToSaveRaw.map(normalizeForDedupe);
+
+              // 5) Deduplicate by user_id-date-start-end-branch
+              const seen = new Set<string>();
+              const deduped = normalizedList.filter((s) => {
+                const branchId = s.branch_id ?? s.branch ?? "";
+                const key = `${s.user_id}-${s.date}-${s._dedupeStart}-${s._dedupeEnd}-${branchId}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+
+              // 6) Final schedulesToSave: strip helper fields
+              const schedulesToSave = deduped.map((s) => {
+                const copy = { ...s };
+                delete copy._dedupeStart;
+                delete copy._dedupeEnd;
+                return copy;
+              });
+
+              if (schedulesToSave.length === 0) {
                 showErrorToast(lang.no_changes_to_save || "No changes to save");
                 return;
               }
-              const employeeIdToUse = selectedStaffId || userId || (adds[0]?.user_id ?? "");
-              const branchIdToUse = selectedBranchId || effectiveBranchId || (adds[0]?.branch_id ?? "");
-              const schedulesPayload: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }> = [];
 
-              for (const s of adds) {
-                const dateYmd = s.date; // expect YYYY-MM-DD already
-                if (!dateYmd) continue;
+              const employeeIdToUse = selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
+              const branchIdToUse = selectedBranchId || effectiveBranchId || (schedulesToSave[0]?.branch_id ?? "");
 
-                const day_of_week = dayOfWeekFromYmd(dateYmd);
+              // 7) Build payload (use normalized start/end HH:MM)
+              const schedulesPayload = schedulesToSave.map((s) => {
+                const dateYmd = s.date;
                 const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
-                const start_time = timeToHHMM(startRaw);
-
-                // Determine end_time: prefer explicit end_time, otherwise compute from duration
-                let endRaw = s.end_time ?? s.end ?? "";
-                if (!endRaw && s.duration && startRaw) {
-                  // computeEndTime returns HH:MM:SS — trim to HH:MM
-                  const computed = computeEndTime(startRaw, Number(s.duration));
-                  endRaw = computed;
-                }
-                const end_time = timeToHHMM(endRaw);
-
-                // Push only if we have start_time and end_time (end_time may be empty if not computable)
-                schedulesPayload.push({
+                const endRaw = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+                return {
                   date: dateYmd,
-                  day_of_week: day_of_week,
-                  start_time: start_time || "",
-                  end_time: end_time || "",
-                });
-              }
+                  day_of_week: dayOfWeekFromYmd(dateYmd),
+                  start_time: timeToHHMM(startRaw),
+                  end_time: timeToHHMM(endRaw),
+                };
+              });
 
               if (schedulesPayload.length === 0) {
                 showErrorToast("No valid schedules to create");
                 return;
               }
 
+              // 8) Save to backend
               try {
                 setLoading(true);
-                const resp = await postSchedulesBulk(employeeIdToUse, branchIdToUse, schedulesPayload);
-                // success feedback
+                await postSchedulesBulk(employeeIdToUse, branchIdToUse, schedulesPayload);
                 showSuccessToast(lang.schedule_added || "Schedules created");
                 navigation.navigate("Footer_A", {
                   selectedTab: "WorkSchedule",
@@ -1139,14 +1307,14 @@ export default function AddScheduleScreen(props: any) {
                   toastMessage: "Schedules created successfully",
                 });
               } catch (err: any) {
-                console.error("Failed to postSchedulesBulk", err);
+                console.error("❌ postSchedulesBulk failed:", err);
                 showErrorToast(lang.failed_to_save || "Failed to save schedules");
               } finally {
                 setLoading(false);
               }
             }}
             backgroundColor={colors.primary}
-            width={'48%'}
+            width={"48%"}
             textStyle={{ color: colors.secondary }}
           />
 
