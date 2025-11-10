@@ -305,7 +305,8 @@
     "invalid_duration": "Enter duration in hours",
     "staff_created_success": "Staff created successfully",
     "no_recent_checkins":"No recent check-ins",
-    "Havent_checked_in":"Haven't checked-in"
+    "Havent_checked_in":"Haven't checked-in",
+    "No_notifications":"No Notifications"
   },
   
   "de": {
@@ -612,6 +613,7 @@
     "invalid_duration": "Geben Sie die Dauer in Stunden ein",
     "staff_created_success": "Mitarbeiter erfolgreich erstellt",
     "no_recent_checkins":"Keine kürzlichen Check-ins",
-    "Havent_checked_in":"Nicht eingecheckt"
+    "Havent_checked_in":"Nicht eingecheckt",
+    "No_notifications":"Keine Benachrichtigungen"
   }
 }

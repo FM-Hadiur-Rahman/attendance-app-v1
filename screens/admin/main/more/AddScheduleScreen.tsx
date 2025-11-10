@@ -22,6 +22,9 @@ import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; /
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
 import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk } from "../../../../api/schedules";
 
+//notification
+import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
+
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
 import CartBox from "../../../../components/CartBox";
@@ -1295,6 +1298,115 @@ export default function AddScheduleScreen(props: any) {
                 return;
               }
 
+              // try {
+              //   setLoading(true);
+              //   const resp = await postSchedulesBulk(employeeIdToUse, branchIdToUse, schedulesPayload);
+              //   // success feedback
+              //   showSuccessToast(lang.schedule_added || "Schedules created");
+              //   navigation.navigate("Footer_A", {
+              //     selectedTab: "WorkSchedule",
+              //     userId,
+              //     langId,
+              //     toastMessage: "Schedules created successfully",
+              //   });
+              // } catch (err: any) {
+              //   console.error("Failed to postSchedulesBulk", err);
+              //   showErrorToast(lang.failed_to_save || "Failed to save schedules");
+              // } finally {
+              //   setLoading(false);
+              // }
+
+//-------------------notification start----------------------------------/
+// ----- replace the notification send block with this -----
+try {
+  setLoading(true);
+  const resp = await postSchedulesBulk(employeeIdToUse, branchIdToUse, schedulesPayload);
+
+  // helpers -----------------------------------------------------
+  const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+
+  // Accept "HH:MM" or "HH:MM:SS" and return "h:mm AM/PM"
+  const formatTime12 = (hhmmss: string) => {
+    if (!hhmmss) return "";
+    const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
+    let hh = parts[0] ?? 0;
+    const mm = parts[1] ?? 0;
+    const ampm = hh >= 12 ? "PM" : "AM";
+    hh = hh % 12;
+    if (hh === 0) hh = 12;
+    return `${hh}:${String(mm).padStart(2, "0")} ${ampm}`;
+  };
+
+  // Convert "YYYY-MM-DD" to "14 Nov 2025" (readable)
+  const formatDateReadable = (ymd: string) => {
+    if (!ymd) return "";
+    // Use Date constructor in local timezone.
+    const [y, m, d] = ymd.split("-").map((v) => parseInt(v, 10));
+    if (!y || !m || !d) return ymd;
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }); // e.g. "14 Nov 2025"
+  };
+ //-------------------notification end----------------------------------/
+
+  // Build human lines: each becomes "2025-11-14 (Time: 12:00 PM - 04:00 PM)"
+  const listLines: string[] = schedulesPayload.map((s) => {
+    const startRaw = s.start_time || "";
+    const endRaw = s.end_time || "";
+    const date = s.date || "";
+    const startFmt = formatTime12(startRaw);
+    const endFmt = endRaw ? formatTime12(endRaw) : "";
+    const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : startFmt || endFmt || "";
+    const dateReadable = formatDateReadable(date);
+    return timePart ? `${dateReadable} (Time: ${timePart})` : `${dateReadable}`;
+  }).filter(Boolean);
+
+  // find employee object (from localUsers) and branch name
+  const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
+  const employeeBranchId = employeeObj?.branch_id || null;
+  const assignedBranchObj = localBranches.find((b) => String(b.id) === String(branchIdToUse)) || null;
+  const assignedBranchName = assignedBranchObj?.name || "";
+
+  // include branch name only when branch differs
+  const includeBranch = !!branchIdToUse && !!employeeBranchId && String(branchIdToUse) !== String(employeeBranchId);
+
+  // Compose body: if multiple lines, separate with comma + space
+  const payloadLines = listLines.join(", ");
+
+  const body = includeBranch
+    ? `New shift assigned at "${assignedBranchName}". Date: ${payloadLines}.`
+    : `New shift assigned: ${payloadLines}.`;
+
+  console.log("[sched] postSchedulesBulk resp:", resp);
+  console.log("[sched] will send notification to employeeId:", employeeIdToUse, "branch:", branchIdToUse, "payload:", schedulesPayload);
+
+  try {
+    const notifId = await sendNotificationToUser(employeeIdToUse, {
+      title: "Shift Assigned",
+      body,
+      type: "shift_assigned",
+      meta: { branchId: branchIdToUse, schedulesCount: schedulesPayload.length },
+    });
+    console.log("[sched] sendNotificationToUser success, notifId:", notifId);
+  } catch (e) {
+    console.warn("[sched] sendNotificationToUser failed", e);
+  }
+
+  showSuccessToast(lang.schedule_added || "Schedules created");
+  navigation.navigate("Footer_A", {
+    selectedTab: "WorkSchedule",
+    userId,
+    langId,
+    toastMessage: "Schedules created successfully",
+  });
+} catch (err: any) {
+  console.error("Failed to postSchedulesBulk", err);
+  showErrorToast(lang.failed_to_save || "Failed to save schedules");
+} finally {
+  setLoading(false);
+}
+
+
+              //---------------------------------------------------//
               // 8) Save to backend
               try {
                 setLoading(true);
