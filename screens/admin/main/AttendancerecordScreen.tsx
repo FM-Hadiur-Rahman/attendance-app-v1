@@ -21,7 +21,7 @@ import CartBox from "../../../components/CartBox";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
-import { getAttendanceReport,AttendanceReportItem } from "../../../api/checkin_checkout";
+import { getAttendanceReport, AttendanceReportItem } from "../../../api/checkin_checkout";
 import { getBranchId, getProfile } from "../../../api/profile";
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
@@ -120,7 +120,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
+
+
 
   const defaultToday = (() => {
     const d = new Date();
@@ -212,57 +214,109 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   }, [mode, dateInput, selectedDateObj]);
 
   // ---------- fetch attendance from API ----------
-const fetchAttendanceReport = useCallback(async () => {
-  if (!selectedRange) return;
+  const fetchAttendanceReport = useCallback(async () => {
+    if (!selectedRange) return;
 
-  try {
-    setLoading(true);
-    setRefreshing(true);
+    try {
+      setLoading(true);
+      setRefreshing(true);
 
-    // --- compute start/end dates ---
-    let startDate = "";
-    let endDate = "";
-    if (selectedRange.type === "day") {
-      startDate = selectedRange.ymd;
-      endDate = selectedRange.ymd;
-    } else if (selectedRange.type === "week") {
-      startDate = selectedRange.startYmd;
-      endDate = selectedRange.endYmd;
-    } else {
-      const year = selectedRange.year;
-      const month = selectedRange.monthIndex;
-      startDate = `${year}-${pad(month + 1)}-01`;
-      endDate = `${year}-${pad(month + 1)}-${pad(new Date(year, month + 1, 0).getDate())}`;
+      // --- compute start/end dates ---
+      let startDate = "";
+      let endDate = "";
+
+      if (selectedRange.type === "day") {
+        startDate = selectedRange.ymd;
+        endDate = selectedRange.ymd;
+      } else if (selectedRange.type === "week") {
+        startDate = selectedRange.startYmd;
+        endDate = selectedRange.endYmd;
+      } else {
+        const year = selectedRange.year;
+        const month = selectedRange.monthIndex;
+        startDate = `${year}-${pad(month + 1)}-01`;
+        endDate = `${year}-${pad(
+          month + 1
+        )}-${pad(new Date(year, month + 1, 0).getDate())}`;
+      }
+
+      // --- get logged-in profile ---
+      const prof = await getProfile(); // current logged-in user
+      const loggedInBranchId =
+        typeof prof.branch === "string"
+          ? prof.branch
+          : prof.branch?._id ?? null;
+      const loggedInUserId = prof._id;
+      const userRole = prof.role;
+
+      // save branch id for later comparison in UI
+      setCurrentBranchId(loggedInBranchId);
+
+      // --- fetch attendance data ---
+      const res = await getAttendanceReport(startDate, endDate, loggedInBranchId);
+      const rows = Array.isArray(res)
+        ? res
+        : res?.rows ?? res?.data ?? [];
+      const normalized = Array.isArray(rows) ? rows : [];
+      const normalizedWithCheckin = normalized.filter((r: any) => {
+        const actualIn =
+          r.actualIn ??
+          r.actual_in ??
+          r.checkIn ??
+          r.check_in ??
+          r.in ??
+          r.in_time ??
+          "";
+        // keep only rows that have a non-empty check-in value
+        return actualIn && String(actualIn).trim() !== "";
+      });
+
+      // --- normalize branch info for each record ---
+      const enriched = normalizedWithCheckin.map((r: any) => {
+        const rawBranch =
+          r.branchId ?? r.branch_id ?? r.branch ?? r.branch_name ?? "";
+        let branchIdStr = "";
+        let branchNameStr = "";
+
+        if (typeof rawBranch === "string") {
+          branchIdStr = rawBranch;
+        } else if (rawBranch && typeof rawBranch === "object") {
+          branchIdStr = rawBranch._id ?? rawBranch.id ?? "";
+          branchNameStr = rawBranch.name ?? rawBranch.branch_name ?? "";
+        }
+
+        // fallback name fields
+        branchNameStr = branchNameStr || r.branchName || r.branch_name || "";
+
+        return {
+          ...r,
+          branchId: branchIdStr,
+          branchName: branchNameStr,
+          employeeId: r.employeeId ?? r.employee_id ?? "",
+          name: r.user?.fullname ?? r.name ?? "Unknown",
+        };
+      });
+
+      // --- filter only logged-in user if not admin ---
+      let filtered = enriched;
+      if (userRole !== "admin") {
+        filtered = enriched.filter(
+          (r) =>
+            r.employeeId === loggedInUserId ||
+            r.employee_id === loggedInUserId
+        );
+      }
+
+      setAttendanceData(filtered);
+    } catch (err) {
+      console.error("Failed to load attendance report:", err);
+      showErrorToast("Failed to load attendance");
+      setAttendanceData([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-
-    // --- get logged-in profile ---
-    const prof = await getProfile(); // must be current logged-in user
-    const userBranchId = typeof prof.branch === "string" ? prof.branch : prof.branch?._id;
-    const userId = prof._id;
-    const userRole = prof.role;
-
-    // --- fetch attendance for branch ---
-    const res = await getAttendanceReport(startDate, endDate, userBranchId);
-    const rows = Array.isArray(res) ? res : (res?.rows ?? res?.data ?? []);
-    const normalized = Array.isArray(rows) ? rows : [];
-
-    // --- filter only logged-in user if not admin ---
-    let filtered = normalized;
-    if (userRole !== "admin") {
-      filtered = normalized.filter(r => r.employeeId === userId || r.employee_id === userId);
-    }
-
-    setAttendanceData(filtered);
-
-  } catch (err) {
-    console.error("Failed to load attendance report:", err);
-    showErrorToast("Failed to load attendance");
-    setAttendanceData([]);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-}, [selectedRange]);
+  }, [selectedRange]);
 
 
   useEffect(() => {
@@ -330,19 +384,19 @@ const fetchAttendanceReport = useCallback(async () => {
 
       // status normalized
       let status = "no-schedule";
-const scheduleMins = scheduledStart ? timeToMinutesAny(scheduledStart) : null;
-const checkInMins = checkInRaw ? timeToMinutesAny(checkInRaw) : null;
+      const scheduleMins = scheduledStart ? timeToMinutesAny(scheduledStart) : null;
+      const checkInMins = checkInRaw ? timeToMinutesAny(checkInRaw) : null;
 
-if (scheduleMins !== null && checkInMins !== null) {
-  if (checkInMins < scheduleMins) status = "early";
-  else if (checkInMins > scheduleMins) status = "late";
-  else status = "on_time";
-} else if (startStatus && typeof startStatus === "string") {
-  const s = startStatus.toLowerCase();
-  if (s.includes("early")) status = "early";
-  else if (s.includes("late")) status = "late";
-  else if (s.includes("on") || s.includes("ontime") || s.includes("on_time")) status = "on_time";
-}
+      if (scheduleMins !== null && checkInMins !== null) {
+        if (checkInMins < scheduleMins) status = "early";
+        else if (checkInMins > scheduleMins) status = "late";
+        else status = "on_time";
+      } else if (startStatus && typeof startStatus === "string") {
+        const s = startStatus.toLowerCase();
+        if (s.includes("early")) status = "early";
+        else if (s.includes("late")) status = "late";
+        else if (s.includes("on") || s.includes("ontime") || s.includes("on_time")) status = "on_time";
+      }
 
       return {
         raw: r,
@@ -369,72 +423,77 @@ if (scheduleMins !== null && checkInMins !== null) {
   }, [attendanceData]);
 
   // determine selected-date range -> filter enriched accordingly
-const todayRecords = useMemo(() => {
-  if (!selectedRange) return [];
+  const todayRecords = useMemo(() => {
+    if (!selectedRange) return [];
 
-  const getRecordDate = (item: any): Date | null => {
-    if (item.checkInRaw) {
-      const d = new Date(item.checkInRaw);
-      if (!isNaN(d.getTime())) return d;
+    // ✅ Step 1: Keep only users who have a real check-in (not empty, not "No Schedule")
+    const onlyCheckedIn = enriched.filter(item => {
+      const checkIn = item?.checkInRaw || "";
+      return checkIn.trim() !== "";
+    });
+
+    // ✅ Step 2: Filter by selected range (Day / Week / Month)
+    if (selectedRange.type === "day") {
+      const target = new Date(selectedRange.ymd);
+      target.setHours(0, 0, 0, 0);
+
+      return onlyCheckedIn.filter(item => {
+        const d = new Date(item.checkInRaw || item.date);
+        return d && d.toDateString() === target.toDateString();
+      });
     }
-    if (item.date) {
-      const d = new Date(item.date);
-      if (!isNaN(d.getTime())) return d;
+
+    if (selectedRange.type === "week") {
+      const s = new Date(selectedRange.startYmd);
+      const e = new Date(selectedRange.endYmd);
+      s.setHours(0, 0, 0, 0);
+      e.setHours(23, 59, 59, 999);
+
+      return onlyCheckedIn.filter(item => {
+        const d = new Date(item.checkInRaw || item.date);
+        return d && d >= s && d <= e;
+      });
     }
-    return null;
-  };
 
-  const onlyCheckedIn = enriched || [];
+    if (selectedRange.type === "month") {
+      return onlyCheckedIn.filter(item => {
+        const d = new Date(item.checkInRaw || item.date);
+        return (
+          d &&
+          d.getFullYear() === selectedRange.year &&
+          d.getMonth() === selectedRange.monthIndex
+        );
+      });
+    }
 
-  if (selectedRange.type === "day") {
-    const target = new Date(selectedRange.ymd);
-    target.setHours(0, 0, 0, 0);
-    return onlyCheckedIn.filter((item) => {
-      const d = getRecordDate(item);
-      return d && d.toDateString() === target.toDateString();
-    });
-  }
-
-  if (selectedRange.type === "week") {
-    const s = new Date(selectedRange.startYmd);
-    const e = new Date(selectedRange.endYmd);
-    s.setHours(0, 0, 0, 0);
-    e.setHours(23, 59, 59, 999);
-    return onlyCheckedIn.filter((item) => {
-      const d = getRecordDate(item);
-      return d && d >= s && d <= e;
-    });
-  }
-
-  if (selectedRange.type === "month") {
-    return onlyCheckedIn.filter((item) => {
-      const d = getRecordDate(item);
-      return d && d.getFullYear() === selectedRange.year && d.getMonth() === selectedRange.monthIndex;
-    });
-  }
-
-  return onlyCheckedIn;
-}, [enriched, selectedRange]);
-
-
+    // Default fallback (safety)
+    return onlyCheckedIn;
+  }, [enriched, selectedRange]);
 
 
   // search filter (by name/username)
-const displayedRecords = useMemo(() => {
-  const q = (query || "").trim().toLowerCase();
-  return todayRecords
-    .filter(r => !!r.checkInRaw) // ✅ only checked-in users
-    .filter(r =>
-      !q || (r.name || "").toLowerCase().includes(q) || (r.username || "").toLowerCase().includes(q)
-    );
-}, [todayRecords, query]);
+  const displayedRecords = useMemo(() => {
+    const q = (query || "").trim().toLowerCase();
+
+    return todayRecords
+      // absolute safety: only records with checkInRaw
+      .filter(r => !!r.checkInRaw && String(r.checkInRaw).trim() !== "")
+      // also make sure status is not the 'no-schedule' fallback
+      .filter(r => r.status !== "no-schedule")
+      // apply search
+      .filter(r =>
+        !q ||
+        (r.name || "").toLowerCase().includes(q) ||
+        (r.username || "").toLowerCase().includes(q)
+      );
+  }, [todayRecords, query]);
 
   // UI handlers
   const onShowNativeDatePicker = () => setShowDatePicker(true);
   const onNativeDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
-      selectedDate.setHours(0,0,0,0);
+      selectedDate.setHours(0, 0, 0, 0);
       setSelectedDateObj(selectedDate);
       if (mode === "day") {
         const wd = WEEKDAYS[selectedDate.getDay()];
@@ -453,7 +512,7 @@ const displayedRecords = useMemo(() => {
   const onSelectNow = () => {
     setMode("day");
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
     setSelectedDateObj(today);
     setDateInput(`${WEEKDAYS[today.getDay()]}, ${MONTHS[today.getMonth()]} ${today.getDate()}`);
   };
@@ -470,83 +529,83 @@ const displayedRecords = useMemo(() => {
     setDateInput(`${FULL_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`);
   };
 
-// ✅ Export only checked-in users to Excel
-const onGenerateXLSX = async () => {
-  try {
-    if (!todayRecords || todayRecords.length === 0) {
-      showErrorToast("No attendance records available to export");
-      return;
-    }
+  // ✅ Export only checked-in users to Excel
+  const onGenerateXLSX = async () => {
+    try {
+      if (!todayRecords || todayRecords.length === 0) {
+        showErrorToast("No attendance records available to export");
+        return;
+      }
 
-    // ✅ Only include checked-in users
-    const checkedInRecords = todayRecords.filter((item) => !!item.checkInRaw);
+      // ✅ Only include checked-in users
+      const checkedInRecords = todayRecords.filter((item) => !!item.checkInRaw);
 
-    if (checkedInRecords.length === 0) {
-      showErrorToast("No checked-in users available to export");
-      return;
-    }
+      if (checkedInRecords.length === 0) {
+        showErrorToast("No checked-in users available to export");
+        return;
+      }
 
-    // ✅ Prepare data for Excel sheet
-    const sheetData = checkedInRecords.map((item) => ({
-      Name: item.name || "",
-      Date: item.date || "",
-      "Scheduled Start": item.scheduledStartDisplay || "",
-      "Scheduled End": item.scheduledEndDisplay || "",
-      "Check In": item.checkInTime || "",
-      "Check Out": item.checkOutTime || "",
-      Status:
-        item.status === "late"
-          ? "Late"
-          : item.status === "early"
-          ? "Early"
-          : item.status === "on_time"
-          ? "On Time"
-          : "No Schedule",
-      Difference: item.diffVsScheduleText || "",
-    }));
+      // ✅ Prepare data for Excel sheet
+      const sheetData = checkedInRecords.map((item) => ({
+        Name: item.name || "",
+        Date: item.date || "",
+        "Scheduled Start": item.scheduledStartDisplay || "",
+        "Scheduled End": item.scheduledEndDisplay || "",
+        "Check In": item.checkInTime || "",
+        "Check Out": item.checkOutTime || "",
+        Status:
+          item.status === "late"
+            ? "Late"
+            : item.status === "early"
+              ? "Early"
+              : item.status === "on_time"
+                ? "On Time"
+                : "No Schedule",
+        Difference: item.diffVsScheduleText || "",
+      }));
 
-    // ✅ Create workbook and worksheet
-    const ws = XLSX.utils.json_to_sheet(sheetData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+      // ✅ Create workbook and worksheet
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
 
-    // ✅ Write to binary Excel format
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
-    const buf = Buffer.from(wbout, "binary");
-    const wboutBase64 = buf.toString("base64");
+      // ✅ Write to binary Excel format
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
+      const buf = Buffer.from(wbout, "binary");
+      const wboutBase64 = buf.toString("base64");
 
-    // ✅ Filename based on mode
-    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const now = new Date();
-    const ymd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+      // ✅ Filename based on mode
+      const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const now = new Date();
+      const ymd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 
-    let fileName = `attendance_${ymd}.xlsx`;
-    if (mode === "week") fileName = `attendance_week_${ymd}.xlsx`;
-    else if (mode === "month") fileName = `attendance_month_${ymd}.xlsx`;
+      let fileName = `attendance_${ymd}.xlsx`;
+      if (mode === "week") fileName = `attendance_week_${ymd}.xlsx`;
+      else if (mode === "month") fileName = `attendance_month_${ymd}.xlsx`;
 
-    // ✅ Use documentDirectory (trusted location)
-    const fileUri = FileSystem.documentDirectory + fileName;
+      // ✅ Use documentDirectory (trusted location)
+      const fileUri = FileSystem.documentDirectory + fileName;
 
-    // ✅ Save Excel file
-    await FileSystem.writeAsStringAsync(fileUri, wboutBase64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    // ✅ Share or show file location
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        dialogTitle: fileName,
+      // ✅ Save Excel file
+      await FileSystem.writeAsStringAsync(fileUri, wboutBase64, {
+        encoding: FileSystem.EncodingType.Base64,
       });
-      showSuccessToast("✅ Excel file exported successfully");
-    } else {
-      showSuccessToast("📂 File saved to: " + fileUri);
+
+      // ✅ Share or show file location
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          dialogTitle: fileName,
+        });
+        showSuccessToast("✅ Excel file exported successfully");
+      } else {
+        showSuccessToast("📂 File saved to: " + fileUri);
+      }
+    } catch (err) {
+      console.warn("XLSX Export Error:", err);
+      showErrorToast("❌ Failed to export Excel file");
     }
-  } catch (err) {
-    console.warn("XLSX Export Error:", err);
-    showErrorToast("❌ Failed to export Excel file");
-  }
-};
+  };
 
 
 
@@ -570,9 +629,9 @@ const onGenerateXLSX = async () => {
       <View style={styles.container}>
         <View style={styles.body}>
           <View style={styles.Date_control_Buttons}>
-            <Button1 text={lang.Now} onPress={onSelectNow} width={'30%'} backgroundColor={mode==='day' ? undefined : colors.background} textStyle={{ color: mode==='day' ? colors.secondary : colors.subtext }} />
-            <Button1 text={lang.Week} onPress={onSelectWeek} width={'30%'} backgroundColor={mode==='week' ? undefined : colors.background} textStyle={{ color: mode==='week' ? colors.secondary : colors.subtext }} />
-            <Button1 text={lang.Month} onPress={onSelectMonth} width={'30%'} backgroundColor={mode==='month' ? undefined : colors.background} textStyle={{ color: mode==='month' ? colors.secondary : colors.subtext }} />
+            <Button1 text={lang.Now} onPress={onSelectNow} width={'30%'} backgroundColor={mode === 'day' ? undefined : colors.background} textStyle={{ color: mode === 'day' ? colors.secondary : colors.subtext }} />
+            <Button1 text={lang.Week} onPress={onSelectWeek} width={'30%'} backgroundColor={mode === 'week' ? undefined : colors.background} textStyle={{ color: mode === 'week' ? colors.secondary : colors.subtext }} />
+            <Button1 text={lang.Month} onPress={onSelectMonth} width={'30%'} backgroundColor={mode === 'month' ? undefined : colors.background} textStyle={{ color: mode === 'month' ? colors.secondary : colors.subtext }} />
           </View>
 
           <View style={styles.searchWrap}>
@@ -598,10 +657,10 @@ const onGenerateXLSX = async () => {
 
           <View style={styles.buttonWrap}>
             <Button1
-  text={lang.generate_csv}
-  width={"100%"}
-  onPress={onGenerateXLSX}
-/>
+              text={lang.generate_csv}
+              width={"100%"}
+              onPress={onGenerateXLSX}
+            />
 
           </View>
 
@@ -625,26 +684,80 @@ const onGenerateXLSX = async () => {
                   return (
                     <CartBox key={r.id ?? index} containerStyle={styles.detail_cartbox}>
                       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                        <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
-                          <View style={styles.avatarPlaceholder}>
-                            <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
-                          </View>
+                        <View style={{ flex: 1 }}>
+                          {/* 🔹 Branch name row (above avatar) */}
+                          {r.branchName && currentBranchId && r.branchId && r.branchId !== currentBranchId ? (
+                            <View style={styles.branchRow}>
+                              <Image
+                                source={require("../../../assets/icons/branch.png")}
+                                style={styles.branchIcon}
+                              />
+                              <Text style={styles.branchName} numberOfLines={1} ellipsizeMode="tail">
+                                {r.branchName}
+                              </Text>
+                            </View>
+                          ) : null}
 
-                          <View style={styles.name_position}>
-                            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{r.name}</Text>
-                            <Text style={styles.time}>{r.scheduledStartDisplay ? `${r.scheduledStartDisplay} - ${r.scheduledEndDisplay}` : "No Schedule"}</Text>
-                           <Text style={styles.time}>{r.date ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${MONTHS[new Date(r.date).getMonth()]} ${new Date(r.date).getDate()}` : ""}</Text>
+                          {/* 🧑 Avatar + user info */}
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <View style={styles.avatarPlaceholder}>
+                              <Image
+                                source={require("../../../assets/images/profile2.png")}
+                                style={styles.profileImage}
+                              />
+                            </View>
+
+                            <View style={styles.name_position}>
+                              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                                {r.name}
+                              </Text>
+                              <Text style={styles.time}>
+                                {r.scheduledStartDisplay
+                                  ? `${r.scheduledStartDisplay} - ${r.scheduledEndDisplay}`
+                                  : "No Schedule"}
+                              </Text>
+                              <Text style={styles.time}>
+                                {r.date
+                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${MONTHS[new Date(r.date).getMonth()]
+                                  } ${new Date(r.date).getDate()}`
+                                  : ""}
+                              </Text>
+                            </View>
                           </View>
                         </View>
 
+                        {/* ⏱️ Status (Right side) */}
                         <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-                          <Text style={ r.status === "late" ? styles.status_late : r.status === "early" ? styles.status_early : styles.status_on_time }>
-                            { r.status === "late" ? "Late" : r.status === "early" ? "Early" : r.status === "on_time" ? "On Time" : "No Schedule" }
+                          <Text
+                            style={
+                              r.status === "late"
+                                ? styles.status_late
+                                : r.status === "early"
+                                  ? styles.status_early
+                                  : r.status === "on_time"
+                                    ? styles.status_on_time
+                                    : { display: "none" } // ✅ Hide "No Schedule" text completely
+                            }
+                          >
+                            {r.status === "late"
+                              ? "Late"
+                              : r.status === "early"
+                                ? "Early"
+                                : r.status === "on_time"
+                                  ? "On Time"
+                                  : ""} {/* ✅ Empty string instead of "No Schedule" */}
                           </Text>
-                          {r.diffVsScheduleText ? <Text style={[styles.time1, { marginTop: 6 }]}>{r.diffVsScheduleText}</Text> : null}
+
+
+                          {r.diffVsScheduleText ? (
+                            <Text style={[styles.time1, { marginTop: 6 }]}>
+                              {r.diffVsScheduleText}
+                            </Text>
+                          ) : null}
                         </View>
                       </View>
                     </CartBox>
+
                   );
                 })
               )}
@@ -700,7 +813,7 @@ const styles = StyleSheet.create({
   name_position: { marginLeft: 10, width: "65%" },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
-   time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
+  time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
   duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8 },
   status_early: {
     fontWeight: fonts.weight.regular as any,
@@ -743,14 +856,22 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     width: '90%'
   },
-  branchIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 4,
+  branchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
   },
+
+  branchIcon: {
+    width: 14,
+    height: 14,
+    marginRight: 5,
+    tintColor: colors.text, // make it match theme color
+  },
+
   branchName: {
-    fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+    fontSize: fonts.size.m
   },
 });
 
