@@ -25,6 +25,7 @@ import Footer_S from '../components/Footer_S';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
 import BranchScreen from '../screens/superadmin/main/BranchScreen';
 import BranchProfileScreen from '../screens/superadmin/main/BranchProfileScreen';
+import AdminNotificationScreen from '../screens/admin/main/more/NotificationScreen';
 
 
 
@@ -100,7 +101,7 @@ export const StackNavigator: React.FC = () => {
 
       <Stack.Screen
         name="NotificationScreen"
-        component={NotificationScreen}
+        component={AdminNotificationScreen}
         options={{ headerShown: false }}
       />
 
