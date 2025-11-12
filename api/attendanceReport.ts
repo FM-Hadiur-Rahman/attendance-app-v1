@@ -34,7 +34,7 @@ export const getAttendanceReport = async (params: {
   startDate: string;
   endDate: string;
   format?: string;
-}) : Promise<AttendanceReportRow[]> => {
+}): Promise<AttendanceReportRow[]> => {
   try {
     const queryParams: Record<string, any> = {};
     if (params.branchId) queryParams.branchId = params.branchId;
@@ -46,16 +46,16 @@ export const getAttendanceReport = async (params: {
     const res = await axiosInstance.get('/admin/attendance/report', { params: queryParams });
     const data = res?.data ?? {};
     // backend shape: { success: true, rows: [...] } or res.data.rows
-const rows = data.rows ?? data.data ?? [];
-// Normalize rows so we always expose `fullname` (prefer fullname/full_name/name) and
-// remove `username` to avoid UI falling back to username accidentally.
-const normalized = (Array.isArray(rows) ? rows : []).map((r: any) => {
-  const fullname = r.fullname || r.full_name || r.name || "";
-  const clone: any = { ...r, fullname };
-  if ('username' in clone) delete clone.username;
-  return clone;
-});
-return normalized as AttendanceReportRow[];
+    const rows = data.rows ?? data.data ?? [];
+    // Normalize rows so we always expose `fullname` (prefer fullname/full_name/name) and
+    // remove `username` to avoid UI falling back to username accidentally.
+    const normalized = (Array.isArray(rows) ? rows : []).map((r: any) => {
+      const fullname = r.fullname || r.full_name || r.name || "";
+      const clone: any = { ...r, fullname };
+      if ('username' in clone) delete clone.username;
+      return clone;
+    });
+    return normalized as AttendanceReportRow[];
 
   } catch (err: any) {
     console.error('getAttendanceReport error', err?.response?.data ?? err);
