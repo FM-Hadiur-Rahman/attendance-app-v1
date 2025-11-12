@@ -1188,312 +1188,319 @@ export default function AddScheduleScreen(props: any) {
         </Pressable>
       )}
       <Toast config={toastConfig} />
-      {/* ---------- POPUP: saves schedules + per-day notifications to employee + only target-branch admins ---------- */}
-      <Popup
-        visible={saveConfirmVisible}
-        onClose={() => setSaveConfirmVisible(false)}
-        dismissOnOverlayPress={false}
-        title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
-        titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-          <Button1
-            text={lang.yes || "Yes"}
-            onPress={async () => {
-              // close dialog immediately
-              setSaveConfirmVisible(false);
+     
+    {/* ---------- POPUP: saves schedules + per-day notifications to employee + only target-branch admins ---------- */}
+<Popup
+  visible={saveConfirmVisible}
+  onClose={() => setSaveConfirmVisible(false)}
+  dismissOnOverlayPress={false}
+  title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
+  titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any }}
+>
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+    <Button1
+      text={lang.yes || "Yes"}
+      onPress={async () => {
+        // close dialog immediately
+        setSaveConfirmVisible(false);
 
+        try {
+          setLoading(true);
+
+          // 1) Gather user changes + templates (deep clone)
+          const userChanges = (changeLog || [])
+            .filter((c) => c.type === "add" || c.type === "update")
+            .map((c) => ({ ...JSON.parse(JSON.stringify(c.schedule)) }));
+
+          const prevWeekSchedules = Object.values(localSchedulesByDate)
+            .flat()
+            .filter((s) => s.user_id === selectedStaffId)
+            .map((s) => JSON.parse(JSON.stringify(s)));
+
+          // 2) Map previous-week templates' day-of-week to current-week dates
+          const currentWeekDayMap: Record<string, string> = {};
+          displayWeekDates.forEach((d) => {
+            const dow = WEEKDAYS[d.getDay()];
+            currentWeekDayMap[dow] = dateToYMD(d);
+          });
+
+          const prevToCurrentWeekSchedules = prevWeekSchedules
+            .map((s) => {
+              const prevDow = WEEKDAYS[new Date(s.date).getDay()];
+              const targetDate = currentWeekDayMap[prevDow];
+              if (!targetDate) return null;
+              return { ...s, date: targetDate };
+            })
+            .filter(Boolean);
+
+          const userChangeKeys = new Set(userChanges.map((u) => `${u.user_id}-${u.date}`));
+          let templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
+            const key = `${t.user_id}-${t.date}`;
+            return !userChangeKeys.has(key);
+          });
+
+          let schedulesToSaveRaw = [...templatesToKeep, ...userChanges];
+
+          const currentWeekDatesYMD = displayWeekDates.map((d) => dateToYMD(d));
+          schedulesToSaveRaw = schedulesToSaveRaw.filter((s) => currentWeekDatesYMD.includes(s.date));
+
+          // 3) normalize start/end for dedupe
+          const normalizeForDedupe = (s: any) => {
+            const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
+            const computedEnd = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+            const start = timeToHHMM(String(startRaw));
+            const end = timeToHHMM(String(computedEnd));
+            return {
+              ...s,
+              start_time: start,
+              end_time: end,
+              _dedupeStart: start,
+              _dedupeEnd: end,
+            };
+          };
+
+          const normalizedList = schedulesToSaveRaw.map(normalizeForDedupe);
+
+          // 4) dedupe
+          const seen = new Set<string>();
+          const deduped = normalizedList.filter((s) => {
+            const branchId = s.branch_id ?? s.branch ?? "";
+            const key = `${s.user_id}-${s.date}-${s._dedupeStart}-${s._dedupeEnd}-${branchId}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          // final schedules to save (strip helpers)
+          const schedulesToSave = deduped.map((s) => {
+            const copy = { ...s };
+            delete copy._dedupeStart;
+            delete copy._dedupeEnd;
+            return copy;
+          });
+
+          if (schedulesToSave.length === 0) {
+            showErrorToast(lang.no_changes_to_save || "No changes to save");
+            setLoading(false);
+            return;
+          }
+
+          // employeeId fallback + branch fallback (used when schedule item lacks branch_id)
+          const employeeIdToUse = selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
+          const defaultBranchIdToUse = selectedBranchId || effectiveBranchId || (schedulesToSave[0]?.branch_id ?? "");
+
+          // 5) Build final payload in "date/day/start/end" shape the backend expects
+          const schedulesPayload = schedulesToSave.map((s) => {
+            const dateYmd = s.date;
+            const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
+            const endRaw = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+            return {
+              date: dateYmd,
+              day_of_week: dayOfWeekFromYmd(dateYmd),
+              start_time: timeToHHMM(startRaw),
+              end_time: timeToHHMM(endRaw),
+            };
+          });
+
+          if (schedulesPayload.length === 0) {
+            showErrorToast("No valid schedules to create");
+            setLoading(false);
+            return;
+          }
+
+          // 6) Save schedules to backend
+          const resp = await postSchedulesBulk(employeeIdToUse, defaultBranchIdToUse, schedulesPayload);
+          console.log("[sched] postSchedulesBulk resp:", resp);
+
+          // helper formatters (for notification body)
+          const formatTime12 = (hhmmss: string) => {
+            if (!hhmmss) return "";
+            const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
+            let hh = parts[0] ?? 0;
+            const mm = parts[1] ?? 0;
+            const ampm = hh >= 12 ? "PM" : "AM";
+            hh = hh % 12;
+            if (hh === 0) hh = 12;
+            return `${hh}:${String(mm).padStart(2, "0")} ${ampm}`;
+          };
+          const formatDateReadable = (ymd: string) => {
+            if (!ymd) return "";
+            const [y, m, d] = String(ymd).split("-").map((v) => parseInt(v, 10));
+            if (!y || !m || !d) return ymd;
+            const dt = new Date(y, m - 1, d);
+            return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+          };
+
+          // Helper to resolve employee object and original branch id (source)
+          const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
+          const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch?._id ?? employeeObj?.raw?.branch?.id) ?? null;
+          const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
+
+          // 7) NOTIFICATIONS: send **per-schedule** notifications (one per date).
+          // Use per-schedule branch if available; otherwise fallback to defaultBranchIdToUse.
+          for (const s of schedulesToSave) {
+            try {
+              const targetBranchId = s.branch_id ?? s.branch ?? defaultBranchIdToUse ?? "";
+              const start = timeToHHMM(s.start_time ?? s.start ?? s.from_time ?? "");
+              const end = timeToHHMM(s.end_time ?? s.end ?? "");
+              const date = s.date;
+              const startFmt = formatTime12(start);
+              const endFmt = formatTime12(end);
+              const dateReadable = formatDateReadable(date);
+              const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : (startFmt || endFmt || "");
+
+              // employee notification (always send per-day)
               try {
-                setLoading(true);
+                const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
 
-                // 1) Gather user changes + templates (deep clone)
-                const userChanges = (changeLog || [])
-                  .filter((c) => c.type === "add" || c.type === "update")
-                  .map((c) => ({ ...JSON.parse(JSON.stringify(c.schedule)) }));
+                const empBody =
+                  targetBranchId && employeeBranchId && String(targetBranchId) !== String(employeeBranchId)
+                    ? `New Shift assigned at Branch: ${assignedBranchName} for Date: ${dateReadable}, Time: ${timePart},`
+                    : `New Shift assigned for Date: ${dateReadable}, Time: ${timePart},`;
 
-                const prevWeekSchedules = Object.values(localSchedulesByDate)
-                  .flat()
-                  .filter((s) => s.user_id === selectedStaffId)
-                  .map((s) => JSON.parse(JSON.stringify(s)));
-
-                // 2) Map previous-week templates' day-of-week to current-week dates
-                const currentWeekDayMap: Record<string, string> = {};
-                displayWeekDates.forEach((d) => {
-                  const dow = WEEKDAYS[d.getDay()];
-                  currentWeekDayMap[dow] = dateToYMD(d);
-                });
-
-                const prevToCurrentWeekSchedules = prevWeekSchedules
-                  .map((s) => {
-                    const prevDow = WEEKDAYS[new Date(s.date).getDay()];
-                    const targetDate = currentWeekDayMap[prevDow];
-                    if (!targetDate) return null;
-                    return { ...s, date: targetDate };
-                  })
-                  .filter(Boolean);
-
-                const userChangeKeys = new Set(userChanges.map((u) => `${u.user_id}-${u.date}`));
-                let templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
-                  const key = `${t.user_id}-${t.date}`;
-                  return !userChangeKeys.has(key);
-                });
-
-                let schedulesToSaveRaw = [...templatesToKeep, ...userChanges];
-
-                const currentWeekDatesYMD = displayWeekDates.map((d) => dateToYMD(d));
-                schedulesToSaveRaw = schedulesToSaveRaw.filter((s) => currentWeekDatesYMD.includes(s.date));
-
-                // 3) normalize start/end for dedupe
-                const normalizeForDedupe = (s: any) => {
-                  const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
-                  const computedEnd = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
-                  const start = timeToHHMM(String(startRaw));
-                  const end = timeToHHMM(String(computedEnd));
-                  return {
-                    ...s,
+                await sendNotificationToUser(employeeIdToUse, {
+                  title: "Shift Assigned",
+                  body: empBody,
+                  type: "shift_assigned",
+                  meta: {
+                    branchId: targetBranchId || null,
+                    date,
                     start_time: start,
                     end_time: end,
-                    _dedupeStart: start,
-                    _dedupeEnd: end,
-                  };
-                };
-
-                const normalizedList = schedulesToSaveRaw.map(normalizeForDedupe);
-
-                // 4) dedupe
-                const seen = new Set<string>();
-                const deduped = normalizedList.filter((s) => {
-                  const branchId = s.branch_id ?? s.branch ?? "";
-                  const key = `${s.user_id}-${s.date}-${s._dedupeStart}-${s._dedupeEnd}-${branchId}`;
-                  if (seen.has(key)) return false;
-                  seen.add(key);
-                  return true;
+                  },
                 });
-
-                // final schedules to save (strip helpers)
-                const schedulesToSave = deduped.map((s) => {
-                  const copy = { ...s };
-                  delete copy._dedupeStart;
-                  delete copy._dedupeEnd;
-                  return copy;
-                });
-
-                if (schedulesToSave.length === 0) {
-                  showErrorToast(lang.no_changes_to_save || "No changes to save");
-                  setLoading(false);
-                  return;
-                }
-
-                // employeeId fallback + branch fallback (used when schedule item lacks branch_id)
-                const employeeIdToUse = selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
-                // NOTE: schedulesToSave may have per-item branch_id; use per-item where present below.
-                const defaultBranchIdToUse = selectedBranchId || effectiveBranchId || (schedulesToSave[0]?.branch_id ?? "");
-
-                // 5) Build final payload in "date/day/start/end" shape the backend expects
-                const schedulesPayload = schedulesToSave.map((s) => {
-                  const dateYmd = s.date;
-                  const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
-                  const endRaw = s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
-                  return {
-                    date: dateYmd,
-                    day_of_week: dayOfWeekFromYmd(dateYmd),
-                    start_time: timeToHHMM(startRaw),
-                    end_time: timeToHHMM(endRaw),
-                  };
-                });
-
-                if (schedulesPayload.length === 0) {
-                  showErrorToast("No valid schedules to create");
-                  setLoading(false);
-                  return;
-                }
-
-                // 6) Save schedules to backend
-                const resp = await postSchedulesBulk(employeeIdToUse, defaultBranchIdToUse, schedulesPayload);
-                console.log("[sched] postSchedulesBulk resp:", resp);
-
-                // helper formatters (for notification body)
-                const formatTime12 = (hhmmss: string) => {
-                  if (!hhmmss) return "";
-                  const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
-                  let hh = parts[0] ?? 0;
-                  const mm = parts[1] ?? 0;
-                  const ampm = hh >= 12 ? "PM" : "AM";
-                  hh = hh % 12;
-                  if (hh === 0) hh = 12;
-                  return `${hh}:${String(mm).padStart(2, "0")} ${ampm}`;
-                };
-                const formatDateReadable = (ymd: string) => {
-                  if (!ymd) return "";
-                  const [y, m, d] = String(ymd).split("-").map((v) => parseInt(v, 10));
-                  if (!y || !m || !d) return ymd;
-                  const dt = new Date(y, m - 1, d);
-                  return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-                };
-
-                // Helper to resolve employee object and original branch id (source)
-                const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
-                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch?._id ?? employeeObj?.raw?.branch?.id) ?? null;
-                const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
-
-                // 7) NOTIFICATIONS: send **per-schedule** notifications (one per date).
-                // Use per-schedule branch if available; otherwise fallback to defaultBranchIdToUse.
-                for (const s of schedulesToSave) {
-                  try {
-                    const targetBranchId = s.branch_id ?? s.branch ?? defaultBranchIdToUse ?? "";
-                    const start = timeToHHMM(s.start_time ?? s.start ?? s.from_time ?? "");
-                    const end = timeToHHMM(s.end_time ?? s.end ?? "");
-                    const date = s.date;
-                    const startFmt = formatTime12(start);
-                    const endFmt = formatTime12(end);
-                    const dateReadable = formatDateReadable(date);
-                    const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : (startFmt || endFmt || "");
-
-                    // employee notification (always send per-day)
-                    try {
-                      const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
-
-                      const empBody =
-                        targetBranchId && employeeBranchId && String(targetBranchId) !== String(employeeBranchId)
-                          ? `New Shift assigned at Branch: ${assignedBranchName} for Date: ${dateReadable}, Time: ${timePart},`
-                          : `New Shift assigned for Date: ${dateReadable}, Time: ${timePart},`;
-
-
-                      await sendNotificationToUser(employeeIdToUse, {
-                        title: "Shift Assigned",
-                        body: empBody,
-                        type: "shift_assigned",
-                        meta: {
-                          branchId: targetBranchId || null,
-                          date,
-                          start_time: start,
-                          end_time: end,
-                        },
-                      });
-                      console.log("[sched] notified employee for date", date, employeeIdToUse);
-                    } catch (e) {
-                      console.warn("[sched] sendNotificationToUser (employee) failed for date", date, e);
-                    }
-
-                    // admin notification: only if targetBranchId exists and is different from employeeBranchId
-                    if (targetBranchId && String(targetBranchId) !== String(employeeBranchId)) {
-                      // find admins for that branch locally first
-                      const normalizeUserBranch = (u: any) => u.branch_id ?? (u.raw?.branch?._id ?? u.raw?.branch?.id) ?? "";
-                      const normalizeUserRole = (u: any) => (u.role ?? u.raw?.role ?? "").toString().toLowerCase();
-
-                      let branchAdmins = (localUsers || []).filter((u: any) => {
-                        const uBranch = normalizeUserBranch(u);
-                        const role = normalizeUserRole(u);
-                        const isAdmin = role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
-                        return String(uBranch) === String(targetBranchId) && isAdmin;
-                      });
-
-                      // fallback: fetch users for that branch if none found locally
-                      if (!branchAdmins || branchAdmins.length === 0) {
-                        try {
-                          const fetched = await fetchUsers({ branchId: targetBranchId, limit: 1000 });
-                          const fetchedList = fetched?.users ?? fetched?.data ?? [];
-                          const normalized = normalizeUsers(Array.isArray(fetchedList) ? fetchedList : []);
-                          branchAdmins = normalized.filter((u: any) => {
-                            const role = (u.role || "").toString().toLowerCase();
-                            return role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
-                          });
-                        } catch (e) {
-                          console.warn("[sched] fetchUsers fallback failed for branch", targetBranchId, e);
-                        }
-                      }
-
-                      // compose admin body (single day)
-                      const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
-                      const fromBranchName = (localBranches.find(b => String(b.id) === String(employeeBranchId))?.name) || "";
-                      const adminBody = `Branch '${fromBranchName || "Unknown"}' has assigned ${employeeName} to work at your branch '${assignedBranchName}'.\n Date: ${dateReadable}${timePart ? `, Time: ${timePart}` : ""}`;
-
-                      // send per-admin notification (skip if admin is the employee)
-                      try {
-                        const adminIds = Array.from(new Set((branchAdmins || []).map((a: any) => String(a.id))))
-                          .filter(id => id && String(id) !== String(employeeIdToUse));
-                        await Promise.all(adminIds.map((adminId: string) =>
-                          sendNotificationToUser(adminId, {
-                            title: "Staff Assigned to Your Branch",
-                            body: adminBody,
-                            type: "branch_staff_assigned",
-                            meta: {
-                              fromBranchId: employeeBranchId,
-                              toBranchId: targetBranchId,
-                              employeeId: employeeIdToUse,
-                              date,
-                              start_time: start,
-                              end_time: end,
-                            },
-                          })
-                        ));
-                        console.log("[sched] notified branch admins individually for branch", targetBranchId, "date", date, adminIds);
-                      } catch (e) {
-                        console.warn("[sched] notify branch admins individually failed for branch", targetBranchId, e);
-                      }
-
-                      // ALSO write a branch-level notification doc for this single date (so branch listeners get it)
-                      try {
-                        const adminBranchDoc = {
-                          title: "Staff Assigned to Your Branch",
-                          body: adminBody,
-                          type: "branch_staff_assigned",
-                          meta: {
-                            fromBranchId: employeeBranchId ?? null,
-                            toBranchId: targetBranchId ?? null,
-                            assignedBranchName: assignedBranchName ?? null, // <-- IMPORTANT: exact branch name
-                            employeeId: employeeIdToUse,
-                            date,
-                            start_time: start,
-                            end_time: end,
-                          },
-                          read: false,
-                          createdAt: serverTimestamp(),
-                        };
-                        await addDoc(collection(db, "notifications_branch", String(targetBranchId), "inbox"), adminBranchDoc);
-                        console.log("[sched] wrote branch-level notification (single-day) for branch", targetBranchId, "date", date);
-                      } catch (e) {
-                        console.warn("[sched] write branch-level notification failed for branch", targetBranchId, e);
-                      }
-                    } else {
-                      // if targetBranchId equals employeeBranchId or targetBranchId missing -> do not notify branch admins
-                      console.log("[sched] skipping admin notification for date", s.date, "because targetBranch equals employeeBranch or missing");
-                    }
-                  } catch (e) {
-                    console.warn("[sched] notify loop error for schedule row", s, e);
-                  }
-                } // end for schedulesToSave loop
-
-                // success UI
-                showSuccessToast(lang.schedule_added || "Schedules created");
-                navigation.navigate("Footer_A", {
-                  selectedTab: "WorkSchedule",
-                  userId,
-                  langId,
-                  toastMessage: "Schedules created successfully",
-                });
-
-              } catch (err: any) {
-                console.error("Failed to postSchedulesBulk / notify", err);
-                showErrorToast(lang.failed_to_save || "Failed to save schedules");
-              } finally {
-                setLoading(false);
+                console.log("[sched] notified employee for date", date, employeeIdToUse);
+              } catch (e) {
+                console.warn("[sched] sendNotificationToUser (employee) failed for date", date, e);
               }
-            }}
-            backgroundColor={colors.primary}
-            width={"48%"}
-            textStyle={{ color: colors.secondary }}
-          />
 
-          <Button1
-            text={lang.no || "No"}
-            onPress={() => setSaveConfirmVisible(false)}
-            backgroundColor={colors.error_text}
-            width={'48%'}
-            textStyle={{ color: colors.secondary }}
-          />
-        </View>
-      </Popup>
+              // admin notification: ONLY for admins of targetBranchId (and only if different from employee's own branch)
+              if (targetBranchId && String(targetBranchId) !== String(employeeBranchId)) {
+                let branchAdmins: any[] = [];
+
+                // 1) Preferred: fetch admins for that branch using fetchUsers API with role filter
+                try {
+                  const fetched = await fetchUsers({ branchId: targetBranchId, role: 'admin', limit: 1000 });
+                  const fetchedList = fetched?.users ?? fetched?.data ?? [];
+                  const normalized = normalizeUsers(Array.isArray(fetchedList) ? fetchedList : []);
+                  branchAdmins = normalized.filter((u: any) => {
+                    const role = (u.role || "").toString().toLowerCase();
+                    return role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
+                  });
+                  console.log("[sched] fetched branch admins via API:", branchAdmins.map((a: any) => a.id));
+                } catch (e) {
+                  console.warn("[sched] fetchUsers(role=admin) failed for branch", targetBranchId, e);
+                }
+
+                // 2) Fallback: if none found, try localUsers filter (existing cache)
+                if ((!branchAdmins || branchAdmins.length === 0) && Array.isArray(localUsers) && localUsers.length > 0) {
+                  branchAdmins = localUsers.filter((u: any) => {
+                    const uBranch = u.branch_id ?? (u.raw?.branch?._id ?? u.raw?.branch?.id) ?? "";
+                    const role = (u.role ?? u.raw?.role ?? "").toString().toLowerCase();
+                    const isAdmin = role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
+                    return String(uBranch) === String(targetBranchId) && isAdmin;
+                  });
+                  console.log("[sched] fallback branchAdmins from localUsers:", branchAdmins.map((a: any) => a.id));
+                }
+
+                // Compose admin body (single day)
+                const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
+                const fromBranchName = (localBranches.find(b => String(b.id) === String(employeeBranchId))?.name) || "";
+                const adminBody = `Branch '${fromBranchName || "Unknown"}' has assigned ${employeeName} to work at your branch '${assignedBranchName}'.\n Date: ${dateReadable}${timePart ? `, Time: ${timePart}` : ""}`;
+
+                // send per-admin notification (skip if admin is the employee)
+                try {
+const adminIds = Array.from(new Set((branchAdmins || []).map((a: any) => String(a.id))))
+  .filter(id =>
+    id &&
+    String(id) !== String(employeeIdToUse) &&
+    String(id) !== String(userId)   // <-- exclude the sender
+  );
+                  await Promise.all(adminIds.map((adminId: string) =>
+                    sendNotificationToUser(adminId, {
+                      title: "Staff Assigned to Your Branch",
+                      body: adminBody,
+                      type: "branch_staff_assigned",
+                      meta: {
+                        fromBranchId: employeeBranchId,
+                        toBranchId: targetBranchId,
+                        employeeId: employeeIdToUse,
+                        date,
+                        start_time: start,
+                        end_time: end,
+                      },
+                    })
+                  ));
+                  console.log("[sched] notified branch admins individually for branch", targetBranchId, "date", date, adminIds);
+                } catch (e) {
+                  console.warn("[sched] notify branch admins individually failed for branch", targetBranchId, e);
+                }
+
+                // ALSO write a branch-level notification doc for this single date (so branch listeners get it)
+                try {
+                  const adminBranchDoc = {
+                    title: "Staff Assigned to Your Branch",
+                    body: adminBody,
+                    type: "branch_staff_assigned",
+                    meta: {
+                      fromBranchId: employeeBranchId ?? null,
+                      fromUserId: userId ?? null, 
+                      fromUserName: employeeName ?? null,
+                      toBranchId: targetBranchId ?? null,
+                      toBranchName: assignedBranchName ?? null,        // <-- add this
+                      assignedBranchName: assignedBranchName ?? null,  // keep this (backwards compatibility)
+                      employeeId: employeeIdToUse,
+                      date,
+                      start_time: start,
+                      end_time: end,
+                    },
+                    read: false,
+                    createdAt: serverTimestamp(),
+                  };
+                  await addDoc(collection(db, "notifications_branch", String(targetBranchId), "inbox"), adminBranchDoc);
+                  console.log("[sched] wrote branch-level notification (single-day) for branch", targetBranchId, "date", date);
+                } catch (e) {
+                  console.warn("[sched] write branch-level notification failed for branch", targetBranchId, e);
+                }
+              } else {
+                // if targetBranchId equals employeeBranchId or targetBranchId missing -> do not notify branch admins
+                console.log("[sched] skipping admin notification for date", s.date, "because targetBranch equals employeeBranch or missing");
+              }
+            } catch (e) {
+              console.warn("[sched] notify loop error for schedule row", s, e);
+            }
+          } // end for schedulesToSave loop
+
+          // success UI
+          showSuccessToast(lang.schedule_added || "Schedules created");
+          navigation.navigate("Footer_A", {
+            selectedTab: "WorkSchedule",
+            userId,
+            langId,
+            toastMessage: "Schedules created successfully",
+          });
+
+        } catch (err: any) {
+          console.error("Failed to postSchedulesBulk / notify", err);
+          showErrorToast(lang.failed_to_save || "Failed to save schedules");
+        } finally {
+          setLoading(false);
+        }
+      }}
+      backgroundColor={colors.primary}
+      width={"48%"}
+      textStyle={{ color: colors.secondary }}
+    />
+
+    <Button1
+      text={lang.no || "No"}
+      onPress={() => setSaveConfirmVisible(false)}
+      backgroundColor={colors.error_text}
+      width={'48%'}
+      textStyle={{ color: colors.secondary }}
+    />
+  </View>
+</Popup>
       {/* ---------- END POPUP ---------- */}
     </View>
   );

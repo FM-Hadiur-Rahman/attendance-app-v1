@@ -23,10 +23,11 @@ import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
 import Toast, { showSuccessToast, showErrorToast, toastConfig } from "../../../components/Toast";
-
 import { getProfile, updateProfile, ProfileUser } from "../../../api/profile";
 import { logout as apiLogout } from "../../../api/auth/authService";
 import { clearAllAuthData } from "../../../api/auth/authToken"; 
+
+import { getBranchId } from "../../../api/profile";
 
 export default function MoreScreen(props: any) {
   const navigation = useNavigation<any>();
@@ -47,6 +48,8 @@ export default function MoreScreen(props: any) {
 
   const [selectedLanguage, setSelectedLanguage] = useState(initialLang);
   const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
+
+  const [branchId, setBranchId] = useState<string | null>(null);
 
   useEffect(() => {
     if (propLangId && propLangId !== selectedLanguage) {
@@ -124,6 +127,23 @@ export default function MoreScreen(props: any) {
       setUser(profile);
       setFullName(profile.fullname ?? "");
       setFullnameInput(profile.fullname ?? "");
+          const profileBranchId =
+      typeof profile.branch === "string"
+        ? profile.branch
+        : profile.branch?._id ?? null;
+
+    if (profileBranchId) {
+      setBranchId(String(profileBranchId));
+      console.log("ProfileScreen: branchId from profile =", profileBranchId);
+    } else {
+      const stored = await getBranchId();
+      if (stored) {
+        setBranchId(stored);
+        console.log("ProfileScreen: branchId from storage =", stored);
+      } else {
+        console.log("ProfileScreen: no branchId found");
+      }
+    }
       // If your API returns an image field, setProfileImage(profile.image) here
     } catch (err: any) {
       console.error('loadProfile error', err);
@@ -284,6 +304,7 @@ const handleLogout = async () => {
                     } else if (item.screen) {
                       navigation.navigate(item.screen, {
                         userId: userId,
+                        branchId: branchId,
                         langId: selectedLanguage, // pass langId
                       });
                     } else {

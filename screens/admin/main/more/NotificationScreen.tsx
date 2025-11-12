@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Image,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import Header from "../../../../components/Header";
 import CartBox from "../../../../components/CartBox";
@@ -20,7 +21,7 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { getUserId } from "../../../../api/auth/authToken";
 import { getProfile } from "../../../../api/profile";
-import { getBranchById } from "../../../../api/Branch"; // <--- import branch API
+import { getBranchById } from "../../../../api/Branchs";
 
 // firestore helper imports
 import {
@@ -34,6 +35,9 @@ import {
   serverTimestamp,
 } from "../../../../api/notification/firebase";
 
+import { fetchUsers, ProfileUser } from "../../../../api/profile";
+
+// --------------------- types ---------------------
 interface NotificationItem {
   source: "personal" | "branch";
   docId: string;
@@ -48,9 +52,42 @@ interface NotificationItem {
   raw?: any;
 }
 
+// convert Firestore doc -> NotificationItem
+const makeItem = (d: any, source: "personal" | "branch", ownerId?: string): NotificationItem => {
+  const raw = d.data() as any;
+  let createdISO = new Date().toISOString();
+  if (raw?.createdAt && typeof raw.createdAt.toDate === "function") createdISO = raw.createdAt.toDate().toISOString();
+  else if (raw?.createdAt && typeof raw.createdAt === "string") createdISO = raw.createdAt;
+
+  let updatedISO: string | undefined = undefined;
+  if (raw?.updatedAt && typeof raw.updatedAt.toDate === "function") updatedISO = raw.updatedAt.toDate().toISOString();
+  else if (raw?.updatedAt && typeof raw.updatedAt === "string") updatedISO = raw.updatedAt;
+
+  const docId = d.id;
+  const nId = `${source}:${docId}`;
+  return {
+    source,
+    docId,
+    n_id: nId,
+    userId: ownerId,
+    n_type: raw?.type ?? "notification",
+    title: raw?.title ?? raw?.t ?? "",
+    subtitle: raw?.body ?? raw?.message ?? "",
+    createdTime: createdISO,
+    updatedTime: updatedISO,
+    read: !!raw?.read,
+    raw,
+  };
+};
+
+// --------------------- component ---------------------
 const AdminNotificationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+
+  // --- DEBUG: log incoming route params immediately ---
+  console.log("[NotificationScreen] route.params:", route.params);
+
   const routeUserId = route.params?.userId ?? null;
   const routeLangId = route.params?.langId ?? "en";
   const lang = (translations as any)[routeLangId] || (translations as any)["en"];
@@ -59,7 +96,6 @@ const AdminNotificationScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
   const [effectiveUserId, setEffectiveUserId] = useState<string | null>(routeUserId);
-  // accept activeBranchId param from navigation (you already pass this)
   const routeActiveBranch = route.params?.activeBranchId ?? route.params?.branchId ?? route.params?.branch_id ?? null;
   const [effectiveBranchId, setEffectiveBranchId] = useState<string | null>(routeActiveBranch ?? null);
   const [effectiveBranchName, setEffectiveBranchName] = useState<string | null>(null); // cached name
@@ -67,6 +103,10 @@ const AdminNotificationScreen: React.FC = () => {
   // to avoid duplicate initial alerts per listener
   const initialPersonalLoad = useRef(true);
   const initialBranchLoad = useRef(true);
+
+  // loading indicator until initial snapshots received
+  const [loading, setLoading] = useState(true);
+  const firstLoadCountRef = useRef(0);
 
   // Request permissions and set notification handler for foreground
   useEffect(() => {
@@ -135,10 +175,15 @@ const AdminNotificationScreen: React.FC = () => {
       return;
     }
     let mounted = true;
+    console.log("[admin-notif] effectiveBranchId resolved:", effectiveBranchId, " — fetching branch name...");
     (async () => {
       try {
         const b = await getBranchById(String(effectiveBranchId));
-        if (mounted && b) setEffectiveBranchName((b.name ?? "").toString());
+        if (mounted) {
+          const name = (b?.name ?? "").toString();
+          console.log("[admin-notif] fetched branch name:", name, "for id:", effectiveBranchId);
+          setEffectiveBranchName(name || null);
+        }
       } catch (e) {
         console.warn("[admin-notif] getBranchById failed for", effectiveBranchId, e);
       }
@@ -146,38 +191,23 @@ const AdminNotificationScreen: React.FC = () => {
     return () => { mounted = false; };
   }, [effectiveBranchId]);
 
-  // helper to convert a Firestore doc to NotificationItem with source
-  const makeItem = (d: any, source: "personal" | "branch", ownerId?: string): NotificationItem => {
-    const raw = d.data() as any;
-    let createdISO = new Date().toISOString();
-    if (raw?.createdAt && typeof raw.createdAt.toDate === "function") createdISO = raw.createdAt.toDate().toISOString();
-    else if (raw?.createdAt && typeof raw.createdAt === "string") createdISO = raw.createdAt;
-
-    let updatedISO: string | undefined = undefined;
-    if (raw?.updatedAt && typeof raw.updatedAt.toDate === "function") updatedISO = raw.updatedAt.toDate().toISOString();
-    else if (raw?.updatedAt && typeof raw.updatedAt === "string") updatedISO = raw.updatedAt;
-
-    const docId = d.id;
-    const nId = `${source}:${docId}`;
-    return {
-      source,
-      docId,
-      n_id: nId,
-      userId: ownerId,
-      n_type: raw?.type ?? "notification",
-      title: raw?.title ?? raw?.t ?? "",
-      subtitle: raw?.body ?? raw?.message ?? "",
-      createdTime: createdISO,
-      updatedTime: updatedISO,
-      read: !!raw?.read,
-      raw,
-    };
-  };
-
   // Combined listener: personal + branch (two separate onSnapshot subscriptions)
   useEffect(() => {
     let unsubPersonal: (() => void) | null = null;
     let unsubBranch: (() => void) | null = null;
+
+    // compute expected number of initial listeners (used to hide the loading indicator after first snapshots)
+    const expectedListeners = (effectiveUserId ? 1 : 0) + (effectiveBranchId ? 1 : 0);
+    firstLoadCountRef.current = 0;
+    setLoading(expectedListeners > 0);
+
+    // helper to mark a listener's first load done and possibly turn off loading
+    const markFirstLoad = () => {
+      firstLoadCountRef.current = (firstLoadCountRef.current || 0) + 1;
+      if (firstLoadCountRef.current >= Math.max(1, expectedListeners)) {
+        setLoading(false);
+      }
+    };
 
     // personal listener (notifications/{userId}/inbox)
     if (effectiveUserId) {
@@ -188,6 +218,8 @@ const AdminNotificationScreen: React.FC = () => {
           q,
           (snap) => {
             const personalItems: NotificationItem[] = snap.docs.map((d) => makeItem(d, "personal", effectiveUserId));
+
+            // play local alert for newly added unread items (skip first load burst)
             if (initialPersonalLoad.current) {
               initialPersonalLoad.current = false;
             } else {
@@ -200,19 +232,24 @@ const AdminNotificationScreen: React.FC = () => {
                 if (firstUnread) playLocalNotification(firstUnread.title, firstUnread.subtitle);
               }
             }
+
             setNotifications((prev) => {
               const branchExisting = (prev || []).filter(p => p.source === "branch");
               const merged = [...personalItems, ...branchExisting];
-              merged.sort((a,b) => (new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime()));
+              merged.sort((a, b) => (new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime()));
               return merged;
             });
+
+            markFirstLoad();
           },
           (err) => {
             console.warn("[admin-notif] personal listener error", err);
+            markFirstLoad();
           }
         );
       } catch (e) {
         console.warn("[admin-notif] failed to start personal listener", e);
+        markFirstLoad();
       }
     }
 
@@ -226,59 +263,122 @@ const AdminNotificationScreen: React.FC = () => {
           (snap) => {
             let branchItems: NotificationItem[] = snap.docs.map((d) => makeItem(d, "branch", effectiveBranchId));
 
-            // STRICT FILTER: only show branch docs that are actually assigned TO this branch.
-            // Accept if meta.assignedBranchName matches effectiveBranchName OR meta.toBranchId equals effectiveBranchId.
+            // Filter logic: show only notifications that target our active branch.
+            const effId = effectiveBranchId ? String(effectiveBranchId) : null;
+            const effNameNorm = effectiveBranchName ? (effectiveBranchName || "").toString().trim().toLowerCase() : null;
+
             branchItems = branchItems.filter((it) => {
               try {
-                const meta = it.raw?.meta ?? {};
+                const raw = it.raw ?? {};
+                const meta = raw?.meta ?? {};
 
-                // try common name variants first
-                const assignedName =
+                const normalize = (v?: any) => (v ? String(v).trim().toLowerCase() : null);
+                const createdByUserId =
+                  meta?.fromUserId ??
+                  meta?.from_user_id ??
+                  meta?.createdBy ??
+                  meta?.created_by ??
+                  null;
+                // if creator equals our current user -> hide (sender shouldn't see their own branch doc)
+                if (createdByUserId && effectiveUserId && String(createdByUserId) === String(effectiveUserId)) {
+                  console.debug("[admin-notif][filter] rejecting branch doc because it was created by this user", docShort, { createdByUserId, effectiveUserId });
+                  return false;
+                }
+                // Common meta keys that might contain the assigned / target branch
+                const targetId =
+                  meta?.toBranchId ??
+                  meta?.to_branch_id ??
+                  meta?.assignedBranchId ??
+                  meta?.assigned_branch_id ??
+                  meta?.targetBranchId ??
+                  meta?.toBranch ??
+                  meta?.to_branch ??
+                  null;
+
+                const assignedBranchNameMeta =
                   meta?.assignedBranchName ??
                   meta?.assigned_branch_name ??
                   meta?.toBranchName ??
                   meta?.to_branch_name ??
-                  meta?.to_branch ??
+                  meta?.assigned_branch ??
+                  meta?.toBranch ??
                   null;
 
-                const toBranchId = meta?.toBranchId ?? meta?.to_branch_id ?? meta?.toBranch ?? meta?.to_branch ?? null;
-                const fromBranchId = meta?.fromBranchId ?? meta?.from_branch_id ?? meta?.fromBranch ?? meta?.from_branch ?? null;
-                const fromBranchName = meta?.fromBranchName ?? meta?.from_branch_name ?? meta?.from_branch ?? null;
+                const sourceId =
+                  meta?.fromBranchId ??
+                  meta?.from_branch_id ??
+                  meta?.fromBranch ??
+                  meta?.from_branch ??
+                  null;
 
-                const normalize = (v?: any) => (v ? String(v).trim().toLowerCase() : null);
-                const assignedNorm = normalize(assignedName);
-                const effNameNorm = normalize(effectiveBranchName);
+                const sourceName =
+                  meta?.fromBranchName ??
+                  meta?.from_branch_name ??
+                  meta?.from_branch ??
+                  null;
 
-                // primary acceptance:
-                // 1) if assigned branch name present -> require name match
-                if (assignedNorm) {
-                  if (!effNameNorm) {
-                    // we don't yet know our branch name (odd) => hide (safe)
-                    return false;
-                  }
-                  if (assignedNorm !== effNameNorm) return false;
+                // DEBUG: print doc short info
+                const docShort = `${it.docId} title='${String(it.title).slice(0, 40)}'`;
+
+                // If notification was created BY our branch -> hide it (source should not see its own assignment doc)
+                if (sourceId && effId && String(sourceId) === effId) {
+                  console.debug("[admin-notif][filter] skipping because created BY our branch", docShort, { sourceId, effId });
+                  return false;
                 }
-                // 2) else if toBranchId present -> require id match
-                else if (toBranchId) {
-                  if (!effectiveBranchId) return false;
-                  if (String(toBranchId) !== String(effectiveBranchId)) return false;
-                } else {
-                  // no assigned info -> hide (notification isn't targeted)
+                if (sourceName && effNameNorm && normalize(sourceName) === effNameNorm) {
+                  console.debug("[admin-notif][filter] skipping because created BY our branch (name)", docShort, { sourceName, effNameNorm });
                   return false;
                 }
 
-                // extra: don't show docs created BY our branch
-                if (fromBranchId && effectiveBranchId && String(fromBranchId) === String(effectiveBranchId)) return false;
-                if (fromBranchName && effNameNorm && normalize(fromBranchName) === effNameNorm) return false;
+                // 1) If meta assigned branch name exists -> require it to match active branch name
+                if (assignedBranchNameMeta) {
+                  if (!effNameNorm) {
+                    console.debug("[admin-notif][filter] assignedBranchNameMeta present but effective branch name not ready - reject (conservative)", docShort, { assignedBranchNameMeta });
+                    return false;
+                  }
+                  const match = normalize(assignedBranchNameMeta) === effNameNorm;
+                  console.debug("[admin-notif][filter] assignedBranchNameMeta check", docShort, { assignedBranchNameMeta, effNameNorm, match });
+                  return match;
+                }
 
-                return true;
+                // 2) If meta target id exists -> require id match (works even if effName isn't loaded)
+                if (targetId) {
+                  const match = effId ? String(targetId) === effId : false;
+                  console.debug("[admin-notif][filter] targetId check", docShort, { targetId, effId, match });
+                  return match;
+                }
+
+                // 3) Fallback: parse free-text only for the specific phrase
+                const bodyText = String(raw?.body ?? raw?.message ?? "").toString();
+                const phraseRegex = /to work at your branch/i;
+                if (phraseRegex.test(bodyText)) {
+                  // attempt to parse assigned branch name from the text: look for your branch 'NAME' or your branch "NAME"
+                  const matchSingle = bodyText.match(/your branch\s*'([^']+)'/i);
+                  const matchDouble = bodyText.match(/your branch\s*"([^"]+)"/i);
+                  const parsed = matchSingle?.[1] ?? matchDouble?.[1] ?? null;
+                  if (!parsed) {
+                    console.debug("[admin-notif][filter] phrase found but couldn't parse branch name - reject", docShort, { bodyText });
+                    return false;
+                  }
+                  if (!effNameNorm) {
+                    console.debug("[admin-notif][filter] parsed branch but effectiveBranchName not ready - reject", docShort, { parsed });
+                    return false;
+                  }
+                  const match = normalize(parsed) === effNameNorm;
+                  console.debug("[admin-notif][filter] parsed-name check", docShort, { parsed, effNameNorm, match });
+                  return match;
+                }
+
+                // default: hide (we only display notifications that explicitly target this branch)
+                console.debug("[admin-notif][filter] no target info found - reject", docShort);
+                return false;
               } catch (e) {
                 console.warn("[admin-notif] branch filter error for doc", it.docId, e);
-                // hide malformed docs
                 return false;
               }
             });
 
+            // play local alert for newly added unread items (skip first load burst)
             if (initialBranchLoad.current) {
               initialBranchLoad.current = false;
             } else {
@@ -296,22 +396,26 @@ const AdminNotificationScreen: React.FC = () => {
             setNotifications((prev) => {
               const personalExisting = (prev || []).filter(p => p.source === "personal");
               const merged = [...personalExisting, ...branchItems];
-              merged.sort((a,b) => (new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime()));
+              merged.sort((a, b) => (new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime()));
               return merged;
             });
+
+            markFirstLoad();
           },
           (err) => {
             console.warn("[admin-notif] branch listener error", err);
+            markFirstLoad();
           }
         );
       } catch (e) {
         console.warn("[admin-notif] failed to start branch listener", e);
+        markFirstLoad();
       }
     }
 
     return () => {
-      try { if (unsubPersonal) unsubPersonal(); } catch {}
-      try { if (unsubBranch) unsubBranch(); } catch {}
+      try { if (unsubPersonal) unsubPersonal(); } catch { }
+      try { if (unsubBranch) unsubBranch(); } catch { }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveUserId, effectiveBranchId, effectiveBranchName]);
@@ -367,13 +471,13 @@ const AdminNotificationScreen: React.FC = () => {
 
   const openScheduleTab = (notif: NotificationItem) => {
     markAsRead(notif);
-    navigation.navigate("Footer_C", { selectedTab: "ScheduleScreen", userId: effectiveUserId, langId: routeLangId });
+    // navigation.navigate("Footer_C", { selectedTab: "ScheduleScreen", userId: effectiveUserId, langId: routeLangId });
   };
 
   // group by Today / Yesterday / older (same as before)
   const groupNotifications = (items: NotificationItem[]) => {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const yesterday = new Date(today.getTime() - 24*60*60*1000);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
     const todayList = items.filter(n => new Date(n.createdTime) >= today);
     const yesterdayList = items.filter(n => new Date(n.createdTime) >= yesterday && new Date(n.createdTime) < today);
     const olderList = items.filter(n => new Date(n.createdTime) < yesterday);
@@ -383,7 +487,7 @@ const AdminNotificationScreen: React.FC = () => {
     if (yesterdayList.length) sections.push({ title: lang.Yesterday || "Yesterday", data: yesterdayList });
 
     if (olderList.length) {
-      const grouped: { [key:string]: NotificationItem[] } = {};
+      const grouped: { [key: string]: NotificationItem[] } = {};
       olderList.forEach(item => {
         const d = new Date(item.createdTime);
         const key = d.toLocaleDateString("en-GB");
@@ -391,10 +495,10 @@ const AdminNotificationScreen: React.FC = () => {
         grouped[key].push(item);
       });
       Object.keys(grouped)
-        .sort((a,b) => {
-          const [da,ma,ya] = a.split("/").map(Number);
-          const [db,mb,yb] = b.split("/").map(Number);
-          return new Date(yb, mb-1, db).getTime() - new Date(ya, ma-1, da).getTime();
+        .sort((a, b) => {
+          const [da, ma, ya] = a.split("/").map(Number);
+          const [db, mb, yb] = b.split("/").map(Number);
+          return new Date(yb, mb - 1, db).getTime() - new Date(ya, ma - 1, da).getTime();
         })
         .forEach(date => sections.push({ title: date, data: grouped[date] }));
     }
@@ -416,52 +520,58 @@ const AdminNotificationScreen: React.FC = () => {
       />
 
       <View style={styles.body}>
-        <SectionList
-          sections={groupNotifications(notifications)}
-          keyExtractor={(item) => item.n_id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 80 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />
-          }
-          renderSectionHeader={({ section: { title } }) => (
-            <View style={styles.dateRow}>
-              <Image source={require("../../../../assets/icons/calender_black.png")} style={styles.dateIcon} />
-              <Text style={styles.sectionTitle}>{title}</Text>
-            </View>
-          )}
-          renderItem={({ item }) => (
-            <TouchableOpacity activeOpacity={0.9} onPress={() => openScheduleTab(item)}>
-              <View style={{ position: "relative", marginTop: 12 }}>
-                <CartBox
-                  marginTop={0}
-                  paddingLeft={12}
-                  paddingRight={12}
-                  borderRadius={12}
-                  paddingTop={12}
-                  paddingBottom={12}
-                  backgroundColor={colors.background}
-                  alignItems="flex-start"
-                  justifyContent="flex-start"
-                >
-                  <Text style={styles.title}>{item.title}</Text>
-                  <Text style={styles.subtitle}>{item.subtitle}</Text>
-                  <View style={styles.timeRow}>
-                    <Image source={require("../../../../assets/icons/clock_g.png")} style={styles.icon} />
-                    <Text style={styles.timeText}>{formatTime(item.createdTime)}</Text>
-                  </View>
-                </CartBox>
-
-                {!item.read ? (
-                  <View style={styles.unreadDotContainer} pointerEvents="none">
-                    <View style={styles.unreadDot} />
-                  </View>
-                ) : null}
+        {loading ? (
+          <View style={{ padding: 20, alignItems: "center", justifyContent: "center" }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <SectionList
+            sections={groupNotifications(notifications)}
+            keyExtractor={(item) => item.n_id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 80 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />
+            }
+            renderSectionHeader={({ section: { title } }) => (
+              <View style={styles.dateRow}>
+                <Image source={require("../../../../assets/icons/calender_black.png")} style={styles.dateIcon} />
+                <Text style={styles.sectionTitle}>{title}</Text>
               </View>
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={<View style={{ padding: 20 }}><Text style={{ color: colors.subtext, textAlign: "center" }}>{lang.No_notifications || "No notifications"}</Text></View>}
-        />
+            )}
+            renderItem={({ item }) => (
+              <TouchableOpacity activeOpacity={0.9} onPress={() => openScheduleTab(item)}>
+                <View style={{ position: "relative", marginTop: 12 }}>
+                  <CartBox
+                    marginTop={0}
+                    paddingLeft={12}
+                    paddingRight={12}
+                    borderRadius={12}
+                    paddingTop={12}
+                    paddingBottom={12}
+                    backgroundColor={colors.background}
+                    alignItems="flex-start"
+                    justifyContent="flex-start"
+                  >
+                    <Text style={styles.title}>{item.title}</Text>
+                    <Text style={styles.subtitle}>{item.subtitle}</Text>
+                    <View style={styles.timeRow}>
+                      <Image source={require("../../../../assets/icons/clock_g.png")} style={styles.icon} />
+                      <Text style={styles.timeText}>{formatTime(item.createdTime)}</Text>
+                    </View>
+                  </CartBox>
+
+                  {!item.read ? (
+                    <View style={styles.unreadDotContainer} pointerEvents="none">
+                      <View style={styles.unreadDot} />
+                    </View>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={<View style={{ padding: 20 }}><Text style={{ color: colors.subtext, textAlign: "center" }}>{lang.No_notifications || "No notifications"}</Text></View>}
+          />
+        )}
       </View>
     </View>
   );

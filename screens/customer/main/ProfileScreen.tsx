@@ -23,11 +23,12 @@ import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
 
-import { getProfile,ProfileUser } from "../../../api/profile"; 
+import { getProfile, ProfileUser } from "../../../api/profile";
 import { logout as apiLogout } from "../../../api/auth/authService";
-import { clearAllAuthData } from "../../../api/auth/authToken"; 
+import { clearAllAuthData } from "../../../api/auth/authToken";
+import { getBranchId } from "../../../api/profile";
 
-export default function MoreScreen(props: any) {
+export default function ProfileScreen(props: any) {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
@@ -35,10 +36,10 @@ export default function MoreScreen(props: any) {
   const propUserId = props?.userId;
   const propLangId = props?.langId;
   const setLangIdProp = props?.setLangId; // optional callback from parent (Footer_C)
-
+  const [branchId, setBranchId] = useState<string | null>(null);
   // fallback to route params (some places use `id`, others `userId`)
   const routeUserId = route.params?.userId ?? route.params?.id;
-  const userId = propUserId || routeUserId ;
+  const userId = propUserId || routeUserId;
 
   // initial language from prop or route param (route param name might be langId)
   const routeLangId = route.params?.langId ?? route.params?.language;
@@ -119,6 +120,23 @@ export default function MoreScreen(props: any) {
       const profile = await getProfile();
       setUser(profile);
       setFullName(profile.fullname ?? "");
+      const profileBranchId =
+        typeof profile.branch === "string"
+          ? profile.branch
+          : profile.branch?._id ?? null;
+
+      if (profileBranchId) {
+        setBranchId(String(profileBranchId));
+        console.log("ProfileScreen: branchId from profile =", profileBranchId);
+      } else {
+        const stored = await getBranchId();
+        if (stored) {
+          setBranchId(stored);
+          console.log("ProfileScreen: branchId from storage =", stored);
+        } else {
+          console.log("ProfileScreen: no branchId found");
+        }
+      }
       // If your API returns an image field, setProfileImage(profile.image) here
     } catch (err: any) {
       console.error('loadProfile error', err);
@@ -195,7 +213,7 @@ export default function MoreScreen(props: any) {
     } finally {
       // final guard: ensure local data is cleared
       await clearAllAuthData();
-  
+
       // navigate to login screen
       navigation.reset({
         index: 0,
@@ -266,7 +284,7 @@ export default function MoreScreen(props: any) {
               paddingLeft={20}
               paddingRight={20}
               paddingTop={13}
-              // paddingBottom={12}
+            // paddingBottom={12}
             >
               <Text style={styles.sectionTitle}>{section.name}</Text>
               {section.items.map((item, i) => (
@@ -275,20 +293,29 @@ export default function MoreScreen(props: any) {
                   onPress={() => {
                     if (item.label === "Language") {
                       setLanguageModalVisible(true);
-                    }  else if (item.screen) {
-                      navigation.navigate(item.screen, {
-                        id: userId,
-                        langId: selectedLanguage, // pass langId
-                      });
-                    } else {
-                      console.log(item.label);
+                      return;
                     }
+
+                    const payload = {
+                      id: userId,
+                      langId: selectedLanguage,
+                      branchId: branchId,
+                    };
+
+                    if (item.screen) {
+                      console.log(`ProfileScreen: navigating -> ${item.screen}`, payload);
+                      navigation.navigate(item.screen, payload);
+                      return;
+                    }
+
+                    console.log("ProfileScreen: item pressed (no screen):", item.label, payload);
                   }}
+
                   alignItems="flex-start"
                   borderRadius={0}
                   paddingTop={12}
                   paddingBottom={12}
-                
+
                 >
                   <View style={styles.itemLeft}>
                     <Image source={item.icon} style={styles.itemIcon} />
@@ -308,10 +335,7 @@ export default function MoreScreen(props: any) {
 
                 </CartBox>
               ))}
-
             </CartBox>
-
-
           ))}
 
           {/* Logout */}
@@ -466,8 +490,8 @@ export default function MoreScreen(props: any) {
         titleStyle={{ color: colors.error_text }}
       >
         <Text style={styles.popupsubtext}>
-            Confirm the logging out by clicking "yes."
-          </Text>
+          Confirm the logging out by clicking "yes."
+        </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
           <Button1
             text={lang.yes}
@@ -481,7 +505,7 @@ export default function MoreScreen(props: any) {
             onPress={() => setLogoutPopupVisible(false)}
             backgroundColor={colors.error_text}
             width={'48%'}
-            textStyle={{ color: colors.secondary}}
+            textStyle={{ color: colors.secondary }}
           />
         </View>
       </Popup>
@@ -512,7 +536,7 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any, color: colors.subtext,
     marginBottom: 14,
   },
-  itemLeft: { flexDirection: "row"},
+  itemLeft: { flexDirection: "row" },
   itemIcon: { width: 17, height: 17, resizeMode: "contain", marginRight: 8 },
   itemText: { fontSize: fonts.size.m, color: colors.text, fontWeight: fonts.weight.medium as any, fontFamily: fonts.family.regular, },
   logout: { flexDirection: "row", },
@@ -552,12 +576,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.family.regular,
     lineHeight: 16,
   },
-  popupsubtext:{
-    color:colors.subtext,
-    fontSize: fonts.size.s, 
-    fontWeight: fonts.weight.regular as any, 
-    marginBottom:30, 
-    alignSelf:'center' 
+  popupsubtext: {
+    color: colors.subtext,
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.regular as any,
+    marginBottom: 30,
+    alignSelf: 'center'
   },
 
 });

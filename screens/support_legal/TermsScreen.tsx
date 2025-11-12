@@ -1,44 +1,82 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Image } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+// screens/main/TermsScreen.tsx
+import React, { useCallback, useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Image,
+  Dimensions,
+} from 'react-native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import Header from '../../components/Header';
 import colors from '../../styles/Colors';
-import { GroupedContactList } from '../../components/Contact';
+import { GroupedContactList, contactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
 import fonts from '../../styles/Fonts';
-import translations from "../../assets/translations.json"
-import { contents } from "../../api/Content"; // import API
+import translations from '../../assets/translations.json';
+import { contents, Content } from '../../api/Content';
 
-
-type TermsScreenProps = {
-  userId?: string;
-  langId?: string;           // ✅ received from ProfileScreen
-  setLangId?: (lang: string) => void;
+type RouteParams = {
+  params: {
+    orderId?: string;
+    userId?: string;
+    UserId?: string;
+    langId?: 'en' | 'de' | string;
+    LangId?: string;
+    branchId?: string;
+    BranchId?: string;
+    [k: string]: any;
+  };
 };
 
-
-const TermsScreen: React.FC<TermsScreenProps> = () => {
+const TermsScreen = () => {
+  const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-  const route = useRoute<any>();
-    const { userId, langId, setLangId } = route.params || {};
+  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
 
-   const currentLang = langId || "en";
-  const lang = translations[currentLang]
-  
-  console.log('TermsScreen -> received params:', { userId, langId });
+  //  accept multiple param name variants and provide fallbacks
+  const incomingUserId =
+    route.params?.userId ??
+    route.params?.UserId ??
+    route.params?.id ??
+    null;
 
-    
-    const termsContent = contents.find((c) => c.id === "3");
+  const incomingLangId =
+    route.params?.langId ??
+    route.params?.LangId ??
+    route.params?.language ??
+    'en';
 
-  // 🔹 State for refresh
+  const incomingBranchId =
+    route.params?.branchId ??
+    route.params?.BranchId ??
+    route.params?.branch ??
+    null;
+
+  console.log('TermsScreen -> received params:', {
+    userId: incomingUserId,
+    langId: incomingLangId,
+    branchId: incomingBranchId,
+  });
+
+  const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
+
   const [refreshing, setRefreshing] = useState(false);
+  const [termsContent, setTermsContent] = useState<Content | null>(null);
+
+  useEffect(() => {
+    // Get terms content from API (id "3" or title "terms")
+    const terms =
+      contents.find(c => c.id === '3' || c.title === 'terms') || null;
+    setTermsContent(terms);
+  }, []);
 
   // 🔹 Refresh function
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
+    setTimeout(() => setRefreshing(false), 1500);
   }, []);
 
   return (
@@ -53,41 +91,48 @@ const TermsScreen: React.FC<TermsScreenProps> = () => {
           height: 24,
           onPress: () => navigation.goBack(),
         }}
-        center={{ type: 'text', value: lang.terms_of_service, color: colors.text }}
+        center={{
+          type: 'text',
+          value: lang.terms_of_service ?? 'Terms of Service',
+          color: colors.text,
+        }}
       />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContainer}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[colors.primary]} // 🔹 spinner color (Android)
-            tintColor={colors.primary}// 🔹 spinner color (iOS)
+            colors={[colors.primary]}
+            tintColor={colors.primary}
             progressBackgroundColor={colors.secondary}
           />
         }
       >
-        <CartBox
-          borderWidth={0}
-          backgroundColor ={colors.secondary}
-        >
-          <Image
-            source={require('../../assets/icons/logo.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </CartBox>
+        <View style={styles.scrollContainer}>
+          <CartBox borderWidth={0} backgroundColor={colors.secondary}>
+            <Image
+              source={require('../../assets/icons/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </CartBox>
 
-     <View style={styles.termsContainer}>
-          {termsContent ? (
-            <Text style={styles.termDescription}>{termsContent.body}</Text>
-          ) : (
-            <Text style={styles.termDescription}>No terms available</Text>
-          )}
+          <View style={styles.termsContainer}>
+            {termsContent ? (
+              <Text style={styles.termDescription}>{termsContent.body}</Text>
+            ) : (
+              <Text style={styles.termDescription}>No terms available</Text>
+            )}
+          </View>
         </View>
 
-        <GroupedContactList />
+        {/*  Pass branchId and language to GroupedContactList (same as PrivacyScreen) */}
+        <GroupedContactList
+          data={contactList}
+          lang={lang}
+          branchId={incomingBranchId}
+        />
       </ScrollView>
     </View>
   );
@@ -112,17 +157,6 @@ const styles = StyleSheet.create({
   },
   termsContainer: {
     width: '100%',
-  },
-  termBlock: {
-    marginBottom: 12,
-  },
-  termTitle: {
-    fontFamily: fonts.family.regular,
-    fontWeight: fonts.weight.semibold as any,
-    fontSize: fonts.size.s,
-    lineHeight: 18,
-    color: colors.text,
-    marginBottom: 4,
   },
   termDescription: {
     fontFamily: fonts.family.regular,
