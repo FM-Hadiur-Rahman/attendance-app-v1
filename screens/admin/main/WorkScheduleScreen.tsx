@@ -337,7 +337,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
   // When tapping an existing schedule to edit
   const openEditScreen = (scheduleId: string) => {
-    navigation.navigate("AddScheduleScreen" as any, {
+    navigation.navigate("EditScheduleScreen" as any, {
       userId,
       langId,
       id: scheduleId,

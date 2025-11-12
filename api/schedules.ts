@@ -93,3 +93,34 @@ export const postSchedulesBulk = async (
   }
 };
 
+/**
+ * ✅ Update a single schedule entry
+ */
+export const updateSchedule = async (id: string, payload: Record<string, any>) => {
+  const res = await axiosInstance.put(`/schedule/${id}`, payload);
+  return res.data;
+};
+
+export const updateScheduleById = async (id: string, payload: any) => {
+  return axiosInstance.put(`/schedules/${id}`, payload);
+};
+
+
+
+export const createSchedule = async (payload: Record<string, any>) => {
+  try {
+    // ensure required keys exist
+    const requiredFields = ["employee_id", "branch_id", "date", "start_time", "end_time", "day_of_week"];
+    for (const field of requiredFields) {
+      if (!payload[field]) {
+        throw new Error(`Missing required field: ${field}`);
+      }
+    }
+
+    const res = await axiosInstance.post("/schedule", payload);
+    return res.data;
+  } catch (err: any) {
+    console.error("createSchedule error", err?.response?.data ?? err);
+    throw err?.response?.data || err;
+  }
+};
