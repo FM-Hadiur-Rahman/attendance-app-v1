@@ -12,6 +12,18 @@ import { Button1 } from './Button';
 import colors from '../styles/Colors';
 import fonts from '../styles/Fonts';
 import CartBox from './CartBox';
+import { getBranchById, getAllBranches } from '../api/Branchs';
+import { RouteProp, useRoute } from '@react-navigation/native';
+
+type RouteParams = {
+  params: {
+    langId?: string;
+    LangId?: string;
+    branchId?: string;
+    BranchId?: string;
+    [k: string]: any;
+  };
+};
 
 export interface ContactCardProps {
   icon: ImageSourcePropType;
@@ -19,13 +31,15 @@ export interface ContactCardProps {
   value: string;
   buttonTitle: string;
   onPress: () => void;
+  lang?: any;
 }
+const translations = require('../assets/translations.json');
 
 const dummyContactValues = {
-  phone: '0774412558',
-  landline: '0774412558',
-  email: 'example@gmail.com',
-  website: 'https://www.apple.com/iphone-17-pro/',
+  phone: 'undefined',
+  // landline: '0774412558',
+  email: 'undefined',
+  // website: 'https://www.apple.com/iphone-17-pro/',
 };
 
 export const contactList: ContactCardProps[] = [
@@ -36,13 +50,13 @@ export const contactList: ContactCardProps[] = [
     buttonTitle: 'Call',
     onPress: () => Linking.openURL(`tel:${dummyContactValues.phone}`),
   },
-  {
-    icon: require('../assets/icons/c_landline.png'),
-    label: 'Landline',
-    value: dummyContactValues.landline,
-    buttonTitle: 'Call',
-    onPress: () => Linking.openURL(`tel:${dummyContactValues.landline}`),
-  },
+  // {
+  //   icon: require('../assets/icons/c_landline.png'),
+  //   label: 'Landline',
+  //   value: dummyContactValues.landline,
+  //   buttonTitle: 'Call',
+  //   onPress: () => Linking.openURL(`tel:${dummyContactValues.landline}`),
+  // },
   {
     icon: require('../assets/icons/c_mail.png'),
     label: 'Email',
@@ -50,13 +64,13 @@ export const contactList: ContactCardProps[] = [
     buttonTitle: 'Mail',
     onPress: () => Linking.openURL(`mailto:${dummyContactValues.email}`),
   },
-  {
-    icon: require('../assets/icons/c_website.png'),
-    label: 'Website',
-    value: dummyContactValues.website,
-    buttonTitle: 'Visit',
-    onPress: () => Linking.openURL(`https://${dummyContactValues.website}`),
-  },
+  // {
+  //   icon: require('../assets/icons/c_website.png'),
+  //   label: 'Website',
+  //   value: dummyContactValues.website,
+  //   buttonTitle: 'Visit',
+  //   onPress: () => Linking.openURL(`https://${dummyContactValues.website}`),
+  // },
 ];
 
 const ContactCard = ({
@@ -66,6 +80,7 @@ const ContactCard = ({
   buttonTitle,
   onPress,
 }: ContactCardProps) => {
+
   return (
     <CartBox
       borderRadius={12}
@@ -74,27 +89,20 @@ const ContactCard = ({
       paddingHorizontal={12}
       marginBottom={12}
       height={58}
-      // containerStyle={{
-      //   shadowColor: colors.text,
-      //   shadowOffset: { width: 0, height: 1 },
-      //   shadowOpacity: 0,
-      //   shadowRadius: 1,
-      //   elevation: 2,
-      // }}
     >
       <View style={styles.cardContent}>
         <View style={styles.leftSection}>
           <Image source={icon} style={styles.iconImage} />
           <View style={styles.textBlock}>
             <Text style={styles.label}>{label}</Text>
-        <Text
-  style={styles.value}
-  numberOfLines={1}
-  ellipsizeMode="tail"
->
-  {value}
-</Text>
-            
+            <Text
+              style={styles.value}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {value}
+            </Text>
+
           </View>
         </View>
         <Button1
@@ -121,12 +129,111 @@ const ContactCard = ({
   );
 };
 
-export const GroupedContactList = ({ data }: { data?: ContactCardProps[] }) => {
+export const GroupedContactList = ({
+  data,
+  lang,
+  branchId,
+}: {
+  data?: ContactCardProps[];
+  lang?: any;
+  branchId?: string | null;
+}) => {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
   // if data not passed, use default contactList
-  const items = data ?? contactList;
+  const templateItems = data ?? contactList;
+
+  const [resolvedBranch, setResolvedBranch] = React.useState<{
+    _id?: string;
+    phone?: string;
+    email?: string;
+  } | null>(null);
+
+  const [resolving, setResolving] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const resolve = async () => {
+      setResolving(true);
+      try {
+        // try branch by id first
+        if (branchId) {
+          try {
+            // console.log('GroupedContactList -> resolving branch by id', branchId);
+            const b = await getBranchById(branchId);
+            if (mounted && b) {
+              setResolvedBranch({
+                _id: b._id,
+                phone: b.phone ?? null,
+                email: b.email ?? null,
+              });
+              setResolving(false);
+              return;
+            }
+          } catch (err) {
+            //console.warn('GroupedContactList -> getBranchById failed', err);
+            // continue to fallback
+          }
+        }
+
+        // fallback: get all branches and pick first with useful contact info
+        //console.log('GroupedContactList -> fetching all branches fallback');
+        const all = await getAllBranches();
+        if (!mounted) return;
+        const first = (all || []).find((x: any) => x?.email || x?.phone);
+        if (first) {
+          setResolvedBranch({
+            _id: first._id,
+            phone: first.phone ?? null,
+            email: first.email ?? null,
+          });
+        } else {
+          setResolvedBranch(null);
+        }
+      } catch (err) {
+        // console.error('GroupedContactList -> error resolving branches', err);
+        if (mounted) setResolvedBranch(null);
+      } finally {
+        if (mounted) setResolving(false);
+      }
+    };
+
+    resolve();
+    return () => {
+      mounted = false;
+    };
+  }, [branchId]);
+
+  // build concrete items replacing dummy values when branch info available
+  const itemsToRender: ContactCardProps[] = React.useMemo(() => {
+    return templateItems.map(it => {
+      const newItem = { ...it };
+
+      // Replace phone/email values if branch info is available
+      if (/phone/i.test(newItem.label) && resolvedBranch?.phone) {
+        newItem.value = resolvedBranch.phone;
+        newItem.onPress = () => Linking.openURL(`tel:${resolvedBranch.phone}`);
+      }
+      if (/email/i.test(newItem.label) && resolvedBranch?.email) {
+        newItem.value = resolvedBranch.email;
+        newItem.onPress = () => Linking.openURL(`mailto:${resolvedBranch.email}`);
+      }
+
+      // Translate labels
+      if (lang) {
+        if (/phone/i.test(newItem.label)) {
+          newItem.label = lang.phoneNumber ?? 'Phone number';
+          newItem.buttonTitle = lang.call ?? 'Call'; // translate button
+        }
+        if (/email/i.test(newItem.label)) {
+          newItem.label = lang.email ?? 'Email';
+          newItem.buttonTitle = lang.mail ?? 'Mail'; // translate button
+        }
+      }
+      return newItem;
+    });
+  }, [templateItems, resolvedBranch, lang]);
 
   return (
     <View
@@ -137,14 +244,21 @@ export const GroupedContactList = ({ data }: { data?: ContactCardProps[] }) => {
         },
       ]}
     >
-      <Text style={styles.groupHeader}>Contact us</Text>
+      <Text style={styles.groupHeader}>{lang.Contact_us}</Text>
 
-      {items.map((item, index) => (
+      {itemsToRender.map((item, index) => (
         <ContactCard key={index} {...item} />
       ))}
+
+      {/* optional: show resolution status for debugging */}
+      {/* {resolving && <Text style={{ color: colors.subtext, marginTop: 8 }}>Resolving branch contact...</Text>} */}
+      {!resolving && !resolvedBranch && (
+        <Text style={{ color: colors.subtext, marginTop: 8 }}>No branch contact found. Showing default contacts.</Text>
+      )}
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   groupCardWrapper: {
@@ -163,7 +277,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width : '95%'
+    width: '95%'
   },
   leftSection: {
     flexDirection: 'row',
@@ -184,12 +298,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: fonts.weight.regular as any,
   },
-value: {
+  value: {
     fontSize: fonts.size.m,
     color: colors.subtext,
     marginTop: 2,
-    maxWidth:180,
-},
+    maxWidth: 180,
+  },
 });
 
 export default ContactCard;

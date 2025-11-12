@@ -1,4 +1,4 @@
-// screens/admin/main/AttendancerecordScreen.tsx 
+// screens/admin/main/AttendanceScreen.tsx 
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   View,
@@ -30,7 +30,7 @@ import { Buffer } from "buffer";
 import base64 from "base-64";
 
 import { getAttendanceReport, getSchedulesForRange, getUsersForBranch } from "../../../api/attendanceReport";
-import { getBranchById as getBranchByIdApi } from "../../../api/Branch";
+import { getBranchById as getBranchByIdApi } from "../../../api/Branchs";
 import { getUserById } from "../../../api/profile";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
 
@@ -574,44 +574,58 @@ const AttendanceScreen: React.FC = (props: any) => {
         let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
         let diffText = "";
 
-        const startStatusRaw =
-          row?.startStatus ??
-          row?.start_status ??
-          row?.startstatus ??
-          row?.startStatusText ??
-          row?.start_status_text ??
+        // --- compute status by comparing scheduledStart vs actualIn (robust fallback) ---
+        const scheduledStartStr =
+          schedule?.start_time ??
+          schedule?.startTime ??
+          schedule?.start ??
+          rawReportRow?.scheduledStart ??
+          rawReportRow?.scheduled_start ??
+          row?.scheduledStart ??
+          row?.scheduled_start ??
           "";
 
-        const startStatusStr = String(startStatusRaw || "").trim();
-        const startStatusLower = startStatusStr.toLowerCase();
+        const actualInRaw =
+          work?.rawActualIn ??
+          work?.check_in ??
+          rawReportRow?.actualIn ??
+          rawReportRow?.In ??
+          rawReportRow?.InTime ??
+          rawReportRow?.actualInTime ??
+          "";
 
-        if (!schedule || !schedule.start_time) {
+        const actualInStr = makeTimeStrFromISO(actualInRaw);
+
+        // Per your rule: if either scheduled start OR actualIn is missing -> "No schedule"
+        if (!scheduledStartStr || !actualInStr) {
           status = "noschedule";
           diffText = "";
         } else {
-          if (startStatusLower.startsWith("early") || startStatusLower.startsWith("late")) {
-            const m = startStatusLower.match(/\(?-?(\d+)\s*m\)?/i);
-            const mins = m ? parseInt(m[1], 10) : 0;
-            status = startStatusLower.startsWith("early") ? "early" : "late";
-            diffText = mins ? formatMinutesDiff(mins) : "";
+          const schedMin = timeToMinutes(scheduledStartStr);
+          const checkMin = timeToMinutes(actualInStr);
+
+          if (isNaN(schedMin) || isNaN(checkMin)) {
+            // If parsing fails for either, treat as no schedule
+            status = "noschedule";
+            diffText = "";
           } else {
-            if (!work.check_in) {
-              status = "not_checked_in";
-              diffText = "";
+            // positive diff => employee is LATE (checked in after scheduledStart)
+            // negative diff => employee is EARLY (checked in before scheduledStart)
+            const diff = checkMin - schedMin;
+            if (diff > 0) {
+              status = "late";
+              diffText = formatMinutesDiff(diff);
+            } else if (diff < 0) {
+              status = "early";
+              diffText = formatMinutesDiff(-diff);
             } else {
-              const schedMin = timeToMinutes(schedule.start_time || "00:00");
-              const checkMin = timeToMinutes(work.check_in || "00:00");
-              const diff = schedMin - checkMin;
-              if (diff < 0) {
-                status = "late";
-                diffText = formatMinutesDiff(-diff);
-              } else {
-                status = "early";
-                diffText = formatMinutesDiff(diff);
-              }
+              // exact on-time — choose how to display; here we treat as early with 0m
+              status = "early";
+              diffText = formatMinutesDiff(0);
             }
           }
         }
+        // --- end replacement ---
 
         // Build final user object (prefer employee object fields, then users cache, then report row)
         let user = null;

@@ -20,7 +20,12 @@ type RouteParams = {
   params: {
     orderId?: string;
     userId?: string;
-    langId?: 'en' | 'de';
+    UserId?: string;
+    langId?: 'en' | 'de' | string;
+    LangId?: string;
+    branchId?: string;
+    BranchId?: string;
+    [k: string]: any;
   };
 };
 const translations = require('../../assets/translations.json');
@@ -28,12 +33,35 @@ const translations = require('../../assets/translations.json');
 const PrivacyScreen = () => {
   const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-    const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
-    const {  userId, langId } = route.params ?? {};
+  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
 
-      console.log('PrivacyScreen -> received params:', { userId, langId });
+  // accept multiple param name variants and provide fallbacks
+  const incomingUserId =
+    route.params?.userId ??
+    route.params?.UserId ??
+    route.params?.id ??
+    null;
 
-  const lang = translations[(langId as string) || 'en'] ?? translations['en'];
+  const incomingLangId =
+    route.params?.langId ??
+    route.params?.LangId ??
+    route.params?.language ??
+    'en';
+
+  const incomingBranchId =
+    route.params?.branchId ??
+    route.params?.BranchId ??
+    route.params?.branch ??
+    null;
+
+  console.log('PrivacyScreen -> received params:', {
+    userId: incomingUserId,
+    langId: incomingLangId,
+    branchId: incomingBranchId,
+  });
+
+
+  const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
 
   const [refreshing, setRefreshing] = useState(false);
   const [privacyContent, setPrivacyContent] = useState<Content | null>(null);
@@ -114,7 +142,7 @@ const PrivacyScreen = () => {
             ))}
           </View>
         </View>
-        <GroupedContactList data={contactList} />
+        <GroupedContactList data={contactList} lang={lang} branchId={incomingBranchId} />
       </ScrollView>
     </View>
   );

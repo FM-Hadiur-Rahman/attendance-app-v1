@@ -352,6 +352,12 @@ const HomeScreen_A = (props: any) => {
     [todayYMD, version]
   );
 
+  const handleNotificationPress = () => {
+  console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
+  // use same param keys you expect in NotificationScreen
+  navigation.navigate("NotificationScreen" as any, { userId, langId, branchId: activeBranchId });
+};
+
   return (
     <View style={styles.container}>
       <Header
@@ -363,9 +369,7 @@ const HomeScreen_A = (props: any) => {
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
-          onPress: () => {
-            navigation.navigate("NotificationScreen" as any, { userId, langId: langId, activeBranchId });
-          },
+          onPress: handleNotificationPress,
         }}
       />
 
