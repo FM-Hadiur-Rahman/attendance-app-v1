@@ -267,15 +267,15 @@ export default function AddScheduleScreen(props: any) {
   const displayWeekDates = getWeekDates(0);
 
   const buildMapFromList = (list: any[]) => {
-  const map: Record<string, any[]> = {};
-  (list || []).forEach((s) => {
-    if (!s?.date) return;
-    const dateKey = String(s.date).split("T")[0];
-    if (!map[dateKey]) map[dateKey] = [];
-    map[dateKey].push(s);
-  });
-  return map;
-};
+    const map: Record<string, any[]> = {};
+    (list || []).forEach((s) => {
+      if (!s?.date) return;
+      const dateKey = String(s.date).split("T")[0];
+      if (!map[dateKey]) map[dateKey] = [];
+      map[dateKey].push(s);
+    });
+    return map;
+  };
 
   const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
     if (!startHHMMSS) return "";
@@ -333,173 +333,173 @@ export default function AddScheduleScreen(props: any) {
     return dt.getTime() < today.getTime();
   };
   const onAddSchedule = () => {
-  let hasError = false;
-  if (!selectedStaffId) {
-    setStaffError(lang.Select_staff || "Please select staff");
-    showErrorToast(lang.Please_select_staff || "Select staff");
-    hasError = true;
-  }
-  if (!selectedDayYmd) {
-    showErrorToast("No date selected");
-    hasError = true;
-  }
-  if (!selectedBranchId) {
-    showErrorToast("Please select branch");
-    hasError = true;
-    setBranchFilterOpen(true);
-  }
-  if (!timeFrom || timeFrom.trim() === "") {
-    setTimeFromError(lang.Required || "Required");
-    showErrorToast(lang.Please_enter_start_time || "Enter start time");
-    hasError = true;
-  }
-  const dur = parseFloat(durationHours || "0");
-  if (isNaN(dur) || dur <= 0) {
-    setDurationError("Invalid duration");
-    showErrorToast("Invalid duration");
-    hasError = true;
-  }
-  if (hasError) return;
-
-let targetDate =
-    (typeof weekOffset === "number" && weekOffset !== 0)
-      ? (selectedDayYmd || selectedDisplayYmd)
-      : (selectedDisplayYmd || selectedDayYmd);
-
-  if (!targetDate) {
-    targetDate = selectedDayYmd || selectedDisplayYmd || null;
-  }
-  if (!targetDate) {
-    showErrorToast("No valid date selected for schedule (abort)");
-    console.error("[AddSchedule] abort: targetDate is null", { weekOffset, selectedDayYmd, selectedDisplayYmd });
-    return;
-  }
-
-  const payload: any = {
-    user_id: selectedStaffId,
-    start_time: timeFrom,
-    duration: dur,
-    branch_id: selectedBranchId,
-  };
-  // ensure date normalized and present
-  const normalizedDate = String(targetDate).split("T")[0];
-  payload.date = normalizedDate;
-  if (modalEditingId) payload.id = modalEditingId;
-
-  // helper: rebuild date keyed map from a schedule list
-  const buildMapFromList = (list: any[]) => {
-    const map: Record<string, any[]> = {};
-    (list || []).forEach((s) => {
-      if (!s?.date) return;
-      const dateKey = String(s.date).split("T")[0];
-      if (!map[dateKey]) map[dateKey] = [];
-      map[dateKey].push(s);
-    });
-    return map;
-  };
-
-  const makeTempSchedule = (base: any, overrideId?: string) => {
-    const id = overrideId ?? `S${(Math.max(0, ...(localSchedules || []).map((x) => {
-      const m = String(x.id || "").match(/^S(\d+)$/);
-      return m ? Number(m[1]) : 0;
-    })) + 1).toString().padStart(3, "0")}`;
-    return {
-      id,
-      user_id: base.user_id,
-      start_time: base.start_time,
-      duration: base.duration,
-      date: base.date,
-      branch_id: base.branch_id,
-      createDate: base.createDate ?? new Date().toISOString(),
-      updateDate: new Date().toISOString(),
-    } as any;
-  };
-
-  if (typeof route.params?.onSave === "function") {
-    try {
-      route.params.onSave(payload);
-      showSuccessToast(modalEditingId ? lang.schedule_updated || "Schedule updated" : lang.schedule_added || "Schedule added");
-    } catch (e) {
-      console.warn("onSave callback threw:", e);
+    let hasError = false;
+    if (!selectedStaffId) {
+      setStaffError(lang.Select_staff || "Please select staff");
+      showErrorToast(lang.Please_select_staff || "Select staff");
+      hasError = true;
     }
-    setLocalSchedules((prev = []) => {
-      const copy = prev.map((p) => ({ ...p }));
-      if (payload.id) {
-        const idx = copy.findIndex((s) => String(s.id) === String(payload.id));
-        if (idx !== -1) {
-          const updated = { ...copy[idx], ...payload, updateDate: new Date().toISOString() };
-          if (!updated.raw && copy[idx].raw) updated.raw = copy[idx].raw;
-          copy[idx] = updated;
-          setChangeLog((c) => [...c, { type: "update", schedule: updated }]);
+    if (!selectedDayYmd) {
+      showErrorToast("No date selected");
+      hasError = true;
+    }
+    if (!selectedBranchId) {
+      showErrorToast("Please select branch");
+      hasError = true;
+      setBranchFilterOpen(true);
+    }
+    if (!timeFrom || timeFrom.trim() === "") {
+      setTimeFromError(lang.Required || "Required");
+      showErrorToast(lang.Please_enter_start_time || "Enter start time");
+      hasError = true;
+    }
+    const dur = parseFloat(durationHours || "0");
+    if (isNaN(dur) || dur <= 0) {
+      setDurationError("Invalid duration");
+      showErrorToast("Invalid duration");
+      hasError = true;
+    }
+    if (hasError) return;
+
+    let targetDate =
+      (typeof weekOffset === "number" && weekOffset !== 0)
+        ? (selectedDayYmd || selectedDisplayYmd)
+        : (selectedDisplayYmd || selectedDayYmd);
+
+    if (!targetDate) {
+      targetDate = selectedDayYmd || selectedDisplayYmd || null;
+    }
+    if (!targetDate) {
+      showErrorToast("No valid date selected for schedule (abort)");
+      console.error("[AddSchedule] abort: targetDate is null", { weekOffset, selectedDayYmd, selectedDisplayYmd });
+      return;
+    }
+
+    const payload: any = {
+      user_id: selectedStaffId,
+      start_time: timeFrom,
+      duration: dur,
+      branch_id: selectedBranchId,
+    };
+    // ensure date normalized and present
+    const normalizedDate = String(targetDate).split("T")[0];
+    payload.date = normalizedDate;
+    if (modalEditingId) payload.id = modalEditingId;
+
+    // helper: rebuild date keyed map from a schedule list
+    const buildMapFromList = (list: any[]) => {
+      const map: Record<string, any[]> = {};
+      (list || []).forEach((s) => {
+        if (!s?.date) return;
+        const dateKey = String(s.date).split("T")[0];
+        if (!map[dateKey]) map[dateKey] = [];
+        map[dateKey].push(s);
+      });
+      return map;
+    };
+
+    const makeTempSchedule = (base: any, overrideId?: string) => {
+      const id = overrideId ?? `S${(Math.max(0, ...(localSchedules || []).map((x) => {
+        const m = String(x.id || "").match(/^S(\d+)$/);
+        return m ? Number(m[1]) : 0;
+      })) + 1).toString().padStart(3, "0")}`;
+      return {
+        id,
+        user_id: base.user_id,
+        start_time: base.start_time,
+        duration: base.duration,
+        date: base.date,
+        branch_id: base.branch_id,
+        createDate: base.createDate ?? new Date().toISOString(),
+        updateDate: new Date().toISOString(),
+      } as any;
+    };
+
+    if (typeof route.params?.onSave === "function") {
+      try {
+        route.params.onSave(payload);
+        showSuccessToast(modalEditingId ? lang.schedule_updated || "Schedule updated" : lang.schedule_added || "Schedule added");
+      } catch (e) {
+        console.warn("onSave callback threw:", e);
+      }
+      setLocalSchedules((prev = []) => {
+        const copy = prev.map((p) => ({ ...p }));
+        if (payload.id) {
+          const idx = copy.findIndex((s) => String(s.id) === String(payload.id));
+          if (idx !== -1) {
+            const updated = { ...copy[idx], ...payload, updateDate: new Date().toISOString() };
+            if (!updated.raw && copy[idx].raw) updated.raw = copy[idx].raw;
+            copy[idx] = updated;
+            setChangeLog((c) => [...c, { type: "update", schedule: updated }]);
+          } else {
+            const newSch = makeTempSchedule(payload);
+            copy.push(newSch);
+            setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+          }
         } else {
+          // create
           const newSch = makeTempSchedule(payload);
           copy.push(newSch);
           setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
         }
-      } else {
-        // create
-        const newSch = makeTempSchedule(payload);
-        copy.push(newSch);
-        setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-      }
-      // rebuild map used by UI
-      const map = buildMapFromList(copy);
-      setLocalSchedulesByDate(map);
-      console.info("[AddSchedule] localSchedules updated, total:", copy.length, "dateKey:", payload.date);
-      return copy;
-    });
+        // rebuild map used by UI
+        const map = buildMapFromList(copy);
+        setLocalSchedulesByDate(map);
+        console.info("[AddSchedule] localSchedules updated, total:", copy.length, "dateKey:", payload.date);
+        return copy;
+      });
 
-    // close modal
+      // close modal
+      setAddScheduleModalVisible(false);
+      setModalEditingId(null);
+
+      return;
+    }
+    if (!modalEditingId) {
+      // create new temp schedule
+      const newSch = makeTempSchedule({ ...payload });
+      // ensure date normalized in temp
+      newSch.date = String(payload.date).split("T")[0];
+      setLocalSchedules((prev = []) => {
+        const merged = [...prev, newSch];
+        const map = buildMapFromList(merged);
+        setLocalSchedulesByDate(map);
+        return merged;
+      });
+      setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+      showSuccessToast("Schedule added");
+    } else {
+      // update existing
+      setLocalSchedules((prev = []) => {
+        const copy = prev.map((s) => ({ ...s }));
+        const idx = copy.findIndex((sch) => String(sch.id) === String(modalEditingId));
+        if (idx !== -1) {
+          copy[idx] = {
+            ...copy[idx],
+            user_id: payload.user_id,
+            start_time: payload.start_time,
+            duration: payload.duration,
+            date: payload.date,
+            branch_id: payload.branch_id,
+            updateDate: new Date().toISOString(),
+          };
+          setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
+        } else {
+          // if not found, push as new
+          const newSch = makeTempSchedule({ ...payload });
+          newSch.date = String(payload.date).split("T")[0];
+          copy.push(newSch);
+          setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
+        }
+        const map = buildMapFromList(copy);
+        setLocalSchedulesByDate(map);
+        return copy;
+      });
+      showSuccessToast("Schedule updated");
+    }
     setAddScheduleModalVisible(false);
     setModalEditingId(null);
-
-    return;
-  }
-    if (!modalEditingId) {
-    // create new temp schedule
-    const newSch = makeTempSchedule({ ...payload });
-    // ensure date normalized in temp
-    newSch.date = String(payload.date).split("T")[0];
-    setLocalSchedules((prev = []) => {
-      const merged = [...prev, newSch];
-      const map = buildMapFromList(merged);
-      setLocalSchedulesByDate(map);
-      return merged;
-    });
-    setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-    showSuccessToast("Schedule added");
-  } else {
-    // update existing
-    setLocalSchedules((prev = []) => {
-      const copy = prev.map((s) => ({ ...s }));
-      const idx = copy.findIndex((sch) => String(sch.id) === String(modalEditingId));
-      if (idx !== -1) {
-        copy[idx] = {
-          ...copy[idx],
-          user_id: payload.user_id,
-          start_time: payload.start_time,
-          duration: payload.duration,
-          date: payload.date,
-          branch_id: payload.branch_id,
-          updateDate: new Date().toISOString(),
-        };
-        setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
-      } else {
-        // if not found, push as new
-        const newSch = makeTempSchedule({ ...payload });
-        newSch.date = String(payload.date).split("T")[0];
-        copy.push(newSch);
-        setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-      }
-      const map = buildMapFromList(copy);
-      setLocalSchedulesByDate(map);
-      return copy;
-    });
-    showSuccessToast("Schedule updated");
-  }
-  setAddScheduleModalVisible(false);
-  setModalEditingId(null);
-};
+  };
   const measureStaffInput = () => {
     const handle = findNodeHandle(staffInputWrapperRef.current);
     if (!handle) return;
@@ -552,7 +552,7 @@ let targetDate =
     setDurationError("");
     setTimeFromError("");
 
-        if (staffSchedule) {
+    if (staffSchedule) {
       // Prefill fields from template (previous-week schedule)
       setTimeFrom(staffSchedule.start_time || "");
       const durFromApi = staffSchedule.duration ?? null;
@@ -865,7 +865,7 @@ let targetDate =
       <Header
         backgroundColor={colors.secondary}
         position="relative"
-        center={{ type: "text", value: route.params?.id ? (lang.Edit_Schedule) : (lang.Add_Schedule), color: colors.text }}
+        center={{ type: "text", value:lang.Add_Schedule}}
         left={[
           {
             type: "image",
@@ -957,9 +957,19 @@ let targetDate =
                     <Text style={styles.day_text}>{`${wk}`}</Text>
                   </CartBox>
                   <TouchableOpacity
-                    style={{ flex: 1}}
+                    style={{ flex: 1 }}
                     activeOpacity={expired ? 1 : 0.8}
-                    onPress={() => { if (expired) return; openAddModalForDate(ymd, displayYmd); }} // open modal for the displayed (current-week) date
+                    // onPress={() => { if (expired) return; openAddModalForDate(ymd, displayYmd); }} // open modal for the displayed (current-week) date
+                    onPress={() => {
+                      if (expired) return;
+                      const viewingPrevWeek = weekOffset !== 0;
+                      const daySchedulesArr = localSchedulesByDate[ymd] || [];
+
+                      if (viewingPrevWeek || daySchedulesArr.length === 0) {
+                        openAddModalForDate(ymd, displayYmd);
+                      } else {
+                      }
+                    }}
                   >
                     <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
@@ -995,7 +1005,7 @@ let targetDate =
 
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{modalEditingId ? lang.Edit_Schedule : lang.Add_Schedule}</Text>
+            <Text style={styles.modalTitle}> {lang.Add_Schedule}</Text>
             <View>
               <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
                 <View
@@ -1067,7 +1077,7 @@ let targetDate =
                 />
 
                 <View style={{ height: 18 }} />
-                <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
+                <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
                 <View style={{ height: 20 }} />
               </ScrollView>
 
