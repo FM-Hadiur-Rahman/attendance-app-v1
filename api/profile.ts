@@ -191,9 +191,10 @@ export type AttendanceSummary = {
 export const getUserAttendanceSummary = async (staffId: string): Promise<AttendanceSummary | null> => {
   try {
     if (!staffId) throw new Error('getUserAttendanceSummary: missing staffId');
-    const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}`);
+    const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}?period=month`);
     const data = res?.data ?? null;
     return data as AttendanceSummary;
+    
   } catch (error: any) {
     console.error('getUserAttendanceSummary() failed:', error?.response?.data ?? error);
     throw error?.response?.data ?? error?.message ?? 'Failed to fetch attendance summary';

@@ -18,14 +18,18 @@ import CartBox from "../../../components/CartBox";
 import Popup from "../../../components/Popup";
 import { Button1 } from "../../../components/Button";
 import InputBox from "../../../components/InputBox";
-import translations from "../../../assets/translations.json"
+import translations from "../../../assets/translations.json";
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
-import Toast, { showSuccessToast, showErrorToast, toastConfig } from "../../../components/Toast";
+import Toast, {
+  showSuccessToast,
+  showErrorToast,
+  toastConfig,
+} from "../../../components/Toast";
 import { getProfile, updateProfile, ProfileUser } from "../../../api/profile";
 import { logout as apiLogout } from "../../../api/auth/authService";
-import { clearAllAuthData } from "../../../api/auth/authToken"; 
+import { clearAllAuthData } from "../../../api/auth/authToken";
 
 import { getBranchId } from "../../../api/profile";
 
@@ -96,25 +100,60 @@ export default function MoreScreen(props: any) {
       name: lang.personal_information,
       title: "General",
       items: [
-        { label: "Fullname", labelname: lang.fullName, icon: require("../../../assets/icons/p_profile_b.png"), screen: null },
-        { label: "Email", labelname: lang.email, icon: require("../../../assets/icons/p_email_b.png"), screen: null },
+        {
+          label: "Fullname",
+          labelname: lang.fullName,
+          icon: require("../../../assets/icons/p_profile_b.png"),
+          screen: null,
+        },
+        {
+          label: "Email",
+          labelname: lang.email,
+          icon: require("../../../assets/icons/p_email_b.png"),
+          screen: null,
+        },
       ],
     },
     {
       name: lang.preferences,
       title: "Preferences",
       items: [
-        { label: "Language", labelname: lang.language, icon: require("../../../assets/icons/p_language_b.png"), screen: null } // modal
+        {
+          label: "Language",
+          labelname: lang.language,
+          icon: require("../../../assets/icons/p_language_b.png"),
+          screen: null,
+        }, // modal
       ],
     },
     {
       name: lang.support_and_legal,
       title: "Support & Legal",
       items: [
-        { label: "Help center", labelname: lang.help_center, icon: require("../../../assets/icons/p_helpcenter_b.png"), screen: "HelpCenterScreen" },
-        { label: "About us", labelname: lang.about_us, icon: require("../../../assets/icons/p_aboutus_b.png"), screen: "AboutScreen" },
-        { label: "Privacy policy", labelname: lang.privacy_policy, icon: require("../../../assets/icons/p_privacy_b.png"), screen: "PrivacyScreen" },
-        { label: "Terms of service", labelname: lang.terms_of_service, icon: require("../../../assets/icons/p_terms_b.png"), screen: "TermsScreen" },
+        {
+          label: "Help center",
+          labelname: lang.help_center,
+          icon: require("../../../assets/icons/p_helpcenter_b.png"),
+          screen: "HelpCenterScreen",
+        },
+        {
+          label: "About us",
+          labelname: lang.about_us,
+          icon: require("../../../assets/icons/p_aboutus_b.png"),
+          screen: "AboutScreen",
+        },
+        {
+          label: "Privacy policy",
+          labelname: lang.privacy_policy,
+          icon: require("../../../assets/icons/p_privacy_b.png"),
+          screen: "PrivacyScreen",
+        },
+        {
+          label: "Terms of service",
+          labelname: lang.terms_of_service,
+          icon: require("../../../assets/icons/p_terms_b.png"),
+          screen: "TermsScreen",
+        },
       ],
     },
   ];
@@ -146,9 +185,12 @@ export default function MoreScreen(props: any) {
     }
       // If your API returns an image field, setProfileImage(profile.image) here
     } catch (err: any) {
-      console.error('loadProfile error', err);
+      console.error("loadProfile error", err);
       if (showErrors) {
-        Alert.alert('Profile load failed', err?.toString?.() ?? 'Could not load profile');
+        Alert.alert(
+          "Profile load failed",
+          err?.toString?.() ?? "Could not load profile"
+        );
       }
     } finally {
       setLoadingProfile(false);
@@ -209,25 +251,25 @@ export default function MoreScreen(props: any) {
     }
   };
 
-const handleLogout = async () => {
-  try {
-    // try informing backend and clearing local storage via AuthService
-    await apiLogout();
-  } catch (err) {
-    console.warn("Backend logout failed (ignored):", err);
-    // ensure tokens are removed locally even if backend fails
-    await clearAllAuthData();
-  } finally {
-    // final guard: ensure local data is cleared
-    await clearAllAuthData();
+  const handleLogout = async () => {
+    try {
+      // try informing backend and clearing local storage via AuthService
+      await apiLogout();
+    } catch (err) {
+      console.warn("Backend logout failed (ignored):", err);
+      // ensure tokens are removed locally even if backend fails
+      await clearAllAuthData();
+    } finally {
+      // final guard: ensure local data is cleared
+      await clearAllAuthData();
 
-    // navigate to login screen   
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
-    });
-  }
-};
+      // navigate to login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+      });
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -237,7 +279,8 @@ const handleLogout = async () => {
         center={{ type: "text", value: lang.profile, color: colors.text }}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContainer}
         refreshControl={
           <RefreshControl
@@ -256,7 +299,10 @@ const handleLogout = async () => {
           <View style={styles.profileContainer}>
             <View style={styles.profileImageContainer}>
               {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                <Image
+                  source={{ uri: profileImage }}
+                  style={styles.profileImage}
+                />
               ) : (
                 <Image
                   source={require("../../../assets/icons/profile_gray.png")}
@@ -279,7 +325,6 @@ const handleLogout = async () => {
         <View style={styles.body}>
           {/* Sections */}
           {sections.map((section, index) => (
-
             <CartBox
               key={index}
               borderRadius={16}
@@ -318,7 +363,7 @@ const handleLogout = async () => {
                 >
                   <View style={styles.itemLeft}>
                     <Image source={item.icon} style={styles.itemIcon} />
-                    <View style={{ justifyContent: 'flex-start' }}>
+                    <View style={{ justifyContent: "flex-start" }}>
                       <Text style={styles.itemText}>{item.labelname}</Text>
                       {/* --- Show the value only for the Personal Information section --- */}
                       {section.name === lang.personal_information && (
@@ -331,13 +376,9 @@ const handleLogout = async () => {
                       )}
                     </View>
                   </View>
-
                 </CartBox>
               ))}
-
             </CartBox>
-
-
           ))}
 
           {/* Logout */}
@@ -346,7 +387,7 @@ const handleLogout = async () => {
             paddingLeft={20}
             paddingTop={12}
             paddingBottom={12}
-            marginTop={20}
+            marginTop={0}
             marginBottom={30}
             alignItems="flex-start"
           >
@@ -358,7 +399,6 @@ const handleLogout = async () => {
               <Text style={styles.logoutText}>{lang.logout}</Text>
             </View>
           </CartBox>
-
         </View>
       </ScrollView>
 
@@ -457,22 +497,24 @@ const handleLogout = async () => {
                 try {
                   // Pass user._id if available; updateProfile will fallback to stored userId if not
                   const idToUpdate = user?._id || userId;
-                  const updated = await updateProfile({ fullname: newName }, idToUpdate);
+                  const updated = await updateProfile(
+                    { fullname: newName },
+                    idToUpdate
+                  );
                   // update local UI
                   setFullName(updated.fullname ?? newName);
-                  setUser(prev => ({ ...(prev ?? {}), ...updated }));
+                  setUser((prev) => ({ ...(prev ?? {}), ...updated }));
                   setFullnameModalVisible(false);
                   showSuccessToast(lang.Fullname_updated_successfully);
 
                   // Optionally refresh to be safe:
                   // await loadProfile(false);
                 } catch (err: any) {
-                  console.error('Failed to update fullname', err);
+                  console.error("Failed to update fullname", err);
                   //Alert.alert('Update failed', err?.toString?.() ?? 'Could not update fullname');
                   showErrorToast(err?.message ?? "Could not update fullname");
                 }
               }}
-
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
@@ -506,18 +548,19 @@ const handleLogout = async () => {
                 borderRadius={12}
                 borderWidth={1}
                 backgroundColor={colors.secondary}
-                borderColor={tempLanguage === langOpt.code ? colors.primary : colors.border}
+                borderColor={
+                  tempLanguage === langOpt.code ? colors.primary : colors.border
+                }
                 marginBottom={12}
                 onPress={() => setTempLanguage(langOpt.code)}
               >
                 <View style={styles.languageBox}>
-                  <Image
-                    source={langOpt.flag}
-                    style={styles.logoutIcon}
-                  />
+                  <Image source={langOpt.flag} style={styles.logoutIcon} />
                   <View style={styles.lang}>
                     <Text style={styles.modalButtonText}>{langOpt.name}</Text>
-                    <Text style={styles.languageSubtitle}>{langOpt.subtitle}</Text>
+                    <Text style={styles.languageSubtitle}>
+                      {langOpt.subtitle}
+                    </Text>
                   </View>
                 </View>
               </CartBox>
@@ -536,7 +579,6 @@ const handleLogout = async () => {
               }}
               containerStyle={{ alignSelf: "center", marginTop: 56 }}
             />
-
           </View>
         </Pressable>
       </Modal>
@@ -552,19 +594,25 @@ const handleLogout = async () => {
         <Text style={styles.popupsubtext}>
           Confirm the logging out by clicking "yes."
         </Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            width: "100%",
+          }}
+        >
           <Button1
             text={lang.yes}
             onPress={handleLogout}
             backgroundColor={colors.primary}
-            width={'48%'}
+            width={"48%"}
             textStyle={{ color: colors.secondary }}
           />
           <Button1
             text={lang.no}
             onPress={() => setLogoutPopupVisible(false)}
             backgroundColor={colors.error_text}
-            width={'48%'}
+            width={"48%"}
             textStyle={{ color: colors.secondary }}
           />
         </View>
@@ -579,32 +627,50 @@ const styles = StyleSheet.create({
   scrollContainer: { paddingBottom: 50 },
   body: { paddingHorizontal: 20, marginTop: 20 },
   profileContainer: {
-    alignItems: 'center',
-    marginTop: 20
+    alignItems: "center",
+    marginTop: 20,
   },
   profileImageContainer: {
     width: 80,
-    height: 80, borderRadius: 60, resizeMode: "contain",
-    justifyContent: 'center', alignItems: 'center'
+    height: 80,
+    borderRadius: 60,
+    resizeMode: "contain",
+    justifyContent: "center",
+    alignItems: "center",
   },
   profileImage: {
-    width: 80, height: 80, borderRadius: 60
+    width: 80,
+    height: 80,
+    borderRadius: 60,
   },
-  editIconContainer: { position: "absolute", bottom: 8, right: 0, },
+  editIconContainer: { position: "absolute", bottom: 8, right: 0 },
   editIcon: { width: 20, height: 20, resizeMode: "contain" },
   sectionTitle: {
-    fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any, color: colors.subtext,
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.subtext,
     marginBottom: 14,
   },
   itemLeft: { flexDirection: "row" },
   itemIcon: { width: 17, height: 17, resizeMode: "contain", marginRight: 8 },
-  itemText: { fontSize: fonts.size.m, color: colors.text, fontWeight: fonts.weight.medium as any, fontFamily: fonts.family.regular, },
-  logout: { flexDirection: "row", },
+  itemText: {
+    fontSize: fonts.size.m,
+    color: colors.text,
+    fontWeight: fonts.weight.medium as any,
+    fontFamily: fonts.family.regular,
+  },
+  logout: { flexDirection: "row" },
   logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" },
-  logoutText: { fontSize: fonts.size.m, color: colors.logout_text, fontWeight: fonts.weight.medium as any },
-  modalOverlay: { flex: 1, justifyContent: "flex-end", },
+  logoutText: {
+    fontSize: fonts.size.m,
+    color: colors.logout_text,
+    fontWeight: fonts.weight.medium as any,
+  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalContainer: {
-    backgroundColor: colors.secondary, borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    backgroundColor: colors.secondary,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 50,
@@ -614,11 +680,33 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 20,
   },
-  modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 20 },
-  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium as any, textAlign: "center", marginBottom: 19 },
-  modalButton: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-  modalButtonText: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text, textAlign: "center", fontFamily: fonts.family.regular, },
-  languageBox: { flexDirection: "row", alignItems: 'center' },
+  modalHandle: {
+    width: 40,
+    height: 6,
+    backgroundColor: colors.modal_line,
+    borderRadius: 10,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: fonts.size.l,
+    fontWeight: fonts.weight.medium as any,
+    textAlign: "center",
+    marginBottom: 19,
+  },
+  modalButton: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalButtonText: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+    textAlign: "center",
+    fontFamily: fonts.family.regular,
+  },
+  languageBox: { flexDirection: "row", alignItems: "center" },
   lang: { alignItems: "flex-start" },
   languageSubtitle: {
     fontSize: fonts.size.s,
@@ -626,7 +714,7 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular as any,
     marginTop: 4,
     fontFamily: fonts.family.regular,
-    lineHeight: 17
+    lineHeight: 17,
   },
   labelValue: {
     marginTop: 5,
@@ -641,7 +729,6 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.s,
     fontWeight: fonts.weight.regular as any,
     marginBottom: 30,
-    alignSelf: 'center'
+    alignSelf: "center",
   },
-
 });
