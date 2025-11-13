@@ -22,7 +22,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
 import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
-import { getBranchById } from "../../../api/Branch";
+import { getBranchById } from "../../../api/Branchs";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -217,20 +217,27 @@ const HomeScreen_A = (props: any) => {
   };
 
   // restore staffOnShiftCount computed from schedulesState (unique users scheduled today for this branch)
-  const staffOnShiftCount = useMemo(() => {
-    if (!activeBranchId) return 0;
-    if (!Array.isArray(schedulesState)) return 0;
-    const set = new Set<string>();
+  const TotalstaffCount = useMemo(() => {
+    if (!Array.isArray(schedulesState) || schedulesState.length === 0) return 0;
+
+    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const toYMDLocal = (d: Date) =>
+      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+    let count = 0;
     schedulesState.forEach((s) => {
-      const sBranchId = s.branch_id?._id ?? s.branch_id;
-      if (!sBranchId) return;
-      if (String(sBranchId) !== String(activeBranchId)) return;
-      if (!scheduleIsUser(s)) return;
-      const uid = s.employee_id?._id ?? s.employee_id;
-      if (uid) set.add(String(uid));
+      if (!s?.date) return;
+
+      const sYMD = toYMDLocal(new Date(s.date));
+      const branchIdOfSchedule = s.branch_id?._id;
+
+      if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
+        count++;
+      }
     });
-    return set.size;
-  }, [schedulesState, usersState, activeBranchId]);
+    console.log('TotalstaffCount for branch', activeBranchId, 'on', todayYMD, '=', count);
+    return count;
+  }, [schedulesState, todayYMD, activeBranchId]);
 
   // fetch attendance and enrich (with branch-name logic)
   const fetchAttendanceAndEnrich = async (branchIdToUse: string | null) => {
@@ -257,7 +264,7 @@ const HomeScreen_A = (props: any) => {
 
       const enriched = await Promise.all(
         filtered.map(async (att) => {
-          const uid = att.user?.id ?? att.user?.userId ?? null;
+          const uid = att.user?.id ?? att.user;
           let userProfile = usersState.find((u) => String(u._id) === String(uid) || String((u as any).id) === String(uid));
           if (!userProfile && uid) {
             try { userProfile = await getUserById(uid); } catch (e) { userProfile = null; }
@@ -287,26 +294,41 @@ const HomeScreen_A = (props: any) => {
           } else {
             status = "noschedule";
           }
-
-          // Branch-name logic:
-          // if attendance.branch?.id equals attendance.branch_id => DO NOT show branch name.
-          // If different, fetch branch by branch_id and show that branch.name
+          // 🔍 Determine if the user belongs to a different branch
           let branchNameToShow: string | null = null;
-          const attBranchObjId = att.branch?.id ?? null;
-          const attBranchIdField = att.branch_id ?? null;
-          if (attBranchIdField && attBranchObjId && String(attBranchObjId) === String(attBranchIdField)) {
-            branchNameToShow = null; // same -> do not show
-          } else if (attBranchIdField) {
-            try {
-              const b = await getBranchById(attBranchIdField);
-              branchNameToShow = b?.name ?? null;
-            } catch (e) {
-              branchNameToShow = null;
+
+          try {
+            if (userProfile) {
+              // Extract user's actual branch info
+              const userBranchId =
+                typeof userProfile.branch === "string"
+                  ? userProfile.branch
+                  : userProfile.branch?._id ?? null;
+              const userBranchName =
+                typeof userProfile.branch === "object"
+                  ? userProfile.branch?.name ?? null
+                  : null;
+
+              // Compare with current active branch
+              if (
+                userBranchId &&
+                String(userBranchId) !== String(branchIdToUse ?? activeBranchId)
+              ) {
+                branchNameToShow = userBranchName || (await getBranchById(userBranchId))?.name || null;
+              }
+            } else if (att.branch_id) {
+              // fallback if userProfile not loaded
+              const b = await getBranchById(att.branch_id);
+              const userBranchId = b?._id;
+              if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
+                branchNameToShow = b?.name ?? null;
+              }
             }
-          } else if (att.branch?.name && att.branch?.id) {
-            // fallback: if branch field present but no branch_id, and id differs we'd still want to show it
-            branchNameToShow = att.branch?.name ?? null;
+          } catch (err) {
+            console.warn("branchNameToShow lookup failed", err);
+            branchNameToShow = null;
           }
+
 
           return {
             attendance: att,
@@ -328,13 +350,53 @@ const HomeScreen_A = (props: any) => {
 
   // initial & deps
   useEffect(() => {
-    if (passedBranchId) {
-      setActiveBranchId(passedBranchId);
-      if (passedBranchName) setActiveBranchName(passedBranchName);
+    if (!userId) {
+      console.log("No userId found in params");
+      return;
     }
-    fetchBranchAndStaff();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, version, passedBranchId]);
+    // don’t overwrite if already set
+    if (activeBranchId) {
+      console.log("activeBranchId already set:", activeBranchId);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        console.log("🔍 Fetching user by ID:", userId);
+        const u = await getUserById(userId);
+        if (!mounted || !u) {
+          console.log("User not found or unmounted");
+          return;
+        }
+        const branchField = u.branch;
+        const branchId =
+          typeof branchField === "string"
+            ? branchField
+            : branchField?._id ?? null;
+
+        const branchName =
+          typeof branchField === "object"
+            ? branchField?.name ?? null
+            : null;
+        console.log("User branch data:", branchField);
+        console.log("Extracted branchId:", branchId);
+        console.log("Extracted branchName:", branchName);
+
+        if (branchId) {
+          setActiveBranchId(String(branchId));
+          if (branchName) setActiveBranchName(branchName);
+          console.log("activeBranchId set to:", branchId);
+        } else {
+          console.log("No branchId found for user");
+        }
+      } catch (err) {
+        console.warn("Failed to load branch from userId", err);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [userId, activeBranchId]);
 
   useEffect(() => {
     fetchShiftData(activeBranchId);
@@ -353,10 +415,10 @@ const HomeScreen_A = (props: any) => {
   );
 
   const handleNotificationPress = () => {
-  console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
-  // use same param keys you expect in NotificationScreen
-  navigation.navigate("NotificationScreen" as any, { userId, langId, branchId: activeBranchId });
-};
+    console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
+    // use same param keys you expect in NotificationScreen
+    navigation.navigate("NotificationScreen" as any, { userId, langId, branchId: activeBranchId });
+  };
 
   return (
     <View style={styles.container}>
@@ -381,7 +443,7 @@ const HomeScreen_A = (props: any) => {
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
             {/* <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text> */}
-             <Text style={styles.total_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text>
+            <Text style={styles.total_count}>{loadingShiftData ? "..." : TotalstaffCount}</Text>
           </CartBox>
 
           <CartBox containerStyle={styles.staff}>
@@ -392,7 +454,7 @@ const HomeScreen_A = (props: any) => {
 
             {/* <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text> */}
             <Text style={styles.shift_count}>{loadingShiftData ? "..." : String(recentCheckins.length)}</Text>
-          
+
           </CartBox>
         </View>
 
@@ -426,7 +488,10 @@ const HomeScreen_A = (props: any) => {
               // Loaded and has data: show the check-ins
               recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
                 const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
-                const timeStr = `${formatTime12(attendance.In)}${attendance.Out ? ` - ${formatTime12(attendance.Out)}` : ''}`;
+                const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
+                const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
+                const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
+
                 const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
 
                 return (
