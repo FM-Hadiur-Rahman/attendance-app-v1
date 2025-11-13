@@ -67,7 +67,7 @@ export interface EmployeeSchedule {
   day_of_week: string;
 }
 export const getEmployeeSchedules = async (employee_id: string, startDate: string, endDate: string) => {
-  const res = await axiosInstance.get("/schedule", {
+  const res = await axiosInstance.get("/schedule/employee", {
     params: { employee_id, startDate, endDate },
   });
   return res.data.schedules as EmployeeSchedule[];
