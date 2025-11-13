@@ -20,7 +20,7 @@ import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; // fetchUsers returns { users, page, ... }
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk, updateSchedule, updateScheduleById, createSchedule } from "../../../../api/schedules";
+import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk, updateSchedule, createSchedule, deleteSchedule } from "../../../../api/schedules";
 
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
@@ -89,7 +89,7 @@ export default function EditScheduleScreen(props: any) {
     const [durationHours, setDurationHours] = useState<string>("");
     const [durationError, setDurationError] = useState<string>("");
     const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
-    const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update"; schedule: any }>>([]);
+    const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update" | "delete"; schedule: any }>>([]);
     const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     const [weekOffset, setWeekOffset] = useState<number>(0);
@@ -330,118 +330,179 @@ export default function EditScheduleScreen(props: any) {
         today.setHours(0, 0, 0, 0);
         return dt.getTime() < today.getTime();
     };
-const onAddSchedule = async () => {
-  let hasError = false;
+    const onAddSchedule = async () => {
+        let hasError = false;
 
-  if (!selectedStaffId) {
-    setStaffError(lang.Select_staff || "Please select staff");
-    showErrorToast(lang.Please_select_staff || "Select staff");
-    hasError = true;
-  }
-  if (!selectedDayYmd) {
-    showErrorToast("No date selected");
-    hasError = true;
-  }
-  if (!selectedBranchId) {
-    showErrorToast("Please select branch");
-    setBranchFilterOpen(true);
-    hasError = true;
-  }
-  if (!timeFrom || timeFrom.trim() === "") {
-    setTimeFromError(lang.Required || "Required");
-    showErrorToast(lang.Please_enter_start_time || "Enter start time");
-    hasError = true;
-  }
-
-  const dur = parseFloat(durationHours || "0");
-  if (isNaN(dur) || dur <= 0) {
-    setDurationError("Invalid duration");
-    showErrorToast("Invalid duration");
-    hasError = true;
-  }
-
-  if (hasError) return;
-
-  // Determine date
-  const targetDate = selectedDayYmd || selectedDisplayYmd;
-  if (!targetDate) {
-    showErrorToast("No valid date selected for schedule (abort)");
-    return;
-  }
-  const normalizedDate = String(targetDate).split("T")[0];
-  const endTime = computeEndTime(timeFrom, dur);
-
-  // Build payload
-  const payload = {
-    employee_id: selectedStaffId,      // ✅ correct key
-    branch_id: selectedBranchId,
-    date: normalizedDate,
-    start_time: timeFrom,
-    end_time: endTime,
-    duration: durationHours,
-    day_of_week: WEEKDAYS[new Date(normalizedDate).getDay()], // e.g. "Mon"
-  };
-
-  try {
-    if (modalEditingId) {
-      // Update existing schedule
-      await updateSchedule(modalEditingId, payload);
-      showSuccessToast("Schedule updated successfully");
-    } else {
-      // Create new schedule
-      await createSchedule(payload);
-      showSuccessToast("Schedule created successfully");
-    }
-
-    // Update local state for instant UI feedback
-    const makeTempSchedule = (base: any, overrideId?: string) => ({
-      id: overrideId ?? `S${Math.floor(Math.random() * 100000)}`, // temp ID
-      employee_id: base.employee_id,
-      branch_id: base.branch_id,
-      date: base.date,
-      start_time: base.start_time,
-      end_time: base.end_time,
-      duration: base.duration,
-      day_of_week: base.day_of_week,
-      createDate: base.createDate ?? new Date().toISOString(),
-      updateDate: new Date().toISOString(),
-    });
-
-    setLocalSchedules((prev = []) => {
-      const copy = [...prev];
-      if (modalEditingId) {
-        const idx = copy.findIndex((s) => s.id === modalEditingId);
-        if (idx !== -1) {
-          copy[idx] = { ...copy[idx], ...payload, id: modalEditingId, updateDate: new Date().toISOString() };
-          setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
+        if (!selectedStaffId) {
+            setStaffError(lang.Select_staff || "Please select staff");
+            showErrorToast(lang.Please_select_staff || "Select staff");
+            hasError = true;
         }
-      } else {
-        const newSch = makeTempSchedule(payload);
-        copy.push(newSch);
-        setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-      }
+        if (!selectedDayYmd) {
+            showErrorToast("No date selected");
+            hasError = true;
+        }
+        if (!selectedBranchId) {
+            showErrorToast("Please select branch");
+            setBranchFilterOpen(true);
+            hasError = true;
+        }
+        if (!timeFrom || timeFrom.trim() === "") {
+            setTimeFromError(lang.Required || "Required");
+            showErrorToast(lang.Please_enter_start_time || "Enter start time");
+            hasError = true;
+        }
 
-      // Build map for UI
-      const map: Record<string, any[]> = {};
-      copy.forEach((s) => {
-        const key = s.date;
-        if (!map[key]) map[key] = [];
-        map[key].push(s);
-      });
-      setLocalSchedulesByDate(map);
+        const dur = parseFloat(durationHours || "0");
 
-      return copy;
-    });
+        if (hasError) return;
 
-    setAddScheduleModalVisible(false);
-    setModalEditingId(null);
-    await onRefresh(); // refresh from API
+        const targetDate = selectedDayYmd || selectedDisplayYmd;
+        if (!targetDate) {
+            showErrorToast("No valid date selected for schedule (abort)");
+            return;
+        }
 
-  } catch (err) {
-    console.error("onAddSchedule error:", err);
-    showErrorToast("Failed to save schedule");
-  }
-};
+        const scheduleDate = String(targetDate).split("T")[0];
+        const endTime = computeEndTime(timeFrom, dur);
+
+        try {
+            setLoading(true);
+
+            let backendSchedule: any;
+
+            if (modalEditingId) {
+                // ✅ Update or delete existing schedule
+                if (isNaN(dur) || dur <= 0) {
+                    // ➖ Delete schedule if duration is 0 or invalid
+                    await deleteSchedule(modalEditingId); // call your API
+                    showSuccessToast("Schedule deleted because duration is 0");
+
+                    // Remove from local state
+                    setLocalSchedules((prev = []) => {
+                        const filtered = prev.filter((s) => s._id !== modalEditingId);
+                        const map: Record<string, any[]> = {};
+                        const currentWeekYMD = displayWeekDates.map((d) => dateToYMD(d));
+                        filtered.forEach((s) => {
+                            if (!currentWeekYMD.includes(s.date)) return;
+                            if (!map[s.date]) map[s.date] = [];
+                            map[s.date].push(s);
+                        });
+                        setLocalSchedulesByDate(map);
+                        return filtered;
+                    });
+
+                    setModalEditingId(null);
+                    setAddScheduleModalVisible(false);
+                    return;
+                }
+
+                // Otherwise update normally
+                const payload = {
+                    employee_id: selectedStaffId,
+                    branch_id: selectedBranchId,
+                    start_time: timeFrom,
+                    end_time: endTime,
+                    duration: durationHours,
+                    day_of_week: WEEKDAYS[new Date(scheduleDate).getDay()],
+                };
+
+                backendSchedule = await updateSchedule(modalEditingId, payload);
+                showSuccessToast("Schedule updated successfully");
+
+            } else {
+                // ➕ Create new schedule
+                if (isNaN(dur) || dur <= 0) {
+                    showErrorToast("Cannot create schedule with duration 0");
+                    return;
+                }
+
+                const payload = {
+                    employee_id: selectedStaffId,
+                    branch_id: selectedBranchId,
+                    date: scheduleDate,
+                    start_time: timeFrom,
+                    end_time: endTime,
+                    duration: durationHours,
+                    day_of_week: WEEKDAYS[new Date(scheduleDate).getDay()],
+                };
+
+                backendSchedule = await createSchedule(payload);
+                showSuccessToast("Schedule created successfully");
+                setModalEditingId(backendSchedule._id);
+            }
+
+            // Normalize backend date
+            const normalizedSchedule = {
+                ...backendSchedule,
+                date: String(backendSchedule.date).split("T")[0],
+            };
+
+            // Update local schedules state
+            setLocalSchedules((prev = []) => {
+                const copy = [...prev];
+
+                const idx = copy.findIndex(
+                    (s) =>
+                        s._id === normalizedSchedule._id ||
+                        (s.employee_id === normalizedSchedule.employee_id && s.date === normalizedSchedule.date)
+                );
+
+                if (Number(normalizedSchedule.duration) <= 0) {
+                    // 🗑️ Delete schedule if duration <= 0
+                    if (idx !== -1) {
+                        const deletedSchedule = copy[idx];
+                        copy.splice(idx, 1);
+
+                        // Add to changeLog as delete
+                        setChangeLog((prev = []) => [
+                            ...prev,
+                            { type: "delete", schedule: deletedSchedule },
+                        ]);
+                    }
+                } else {
+                    // ➕ Normal add / update
+                    if (idx !== -1) {
+                        copy[idx] = normalizedSchedule;
+                        setChangeLog((prev = []) => [
+                            ...prev,
+                            { type: "update", schedule: normalizedSchedule },
+                        ]);
+                    } else {
+                        copy.push(normalizedSchedule);
+                        setChangeLog((prev = []) => [
+                            ...prev,
+                            { type: "add", schedule: normalizedSchedule },
+                        ]);
+                    }
+                }
+
+                // 🔹 Only include schedules for current week
+                const map: Record<string, any[]> = {};
+                const currentWeekYMD = displayWeekDates.map((d) => dateToYMD(d));
+                copy.forEach((s) => {
+                    if (!currentWeekYMD.includes(s.date)) return;
+                    if (!map[s.date]) map[s.date] = [];
+                    map[s.date].push(s);
+                });
+                setLocalSchedulesByDate(map);
+
+                return copy;
+            });
+
+
+
+            setAddScheduleModalVisible(false);
+            await onRefresh();
+
+        } catch (err) {
+            console.error("onAddSchedule error:", err);
+            showErrorToast("Failed to save schedule");
+        } finally {
+            setLoading(false);
+        }
+    };
+
 
 
 
@@ -730,33 +791,44 @@ const onAddSchedule = async () => {
         }
     };
 
-const onFooterSaveAndBack = () => {
-    // 1️⃣ If add/edit modal is open, block
-    if (addScheduleModalVisible) {
-        showErrorToast("Please finish editing the schedule");
-        return;
-    }
+    const onFooterSaveAndBack = () => {
+        // 1️⃣ Block if modal open
+        if (addScheduleModalVisible) {
+            showErrorToast("Please finish editing the schedule");
+            return;
+        }
 
-    // 2️⃣ If any field errors exist
-    if (staffError || timeFromError || durationError) {
-        showErrorToast("Please fix errors before saving");
-        return;
-    }
+        // 2️⃣ Check field errors
+        if (staffError || timeFromError || durationError) {
+            showErrorToast("Please fix errors before saving");
+            return;
+        }
 
-    // 3️⃣ Check changeLog: only add/update actions count
-    const hasRealChanges = Array.isArray(changeLog) && changeLog.some(
-        (c) => c.type === "add" || c.type === "update"
-    );
+        // 3️⃣ Check changeLog for add/update/delete
+        const hasRealChanges =
+            Array.isArray(changeLog) &&
+            changeLog.some(
+                (c) => c.type === "add" || c.type === "update" || c.type === "delete"
+            );
 
-    // 4️⃣ If no changes → show toast and exit
-    if (!hasRealChanges) {
-        showErrorToast(lang.no_changes_to_save || "No changes to save");
-        return; // ❌ No popup
-    }
+        // 🔹 If there are no changes, allow navigation without popup
+        if (!hasRealChanges) {
+            showErrorToast(lang.no_changes_to_save || "No changes to save");
+            return;
+        }
 
-    // 5️⃣ Otherwise, show confirmation popup
-    setSaveConfirmVisible(true);
-};
+        // 4️⃣ Otherwise show confirmation popup
+        setSaveConfirmVisible(true);
+
+        // 🔹 Optional: debug
+        console.log("📝 changeLog before save:", changeLog);
+    };
+
+
+
+
+
+
 
 
 
@@ -1028,19 +1100,43 @@ const onFooterSaveAndBack = () => {
 
                                 <InputBox
                                     label={lang.Start_time}
-                                    placeholder={"00:00:00"}
+                                    placeholder="HH:MM"
                                     value={timeFrom}
                                     setValue={(v: string) => {
-                                        setTimeFrom(v);
-                                        const ok = /^(\d{2}):(\d{2}):(\d{2})$/.test(v);
-                                        if (ok) setTimeFromError("");
+                                        // Remove non-digits
+                                        let digits = v.replace(/[^0-9]/g, "");
+
+                                        let hh = "";
+                                        let mm = "";
+
+                                        if (digits.length > 0) {
+                                            // Hours (max 2 digits)
+                                            hh = digits.slice(0, 2);
+                                            if (parseInt(hh) > 23) hh = "23"; // clamp to 24
+                                        }
+
+                                        if (digits.length > 2) {
+                                            // Minutes (max 2 digits)
+                                            mm = digits.slice(2, 4);
+                                            if (parseInt(mm) > 59) mm = "59"; // clamp to 59
+                                        }
+
+                                        const formatted = hh + (mm ? ":" + mm : "");
+                                        setTimeFrom(formatted);
+
+                                        // Full validation
+                                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
+                                        if (isValid) setTimeFromError("");
+                                        else setTimeFromError("Invalid time");
                                     }}
+                                    keyboardType="numeric"          // regular keyboard
+                                    maxLength={5}                   // HH:MM
                                     rightIcon={require("../../../../assets/icons/clock_b.png")}
                                     errorMessage={timeFromError}
                                     rightIconStyle={{ tintColor: colors.primary }}
-                                    onRightIconPress={onShowNativeTimePicker}
-                                    onPress={onShowNativeTimePicker}
+                                    onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
                                 />
+
                                 <InputBox
                                     label={lang.Duration}
                                     placeholder={"Eg: 8"}
@@ -1048,6 +1144,7 @@ const onFooterSaveAndBack = () => {
                                     setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
                                     errorMessage={durationError}
                                     rightIconStyle={{ tintColor: colors.primary }}
+                                    keyboardType="numeric"
                                 />
 
                                 <View style={{ height: 18 }} />
@@ -1149,144 +1246,91 @@ const onFooterSaveAndBack = () => {
                         text={lang.yes || "Yes"}
                         onPress={async () => {
                             setSaveConfirmVisible(false);
-
-                            // 1️⃣ Gather user changes
-                            const userChanges = (changeLog || [])
-                                .filter((c) => c.type === "add" || c.type === "update")
-                                .map((c) => ({ ...JSON.parse(JSON.stringify(c.schedule)) }));
-
-                            const prevWeekSchedules = Object.values(localSchedulesByDate)
-                                .flat()
-                                .filter((s) => s.user_id === selectedStaffId)
-                                .map((s) => JSON.parse(JSON.stringify(s)));
-
-                            const currentWeekDayMap: Record<string, string> = {};
-                            displayWeekDates.forEach((d) => {
-                                const dow = WEEKDAYS[d.getDay()];
-                                currentWeekDayMap[dow] = dateToYMD(d);
-                            });
-
-                            const prevToCurrentWeekSchedules = prevWeekSchedules
-                                .map((s) => {
-                                    const prevDow = WEEKDAYS[new Date(s.date).getDay()];
-                                    const targetDate = currentWeekDayMap[prevDow];
-                                    if (!targetDate) return null;
-                                    return { ...s, date: targetDate };
-                                })
-                                .filter(Boolean);
-
-                            const userChangeKeys = new Set(
-                                userChanges.map((u) => `${u.user_id}-${u.date}`)
-                            );
-
-                            let templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
-                                const key = `${t.user_id}-${t.date}`;
-                                return !userChangeKeys.has(key);
-                            });
-
-                            templatesToKeep = templatesToKeep.filter((t) => {
-                                return !userChanges.some(
-                                    (u) =>
-                                        u.user_id === t.user_id &&
-                                        u.date === t.date &&
-                                        (u.branch_id ? u.branch_id === t.branch_id : true)
-                                );
-                            });
-
-                            // 4️⃣ Merge templates + user changes
-                            let schedulesToSaveRaw = [...templatesToKeep, ...userChanges];
-
-                            const currentWeekDatesYMD = displayWeekDates.map((d) => dateToYMD(d));
-                            schedulesToSaveRaw = schedulesToSaveRaw.filter((s) =>
-                                currentWeekDatesYMD.includes(s.date)
-                            );
-
-                            // 5️⃣ Normalize
-                            const normalizeForDedupe = (s: any) => {
-                                const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
-                                const computedEnd =
-                                    s.end_time ??
-                                    s.end ??
-                                    (s.duration && startRaw
-                                        ? computeEndTime(startRaw, Number(s.duration))
-                                        : "");
-                                const start = timeToHHMM(String(startRaw));
-                                const end = timeToHHMM(String(computedEnd));
-                                return {
-                                    ...s,
-                                    start_time: start,
-                                    end_time: end,
-                                    _dedupeStart: start,
-                                    _dedupeEnd: end,
-                                };
-                            };
-
-                            const normalizedList = schedulesToSaveRaw.map(normalizeForDedupe);
-
-                            const seen = new Set<string>();
-                            const deduped = normalizedList.filter((s) => {
-                                const branchId = s.branch_id ?? s.branch ?? "";
-                                const key = `${s.user_id}-${s.date}-${s._dedupeStart}-${s._dedupeEnd}-${branchId}`;
-                                if (seen.has(key)) return false;
-                                seen.add(key);
-                                return true;
-                            });
-
-                            const schedulesToSave = deduped.map((s) => {
-                                const copy = { ...s };
-                                delete copy._dedupeStart;
-                                delete copy._dedupeEnd;
-                                return copy;
-                            });
-
-                            if (schedulesToSave.length === 0) {
-                                showErrorToast(lang.no_changes_to_save || "No changes to save");
-                                return;
-                            }
-
-                            const employeeIdToUse =
-                                selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
-                            const branchIdToUse =
-                                selectedBranchId ||
-                                effectiveBranchId ||
-                                (schedulesToSave[0]?.branch_id ?? "");
-
-                            // 6️⃣ Split into updates and creates
-                            const schedulesToUpdate = schedulesToSave.filter((s) => s._id || s.id);
-                            const schedulesToCreate = schedulesToSave.filter((s) => !s._id && !s.id);
+                            setLoading(true);
 
                             try {
-                                setLoading(true);
+                                // 1️⃣ Gather user changes (add / update / delete)
+                                const userChanges = (changeLog || [])
+                                    .filter(c => c.type === "add" || c.type === "update" || c.type === "delete")
+                                    .map(c => ({ ...JSON.parse(JSON.stringify(c.schedule)), _action: c.type }));
 
-                                // 🔹 Update existing schedules
-                                // for (const sched of schedulesToUpdate) {
-                                //     const payload = {
-                                //         date: sched.date,
-                                //         start_time: timeToHHMM(sched.start_time),
-                                //         end_time: timeToHHMM(sched.end_time),
-                                //         branch_id: branchIdToUse,
-                                //     };
-                                //     await updateScheduleById(sched._id || sched.id, payload);
-                                // }
+                                if (userChanges.length === 0) {
+                                    showErrorToast(lang.no_changes_to_save || "No changes to save");
+                                    return;
+                                }
 
-                                // 🔹 Create new ones
-                                // if (schedulesToCreate.length > 0) {
-                                //     const createPayload = schedulesToCreate.map((s) => ({
-                                //         date: s.date,
-                                //         day_of_week: dayOfWeekFromYmd(s.date),
-                                //         start_time: timeToHHMM(s.start_time),
-                                //         end_time: timeToHHMM(s.end_time),
-                                //     }));
-                                //     await postSchedulesBulk(employeeIdToUse, branchIdToUse, createPayload);
-                                // }
+                                // 2️⃣ Consider only current week schedules
+                                const currentWeekYMDs = displayWeekDates.map(d => dateToYMD(d));
+                                const currentWeekSchedules = Object.entries(localSchedulesByDate)
+                                    .filter(([ymd]) => currentWeekYMDs.includes(ymd))
+                                    .flatMap(([, schedules]) => schedules)
+                                    .map(s => ({ ...JSON.parse(JSON.stringify(s)) }));
+
+                                // 3️⃣ Merge add/update changes
+                                const scheduleMap = new Map<string, any>();
+                                currentWeekSchedules.forEach(s => {
+                                    const key = `${s.user_id}-${s.date}-${s.branch_id || ""}`;
+                                    scheduleMap.set(key, s);
+                                });
+
+                                userChanges.forEach(s => {
+                                    const key = `${s.user_id}-${s.date}-${s.branch_id || ""}`;
+                                    if (s._action === "delete") {
+                                        scheduleMap.delete(key); // 🔹 handle deletion properly
+                                    } else {
+                                        scheduleMap.set(key, s); // add/update
+                                    }
+                                });
+
+                                // 4️⃣ Normalize
+                                const normalize = (s: any) => {
+                                    const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
+                                    const computedEnd =
+                                        s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+                                    const start = timeToHHMM(String(startRaw));
+                                    const end = timeToHHMM(String(computedEnd));
+                                    return {
+                                        ...s,
+                                        start_time: start,
+                                        end_time: end,
+                                        _dedupeKey: `${s.user_id}-${s.date}-${start}-${end}-${s.branch_id || ""}`,
+                                    };
+                                };
+
+                                const normalizedList = Array.from(scheduleMap.values()).map(normalize);
+
+                                // 5️⃣ Deduplicate
+                                const seen = new Set<string>();
+                                const deduped = normalizedList.filter(s => {
+                                    if (seen.has(s._dedupeKey)) return false;
+                                    seen.add(s._dedupeKey);
+                                    return true;
+                                });
+
+                                const schedulesToSave = deduped.map(s => {
+                                    const copy = { ...s };
+                                    delete copy._dedupeKey;
+                                    return copy;
+                                });
+
+                                // 6️⃣ Split add/update
+                                const schedulesToUpdate = schedulesToSave.filter(s => s._id || s.id);
+                                const schedulesToCreate = schedulesToSave.filter(s => !s._id && !s.id);
+
+                                // 🔹 Call your backend logic here
+                                // await Promise.all(schedulesToUpdate.map(s => updateSchedule(s._id || s.id, s)));
+                                // if (schedulesToCreate.length) await createSchedulesBulk(schedulesToCreate);
 
                                 showSuccessToast(lang.schedule_updated || "Schedule updated successfully");
+
+                                // 7️⃣ Always navigate (even for deletes)
                                 navigation.navigate("Footer_A", {
                                     selectedTab: "WorkSchedule",
                                     userId,
                                     langId,
                                     toastMessage: "Schedules saved successfully",
                                 });
+
                             } catch (err) {
                                 console.error("❌ Failed to save schedules:", err);
                                 showErrorToast(lang.failed_to_save || "Failed to save schedules");
@@ -1298,10 +1342,6 @@ const onFooterSaveAndBack = () => {
                         width={"48%"}
                         textStyle={{ color: colors.secondary }}
                     />
-
-
-
-
                     <Button1
                         text={lang.no || "No"}
                         onPress={() => setSaveConfirmVisible(false)}
