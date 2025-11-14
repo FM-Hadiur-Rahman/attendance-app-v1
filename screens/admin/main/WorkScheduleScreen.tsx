@@ -21,7 +21,7 @@ import translations from "../../../assets/translations.json";
 
 import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
-import { getBranchById } from "../../../api/Branch";
+import { getBranchById } from "../../../api/Branchs";
 import { getSchedulesForDate } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
 
@@ -72,7 +72,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   // translation dictionary for this screen (translations imported at the top)
   const lang = (translations as any)[langId] || (translations as any)["en"];
 
-
   const [displayDate, setDisplayDate] = useState<Date>(new Date());
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -83,20 +82,12 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   const [userPositions, setUserPositions] = useState<Record<string, string>>({});
   const [skipNextLoad, setSkipNextLoad] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-
-
-
   // const [displayDate, setDisplayDate] = useState<Date>(() => {
   //   const d = new Date();
   //   d.setHours(0, 0, 0, 0);
   //   return d;
   // });
   const [version, setVersion] = useState<number>(0);
-
-
-
-
 
   useEffect(() => {
     const loadUserProfile = async () => {
@@ -149,8 +140,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       setLoading(false);
     }
   }, []);
-
-
 
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
@@ -552,16 +541,16 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                 justifyContent: "center",
                 alignItems: "center",
                 zIndex: 9999,
-                
+
               }}
             >
-            <ActivityIndicator size="small" color={colors.primary}  />
+              <ActivityIndicator size="small" color={colors.primary} />
               <Text style={{ color: colors.text, marginTop: 10 }}>
                 {lang.loading_schedules}
               </Text>
-                
+
             </View>
-            
+
           ) : schedulesForDate.length === 0 ? (
             <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text>
           ) : (
