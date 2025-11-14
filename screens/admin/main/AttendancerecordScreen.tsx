@@ -607,9 +607,6 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     }
   };
 
-
-
-
   // render
   return (
     <View style={styles.outer}>
@@ -622,7 +619,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
-          onPress: () => navigation.navigate("NotificationScreen" as any, { userId, langId }),
+          onPress: () => navigation.navigate("NotificationScreen" as any, { userId, langId,  branchId: currentBranchId, }),
         }}
       />
 

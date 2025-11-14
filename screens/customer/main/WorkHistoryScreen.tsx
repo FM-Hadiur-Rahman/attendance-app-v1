@@ -17,12 +17,12 @@ import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import * as Location from "expo-location";
 
-import { workHours, WorkHour } from "../../../api/WorkHours";
-import { users } from "../../../api/Users";
+import { workHours, WorkHour } from "../../../api/dummyapi/WorkHours";
+import { users } from "../../../api/dummyapi/Users";
 //import { schedules, Schedule } from "../../../api/Schedule";
 import { getWeeklySchedules, getMonthlySchedules } from "../../../api/checkin_checkout";
 import { getProfile, getUserById, ProfileUser } from "../../../api/profile";
-import { getBranchById } from "../../../api/Branch"; // ✅ import API
+import { getBranchById } from "../../../api/dummyapi/Branch"; // ✅ import API
 import { getAllBranches } from "../../../api/Branchs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 

@@ -1079,7 +1079,7 @@ const AttendanceScreen: React.FC = (props: any) => {
           >
             <View style={styles.details}>
               {filteredEntries.length === 0 ? (
-                <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? "No records for selected week" : "No records for selected month")}</Text>
+                <Text style={styles.noDataText}>{mode === "day" ? lang.select_valid_date : (mode === "week" ? lang.No_records_for_selected_week : lang.No_records_for_selected_month)}</Text>
               ) : null}
 
               {filteredEntries.map(({ work, user, schedule, status, diffText, rawSchedule, rawReportRow, entryBranchId: entryBranchIdFromEntry, entryBranchName: entryBranchNameFromEntry }) => {

@@ -17,11 +17,11 @@ import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
-import Toast, { showErrorToast, showSuccessToast, toastConfig} from "../../../components/Toast";
+import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
 import SearchBar from "../../../components/SearchBar";
 
-import { fetchUsers, getBranchId, getProfile, ProfileUser } from "../../../api/profile";
+import { fetchUsers, getBranchId, getProfile, ProfileUser, getUserById, } from "../../../api/profile";
 import { getUserId } from "../../../api/auth/authToken";
 
 const StaffRecordScreen: React.FC = (props: any) => {
@@ -53,7 +53,57 @@ const StaffRecordScreen: React.FC = (props: any) => {
   const [version, setVersion] = useState<number>(0);
   const [query, setQuery] = useState<string>("");
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  //const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+
+  // accept branch if caller passed it 
+  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
+
+  // local state for the active branch
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
+  const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
+
+  // If branch not passed, try to resolve it from the userId 
+  useEffect(() => {
+    if (!userId) {
+      console.log("StaffRecordScreen: no userId in params");
+      return;
+    }
+    if (activeBranchId) {
+      console.log("StaffRecordScreen: activeBranchId already set:", activeBranchId);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        console.log("🔍 StaffRecordScreen fetching user by ID:", userId);
+        const u = await getUserById(userId);
+        if (!mounted || !u) return;
+
+        const branchField = u.branch;
+        const branchId =
+          typeof branchField === "string"
+            ? branchField
+            : branchField?._id ?? null;
+
+        const branchName =
+          typeof branchField === "object"
+            ? branchField?.name ?? null
+            : null;
+
+        if (branchId) {
+          setActiveBranchId(String(branchId));
+          if (branchName) setActiveBranchName(branchName);
+          console.log("StaffRecordScreen: activeBranchId set to:", branchId);
+        } else {
+          console.log("StaffRecordScreen: user has no branch");
+        }
+      } catch (err) {
+        console.warn("StaffRecordScreen: failed to resolve branch from userId", err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [userId, activeBranchId]);
 
   const onEndReachedCalledDuringMomentum = useRef<boolean>(true);
 
@@ -155,21 +205,21 @@ const StaffRecordScreen: React.FC = (props: any) => {
   };
 
   useEffect(() => {
-  const incomingToast: string | undefined = (props as any)?.toastMessage;
-  const onConsumed = (props as any)?.onConsumedToast;
-  if (incomingToast) {
-    try {
-      showSuccessToast?.(incomingToast);
-    } catch (e) { console.warn('toast failed', e); }
-    // notify parent/footer that we've consumed the message
-    if (typeof onConsumed === 'function') {
-      onConsumed();
-    } else {
-      // fallback: also try navigation.setParams to clear route params if needed
-      try { (navigation as any).setParams?.({ toastMessage: null }); } catch {}
+    const incomingToast: string | undefined = (props as any)?.toastMessage;
+    const onConsumed = (props as any)?.onConsumedToast;
+    if (incomingToast) {
+      try {
+        showSuccessToast?.(incomingToast);
+      } catch (e) { console.warn('toast failed', e); }
+      // notify parent/footer that we've consumed the message
+      if (typeof onConsumed === 'function') {
+        onConsumed();
+      } else {
+        // fallback: also try navigation.setParams to clear route params if needed
+        try { (navigation as any).setParams?.({ toastMessage: null }); } catch { }
+      }
     }
-  }
-}, [ (props as any)?.toastMessage ]);
+  }, [(props as any)?.toastMessage]);
 
   // initial load: get logged-in user id then load first page
   useEffect(() => {
@@ -236,7 +286,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
       .filter((u) => {
         const branchId = (u as any)?.branch_id ?? (u as any)?.branch?._id ?? (u as any)?.branch ?? null;
         if (!activeBranchId) return true;
-        if (!branchId) return true; 
+        if (!branchId) return true;
         return branchId === activeBranchId;
       })
       .filter((u) => {
@@ -277,62 +327,62 @@ const StaffRecordScreen: React.FC = (props: any) => {
   //   });
   // };
   // replace your existing openAddStaff with this async version
-const openAddStaff = async () => {
-  try {
-    // Try to use existing activeBranchId first
-    let branchIdToPass: string | undefined = activeBranchId ?? undefined;
+  const openAddStaff = async () => {
+    try {
+      // Try to use existing activeBranchId first
+      let branchIdToPass: string | undefined = activeBranchId ?? undefined;
 
-    // If we don't have it yet, fetch the logged-in profile to get branch id
-    if (!branchIdToPass) {
-      try {
-        const profile = await getProfile();
-        const branchFromProfile =
-          typeof profile?.branch === "string"
-            ? profile.branch
-            : profile?.branch?._id ?? null;
-        if (branchFromProfile) {
-          branchIdToPass = branchFromProfile;
-          setActiveBranchId(branchFromProfile);
-          console.log("Determined branchId from profile:", branchFromProfile);
-        } else {
-          console.log("No branch found on profile");
+      // If we don't have it yet, fetch the logged-in profile to get branch id
+      if (!branchIdToPass) {
+        try {
+          const profile = await getProfile();
+          const branchFromProfile =
+            typeof profile?.branch === "string"
+              ? profile.branch
+              : profile?.branch?._id ?? null;
+          if (branchFromProfile) {
+            branchIdToPass = branchFromProfile;
+            setActiveBranchId(branchFromProfile);
+            console.log("Determined branchId from profile:", branchFromProfile);
+          } else {
+            console.log("No branch found on profile");
+          }
+        } catch (pfErr) {
+          console.warn("getProfile() failed while opening AddStaffScreen:", pfErr);
         }
-      } catch (pfErr) {
-        console.warn("getProfile() failed while opening AddStaffScreen:", pfErr);
       }
-    }
 
-    navigation.navigate("AddStaffScreen" as any, {
-      userId,
-      langId,
-      branchId: branchIdToPass ?? undefined,
-      onSave: (newStaff: Partial<ProfileUser> & { id?: string; firstname: string; lastname?: string; position?: string; role?: string }) => {
-        const newId = `U${(users.length + 1).toString().padStart(3, "0")}`;
-        const payload: ProfileUser = {
-          id: newId,
-          fullname: `${newStaff.firstname ?? "New"} ${newStaff.lastname ?? "Staff"}`.trim(),
-          username: ((newStaff.firstname ?? "user") as string).toLowerCase(),
-          role: newStaff.role ?? "user",
-          position: newStaff.position ?? "",
-          branch_id: branchIdToPass ?? activeBranchId ?? undefined,
-          createDate: new Date().toISOString(),
-          updateDate: new Date().toISOString(),
-        } as any;
-        setUsers((prev) => [payload, ...prev]);
-        setVersion((v) => v + 1);
-        showSuccessToast("Staff added");
-      },
-    });
-  } catch (err) {
-    console.error("openAddStaff error:", err);
-    // fallback: navigate without branch if something unexpected fails
-    navigation.navigate("AddStaffScreen" as any, {
-      userId,
-      langId,
-      branchId: activeBranchId ?? undefined,
-    });
-  }
-};
+      navigation.navigate("AddStaffScreen" as any, {
+        userId,
+        langId,
+        branchId: branchIdToPass ?? undefined,
+        onSave: (newStaff: Partial<ProfileUser> & { id?: string; firstname: string; lastname?: string; position?: string; role?: string }) => {
+          const newId = `U${(users.length + 1).toString().padStart(3, "0")}`;
+          const payload: ProfileUser = {
+            id: newId,
+            fullname: `${newStaff.firstname ?? "New"} ${newStaff.lastname ?? "Staff"}`.trim(),
+            username: ((newStaff.firstname ?? "user") as string).toLowerCase(),
+            role: newStaff.role ?? "user",
+            position: newStaff.position ?? "",
+            branch_id: branchIdToPass ?? activeBranchId ?? undefined,
+            createDate: new Date().toISOString(),
+            updateDate: new Date().toISOString(),
+          } as any;
+          setUsers((prev) => [payload, ...prev]);
+          setVersion((v) => v + 1);
+          showSuccessToast("Staff added");
+        },
+      });
+    } catch (err) {
+      console.error("openAddStaff error:", err);
+      // fallback: navigate without branch if something unexpected fails
+      navigation.navigate("AddStaffScreen" as any, {
+        userId,
+        langId,
+        branchId: activeBranchId ?? undefined,
+      });
+    }
+  };
 
 
   const openStaffProfile = (staffId: string) => {
@@ -438,7 +488,7 @@ const openAddStaff = async () => {
                 <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
                   {displayName}
                 </Text>
-                <Text style={styles.position}numberOfLines={1} ellipsizeMode="tail">{position}</Text>
+                <Text style={styles.position} numberOfLines={1} ellipsizeMode="tail">{position}</Text>
               </View>
             </View>
             <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
@@ -461,8 +511,16 @@ const openAddStaff = async () => {
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
-          onPress: () => navAndLog("NotificationScreen", { activeBranchId }),
+          onPress: () => {
+            console.log('StaffRecordScreen to NotificationScreen — params:', { userId, langId, activeBranchId });
+            navigation.navigate("NotificationScreen" as any, {
+              userId,
+              langId,
+              branchId: activeBranchId,
+            });
+          },
         }}
+
       />
 
       <View style={styles.container}>
