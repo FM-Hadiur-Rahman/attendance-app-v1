@@ -30,7 +30,7 @@ import InputBox from '../../components/InputBox';
 import api from '../../api/axiosInstance';
 import { saveToken, saveUserId } from '../../api/auth/authToken';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User } from '../../api/Users';
+import { User } from '../../api/dummyapi/Users';
 
 const translations = require('../../assets/translations.json');
 

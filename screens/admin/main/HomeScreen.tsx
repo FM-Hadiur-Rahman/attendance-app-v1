@@ -15,7 +15,6 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
-import { workHours } from "../../../api/WorkHours";
 import { useNavigation, useRoute } from "@react-navigation/native";
 
 // API helpers
@@ -407,12 +406,6 @@ const HomeScreen_A = (props: any) => {
     fetchAttendanceAndEnrich(activeBranchId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version, schedulesState, usersState]);
-
-  // kept for compatibility
-  const todaysWorkHours = useMemo(
-    () => workHours.filter((w) => w.date === todayYMD),
-    [todayYMD, version]
-  );
 
   const handleNotificationPress = () => {
     console.log('Header notification pressed — params:', { userId, langId, activeBranchId });

@@ -14,8 +14,8 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import { RefreshControl } from "react-native";
-import { users } from "../../../api/Users";
-import { schedules as schedulesArr } from "../../../api/Schedule";
+import { users } from "../../../api/dummyapi/Users";
+import { schedules as schedulesArr } from "../../../api/dummyapi/Schedule";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
 
@@ -56,14 +56,29 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   // support prop-based or route-based injection (Footer passes props)
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
-  // const userId = propUserId || routeUserId;
-  // const langId = propLangId || routeLangId || "en";
-  const { userId, langId, activeBranchId } = route.params;
+  // const routeUserId = route.params?.userId ?? route.params?.id;
+  // const routeLangId = route.params?.langId ?? route.params?.language;
+  // // const userId = propUserId || routeUserId;
+  // // const langId = propLangId || routeLangId || "en";
+  // const { userId, langId, activeBranchId } = route.params;
 
-  // get branch id passed in params (superadmin may pass this)
-  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  // // get branch id passed in params (superadmin may pass this)
+  // const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+
+// param resolution (support props or route)
+const routeUserId = route.params?.userId ?? route.params?.id;
+const routeLangId = route.params?.langId ?? route.params?.language;
+const userId = propUserId || routeUserId;
+const langId = propLangId || routeLangId || "en";
+
+// accept branch if caller passed it (keep names unchanged for compatibility)
+const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
+
+// local state for the active branch (computed like HomeScreen_A)
+const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
+const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
+
   // fallback: admin's default branch from users list
   const currentAdmin = users.find((u) => u.id === userId) || null;
   //const activeBranchId = passedBranchId || currentAdmin?.branch_id || null;
@@ -102,6 +117,49 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
     loadUserProfile();
   }, []);
+
+// If branch not passed, try to resolve it from the userId (same pattern as HomeScreen_A)
+useEffect(() => {
+  if (!userId) {
+    console.log("WorkScheduleScreen: no userId in params");
+    return;
+  }
+  if (activeBranchId) {
+    console.log("WorkScheduleScreen: activeBranchId already set:", activeBranchId);
+    return;
+  }
+
+  let mounted = true;
+  (async () => {
+    try {
+      console.log("🔍 WorkScheduleScreen fetching user by ID:", userId);
+      const u = await getUserById(userId);
+      if (!mounted || !u) return;
+
+      const branchField = u.branch;
+      const branchId =
+        typeof branchField === "string"
+          ? branchField
+          : branchField?._id ?? null;
+      const branchName =
+        typeof branchField === "object"
+          ? branchField?.name ?? null
+          : null;
+
+      if (branchId) {
+        setActiveBranchId(String(branchId));
+        if (branchName) setActiveBranchName(branchName);
+        console.log("WorkScheduleScreen: activeBranchId set to:", branchId);
+      } else {
+        console.log("WorkScheduleScreen: user has no branch");
+      }
+    } catch (err) {
+      console.warn("WorkScheduleScreen: failed to resolve branch from userId", err);
+    }
+  })();
+
+  return () => { mounted = false; };
+}, [userId, activeBranchId]);
 
 
   const uniqueSortedDates = useMemo(() => {
@@ -455,15 +513,11 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           width: 24,
           height: 24,
           onPress: () => {
-            console.log("Navigate -> NotificationScreen", {
-              userId,
-              langId,
-              activeBranchId,
-            });
+            console.log('WorkScheduleScreen to NotificationScreen — params:', { userId, langId, activeBranchId });
             navigation.navigate("NotificationScreen" as any, {
               userId,
               langId,
-              activeBranchId,
+              branchId: activeBranchId,
             });
           },
         }}
