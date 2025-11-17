@@ -53,8 +53,8 @@ const formatMinutesDiff = (mins: number) => {
   const abs = Math.abs(Math.round(mins));
   const h = Math.floor(abs / 60);
   const m = abs % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${pad2(h)}h ${pad2(m)}m`;
 };
 
 const formatTime12 = (t: string) => {
@@ -215,28 +215,37 @@ const HomeScreen_A = (props: any) => {
     return false;
   };
 
-  // restore staffOnShiftCount computed from schedulesState (unique users scheduled today for this branch)
-  const TotalstaffCount = useMemo(() => {
-    if (!Array.isArray(schedulesState) || schedulesState.length === 0) return 0;
+// Replaced: compute unique employee count for today's schedules in the active branch
+const TotalstaffCount = useMemo(() => {
+  if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
 
-    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const toYMDLocal = (d: Date) =>
-      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const toYMDLocal = (d: Date) =>
+    `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
 
-    let count = 0;
-    schedulesState.forEach((s) => {
-      if (!s?.date) return;
+  const uniqueEmpIds = new Set<string>();
 
-      const sYMD = toYMDLocal(new Date(s.date));
-      const branchIdOfSchedule = s.branch_id?._id;
+  schedulesState.forEach((s) => {
+    if (!s?.date) return;
 
-      if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
-        count++;
-      }
-    });
-    console.log('TotalstaffCount for branch', activeBranchId, 'on', todayYMD, '=', count);
-    return count;
-  }, [schedulesState, todayYMD, activeBranchId]);
+    const sDate = new Date(s.date);
+    const sYMD = toYMDLocal(sDate);
+
+    // branch id can be object or string
+    const branchIdOfSchedule = s.branch_id?._id ?? s.branch_id ?? null;
+
+    if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
+      // employee_id may be object or string
+      const empId = s.employee_id?._id ?? s.employee_id ?? null;
+      if (empId) uniqueEmpIds.add(String(empId));
+    }
+  });
+
+  const count = uniqueEmpIds.size;
+  console.log('TotalstaffCount for branch', activeBranchId, 'on', todayYMD, '=', count);
+  return count;
+}, [schedulesState, todayYMD, activeBranchId]);
+
 
   // fetch attendance and enrich (with branch-name logic)
   const fetchAttendanceAndEnrich = async (branchIdToUse: string | null) => {
@@ -276,23 +285,43 @@ const HomeScreen_A = (props: any) => {
             return String(empId) === String(uid) && sDate === todayYMD;
           }) ?? null;
 
+          // compute status (early/late/noschedule) same as before (based on schedule start_time)
           let status: "early" | "late" | "noschedule" = "noschedule";
           let diffText = "";
 
-          if (schedule && schedule.start_time) {
-            const schedMin = hhmmToMinutes(schedule.start_time);
-            const inMin = datetimeToMinutes(att.In);
-            const diff = inMin - schedMin;
-            if (diff > 0) {
-              status = "late";
-              diffText = formatMinutesDiff(diff);
+          try {
+            // duration between In and Out (or now if Out missing) -> shown as diffText in 00h 00m
+            const inDt = att.In ? new Date(att.In.replace(' ', 'T')) : null;
+            const outDt = att.Out ? new Date(att.Out.replace(' ', 'T')) : null;
+            const nowDt = new Date();
+
+            if (inDt) {
+              const endDt = outDt && !Number.isNaN(outDt.getTime()) ? outDt : nowDt;
+              const durationMins = Math.max(0, Math.round((endDt.getTime() - inDt.getTime()) / 60000));
+              diffText = formatMinutesDiff(durationMins);
             } else {
-              status = "early";
-              diffText = formatMinutesDiff(diff);
+              diffText = formatMinutesDiff(0);
             }
-          } else {
+
+            // status still uses schedule start_time vs "In" time (minutes from midnight)
+            if (schedule && schedule.start_time && att.In) {
+              const schedMin = hhmmToMinutes(schedule.start_time);
+              const inMin = datetimeToMinutes(att.In);
+              const startDiff = inMin - schedMin;
+              if (startDiff > 0) {
+                status = "late";
+              } else {
+                status = "early";
+              }
+            } else {
+              status = "noschedule";
+            }
+          } catch (err) {
+            console.warn("Error computing status/duration", err);
             status = "noschedule";
+            diffText = formatMinutesDiff(0);
           }
+
           // 🔍 Determine if the user belongs to a different branch
           let branchNameToShow: string | null = null;
 
@@ -327,8 +356,7 @@ const HomeScreen_A = (props: any) => {
             console.warn("branchNameToShow lookup failed", err);
             branchNameToShow = null;
           }
-
-
+          
           return {
             attendance: att,
             userProfile,
@@ -561,9 +589,9 @@ const styles = StyleSheet.create({
 
   },
   profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
-  name_position: { marginLeft: 10, width: "60%", },
+  name_position: { marginLeft: 10, width: "55%", },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
-  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
+  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any, },
 
   status_early: {
     fontWeight: fonts.weight.regular as any,
@@ -689,7 +717,7 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.medium as any,
     fontSize: fonts.size.m,
     marginLeft: 8,
-    width: 45 * base,
+    width: 50 * base,
   },
 });
 
