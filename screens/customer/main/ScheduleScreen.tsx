@@ -5,8 +5,6 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  findNodeHandle,
-  UIManager,
   RefreshControl,
   StyleSheet
 } from "react-native";
