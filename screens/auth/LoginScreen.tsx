@@ -1,4 +1,3 @@
-
 // screens/auth/LoginScreen.tsx
 import React, { useRef, useState, useCallback } from 'react';
 import {
@@ -19,18 +18,14 @@ import {
   useRoute,
   RouteProp,
 } from '@react-navigation/native';
-
 import { Button1 } from '../../components/Button';
 import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
-
 import Toast, { showSuccessToast, showErrorToast, toastConfig } from '../../components/Toast';
 import InputBox from '../../components/InputBox';
-
 import api from '../../api/axiosInstance';
 import { saveToken, saveUserId } from '../../api/auth/authToken';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User } from '../../api/dummyapi/Users';
 
 const translations = require('../../assets/translations.json');
 
@@ -210,10 +205,10 @@ export default function LoginScreen() {
       const data = resp.data ?? {};
 
       // success path
-      // success path
       if (resp.status === 200 || resp.status === 201) {
+        // NOTE: using `any` for user since we removed the typed import
         const token: string | undefined = data.token || data.accessToken || data.access_token;
-        const user: User | undefined = data.user || data.data?.user;
+        const user: any = data.user || data.data?.user;
 
         if (!token || !user) {
           setEmailOrUsername('');
@@ -234,7 +229,8 @@ export default function LoginScreen() {
         // Save full user object locally
         try {
           await AsyncStorage.setItem('userObj', JSON.stringify(user));
-          await AsyncStorage.setItem('langId', langId);
+          // ensure langId is a string
+          await AsyncStorage.setItem('langId', String(langId || 'en'));
         } catch (e) {
           console.warn('Failed to save full user object locally', e);
         }
@@ -262,7 +258,6 @@ export default function LoginScreen() {
         return;
       }
 
-
       // Backend failure handling
       const errsArray = safeParseErrors(data);
       const rawMessage = (data && (data.message || data.error)) ? String(data.message || data.error) : '';
@@ -282,7 +277,6 @@ export default function LoginScreen() {
         console.warn('Auth failure on login', { status: resp.status, data: resp.data });
         return;
       }
-
 
       // Otherwise, handle field-specific messages where possible
       if (errsArray.length > 0) {
@@ -311,8 +305,6 @@ export default function LoginScreen() {
             emailRef.current?.focus();
           } else {
             Keyboard.dismiss(); // ✅ hide keyboard for unknown error toast
-            // Unknown error → toast
-            Keyboard.dismiss(); // ✅ hide keyboard for toast
             showErrorToast(err);
           }
         });
@@ -398,7 +390,6 @@ export default function LoginScreen() {
     </TouchableWithoutFeedback>
   );
 }
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.secondary },
   body: {
