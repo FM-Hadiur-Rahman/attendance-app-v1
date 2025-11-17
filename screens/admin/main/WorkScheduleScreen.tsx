@@ -14,11 +14,8 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import { RefreshControl } from "react-native";
-import { users } from "../../../api/dummyapi/Users";
-import { schedules as schedulesArr } from "../../../api/dummyapi/Schedule";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
-
 import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
 import { getBranchById } from "../../../api/Branchs";
@@ -56,33 +53,20 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   // support prop-based or route-based injection (Footer passes props)
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  // const routeUserId = route.params?.userId ?? route.params?.id;
-  // const routeLangId = route.params?.langId ?? route.params?.language;
-  // // const userId = propUserId || routeUserId;
-  // // const langId = propLangId || routeLangId || "en";
-  // const { userId, langId, activeBranchId } = route.params;
 
-  // // get branch id passed in params (superadmin may pass this)
-  // const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  // param resolution (support props or route)
+  const routeUserId = route.params?.userId ?? route.params?.id;
+  const routeLangId = route.params?.langId ?? route.params?.language;
+  const userId = propUserId || routeUserId;
+  const langId = propLangId || routeLangId || "en";
 
-// param resolution (support props or route)
-const routeUserId = route.params?.userId ?? route.params?.id;
-const routeLangId = route.params?.langId ?? route.params?.language;
-const userId = propUserId || routeUserId;
-const langId = propLangId || routeLangId || "en";
+  // accept branch if caller passed it (keep names unchanged for compatibility)
+  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
 
-// accept branch if caller passed it (keep names unchanged for compatibility)
-const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
-const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
-
-// local state for the active branch (computed like HomeScreen_A)
-const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
-const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
-
-  // fallback: admin's default branch from users list
-  const currentAdmin = users.find((u) => u.id === userId) || null;
-  //const activeBranchId = passedBranchId || currentAdmin?.branch_id || null;
-
+  // local state for the active branch (computed like HomeScreen_A)
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
+  const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
 
   // translation dictionary for this screen (translations imported at the top)
   const lang = (translations as any)[langId] || (translations as any)["en"];
@@ -97,11 +81,6 @@ const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBr
   const [userPositions, setUserPositions] = useState<Record<string, string>>({});
   const [skipNextLoad, setSkipNextLoad] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  // const [displayDate, setDisplayDate] = useState<Date>(() => {
-  //   const d = new Date();
-  //   d.setHours(0, 0, 0, 0);
-  //   return d;
-  // });
   const [version, setVersion] = useState<number>(0);
 
   useEffect(() => {
@@ -114,64 +93,52 @@ const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBr
         console.error("❌ Failed to load user profile:", err);
       }
     };
-
     loadUserProfile();
   }, []);
 
-// If branch not passed, try to resolve it from the userId (same pattern as HomeScreen_A)
-useEffect(() => {
-  if (!userId) {
-    console.log("WorkScheduleScreen: no userId in params");
-    return;
-  }
-  if (activeBranchId) {
-    console.log("WorkScheduleScreen: activeBranchId already set:", activeBranchId);
-    return;
-  }
-
-  let mounted = true;
-  (async () => {
-    try {
-      console.log("🔍 WorkScheduleScreen fetching user by ID:", userId);
-      const u = await getUserById(userId);
-      if (!mounted || !u) return;
-
-      const branchField = u.branch;
-      const branchId =
-        typeof branchField === "string"
-          ? branchField
-          : branchField?._id ?? null;
-      const branchName =
-        typeof branchField === "object"
-          ? branchField?.name ?? null
-          : null;
-
-      if (branchId) {
-        setActiveBranchId(String(branchId));
-        if (branchName) setActiveBranchName(branchName);
-        console.log("WorkScheduleScreen: activeBranchId set to:", branchId);
-      } else {
-        console.log("WorkScheduleScreen: user has no branch");
-      }
-    } catch (err) {
-      console.warn("WorkScheduleScreen: failed to resolve branch from userId", err);
+  // If branch not passed, try to resolve it from the userId (same pattern as HomeScreen_A)
+  useEffect(() => {
+    if (!userId) {
+      console.log("WorkScheduleScreen: no userId in params");
+      return;
     }
-  })();
+    if (activeBranchId) {
+      console.log("WorkScheduleScreen: activeBranchId already set:", activeBranchId);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        console.log("🔍 WorkScheduleScreen fetching user by ID:", userId);
+        const u = await getUserById(userId);
+        if (!mounted || !u) return;
 
-  return () => { mounted = false; };
-}, [userId, activeBranchId]);
+        const branchField = u.branch;
+        const branchId =
+          typeof branchField === "string"
+            ? branchField
+            : branchField?._id ?? null;
+        const branchName =
+          typeof branchField === "object"
+            ? branchField?.name ?? null
+            : null;
 
+        if (branchId) {
+          setActiveBranchId(String(branchId));
+          if (branchName) setActiveBranchName(branchName);
+          console.log("WorkScheduleScreen: activeBranchId set to:", branchId);
+        } else {
+          console.log("WorkScheduleScreen: user has no branch");
+        }
+      } catch (err) {
+        console.warn("WorkScheduleScreen: failed to resolve branch from userId", err);
+      }
+    })();
 
-  const uniqueSortedDates = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of schedulesArr) set.add(s.date);
-    const arr = Array.from(set);
-    arr.sort();
-    return arr;
-  }, [version]);
+    return () => { mounted = false; };
+  }, [userId, activeBranchId]);
 
   const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
-
 
   const loadSchedules = useCallback(async (date: Date) => {
     try {
@@ -182,7 +149,7 @@ useEffect(() => {
       const data = await getSchedulesForDate(dateYMD);
       console.log("✅ API response:", data);
 
-      // ✅ Store API data
+      //  Store API data
       setSchedules(data);
 
       const displayYMD = date.toISOString().split("T")[0];
@@ -265,7 +232,7 @@ useEffect(() => {
 
   // If user presses the floating add button
   const openAddScreen = () => {
-    // 🧩 Derive branchId safely
+    // Derive branchId safely
     const branchToUse =
       activeBranchId ||
       (typeof user?.branch === "string"
@@ -283,7 +250,7 @@ useEffect(() => {
     navigation.navigate("AddScheduleScreen" as any, {
       userId,
       langId,
-      branchId: branchToUse, // ✅ safe branchId pass
+      branchId: branchToUse, // safe branchId pass
       onSave: (newSchedule: {
         id?: string;
         user_id: string;
@@ -292,59 +259,6 @@ useEffect(() => {
         date: string;
         branch_id?: string;
       }) => {
-        const branchIdFinal = newSchedule.branch_id || branchToUse;
-
-        // 🔹 update existing schedule
-        if (newSchedule.id) {
-          const idx = schedulesArr.findIndex((s) => s.id === newSchedule.id);
-          if (idx !== -1) {
-            schedulesArr[idx] = {
-              ...schedulesArr[idx],
-              user_id: newSchedule.user_id,
-              start_time: newSchedule.start_time,
-              end_time: newSchedule.end_time,
-              date: newSchedule.date,
-              branch_id: branchIdFinal,
-              updateDate: new Date().toISOString(),
-            };
-            setVersion((v) => v + 1);
-            setDisplayDate(ymdToDate(newSchedule.date));
-            showSuccessToast(lang.schedule_updated);
-            console.log("✅ Schedule updated ->", schedulesArr[idx]);
-            return;
-          }
-
-          // id not found → add as new
-          const id = newSchedule.id;
-          schedulesArr.push({
-            id,
-            user_id: newSchedule.user_id,
-            start_time: newSchedule.start_time,
-            end_time: newSchedule.end_time,
-            date: newSchedule.date,
-            branch_id: branchIdFinal,
-            createDate: new Date().toISOString(),
-            updateDate: new Date().toISOString(),
-          } as any);
-          setVersion((v) => v + 1);
-          setDisplayDate(ymdToDate(newSchedule.date));
-          showSuccessToast("Schedule added");
-          return;
-        }
-
-        // 🔹 create brand new schedule (no id)
-        const id = `S${(schedulesArr.length + 1).toString().padStart(3, "0")}`;
-        schedulesArr.push({
-          id,
-          user_id: newSchedule.user_id,
-          start_time: newSchedule.start_time,
-          end_time: newSchedule.end_time,
-          date: newSchedule.date,
-          branch_id: branchIdFinal,
-          createDate: new Date().toISOString(),
-          updateDate: new Date().toISOString(),
-        } as any);
-
         setVersion((v) => v + 1);
         const dt = ymdToDate(newSchedule.date);
         setDisplayDate(dt);
@@ -352,8 +266,6 @@ useEffect(() => {
       },
     });
   };
-
-
 
   // Refresh -> clear inputs
   const onRefresh = useCallback(async () => {
@@ -369,18 +281,15 @@ useEffect(() => {
     setDisplayDate(prev);
   };
 
-
   const goToNextDay = () => {
     const next = new Date(displayDate);
     next.setDate(displayDate.getDate() + 1);
     setDisplayDate(next);
   };
 
-
   useEffect(() => {
     loadSchedules(displayDate);
   }, [displayDate, loadSchedules]);
-
 
   // When tapping an existing schedule to edit
   const openEditScreen = (scheduleId: string) => {
@@ -423,10 +332,8 @@ useEffect(() => {
               updateDate: now,
             } as any);
           }
-
           return updatedArr;
         });
-
         setDisplayDate(ymdToDate(updated.date));
         setVersion((v) => v + 1);
         await loadSchedules(ymdToDate(updated.date)); // 🔁 triggers spinner automatically
@@ -434,10 +341,6 @@ useEffect(() => {
       },
     });
   };
-
-
-
-
 
   useEffect(() => {
     const loadUserProfiles = async () => {
@@ -577,11 +480,7 @@ useEffect(() => {
               colors={[colors.primary]}
             />
           }
-
         >
-          {/* {console.log("🧩 Schedule IDs:", schedulesForDate.map(s => s.schedule._id))} */}
-
-
           {/* Empty State */}
           {loading ? (
             <View
