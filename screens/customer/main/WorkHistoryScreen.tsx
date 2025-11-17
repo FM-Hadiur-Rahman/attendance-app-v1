@@ -7,7 +7,6 @@ import {
   Image,
   RefreshControl,
   Dimensions,
-  TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
@@ -16,13 +15,8 @@ import colors from "../../../styles/Colors";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import * as Location from "expo-location";
-
-import { workHours, WorkHour } from "../../../api/dummyapi/WorkHours";
-import { users } from "../../../api/dummyapi/Users";
-//import { schedules, Schedule } from "../../../api/Schedule";
-import { getWeeklySchedules, getMonthlySchedules } from "../../../api/checkin_checkout";
-import { getProfile, getUserById, ProfileUser } from "../../../api/profile";
-import { getBranchById } from "../../../api/dummyapi/Branch"; // ✅ import API
+import { getMonthlySchedules } from "../../../api/checkin_checkout";
+import { getProfile, ProfileUser } from "../../../api/profile";
 import { getAllBranches } from "../../../api/Branchs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -62,58 +56,18 @@ const calcDuration = (checkIn?: string, checkOut?: string) => {
 
 /* ---------- main screen ---------- */
 const screenWidth = Dimensions.get("window").width;
-
 const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [branchAddresses, setBranchAddresses] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
   const [branchNames, setBranchNames] = useState<Record<string, string>>({});
   const [branches, setBranches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [branchDistances, setBranchDistances] = useState<Record<string, number>>({});
   const [user, setUser] = useState(null);
-
-
-  // normalize branch id from different shapes we get from APIs
-  const normalizeBranchId = (item: any): string | undefined => {
-    if (!item) return undefined;
-    // possible places: branch_id (string), branch._id, branch.id, branch (string)
-    if (typeof item.branch_id === "string" && item.branch_id) return item.branch_id;
-    if (item.branch && typeof item.branch === "string") return item.branch;
-    if (item.branch && typeof item.branch === "object") {
-      return item.branch._id ?? item.branch.id ?? undefined;
-    }
-    // fallback: sometimes API returns branchId or branchId string
-    return item.branchId ?? item.branch_id ?? undefined;
-  };
-
-  const getLoggedInUserBranchId = (currentUser: any, localUserFallback: any): string | undefined => {
-    if (!currentUser && !localUserFallback) return undefined;
-    // check many possible keys
-    return (
-      currentUser?.branch_id ??
-      currentUser?.branch?._id ??
-      currentUser?.branch?.id ??
-      currentUser?.default_branch_id ??
-      currentUser?.defaultBranchId ??
-      localUserFallback?.default_branch_id ??
-      localUserFallback?.defaultBranchId ??
-      undefined
-    );
-  };
-
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1200);
-  }, []);
-
-  useEffect(() => {
-    const fetchBranch = async () => {
-      const b = await getBranchById("B001");
-      setBranchNames(b.name);
-    };
-    fetchBranch();
   }, []);
 
 
@@ -142,7 +96,7 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
   useEffect(() => {
     const fetchDistances = async () => {
-      const { status, coords } = await Location.getCurrentPositionAsync({});
+      const { coords } = await Location.getCurrentPositionAsync({});
       if (!coords) return;
 
       const { latitude: userLat, longitude: userLon } = coords;
@@ -299,30 +253,16 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   }, [branches]);
 
 
-  //const currentUser = users.find((u) => u.id === userId);
-  const userBranchId = currentUser?.branch_id;
-  const userWorkHours = workHours.filter((w) => w.user_id === userId);
 
   const currentLang = langId || "en";
   const lang = (translations as any)[currentLang] || translations["en"];
-
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const todayEntries = userWorkHours.filter((w) => w.date === todayStr);
-  const monthPrefix = new Date().toISOString().slice(0, 7);
-  const monthEntries = userWorkHours.filter((w) => w.date.startsWith(monthPrefix));
-  const [weeklySchedules, setWeeklySchedules] = useState<any[]>([]);
-  const [monthlySchedules, setMonthlySchedules] = useState<any[]>([]);
   //const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
-  const [branchData, setBranchData] = useState({});
   const [schedules, setSchedules] = useState<any[]>([]);
   const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
-  const ITEMS_PER_PAGE = 10;
-  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
- 
+
 
 
   const totalToText = (mins: number) => {
@@ -396,10 +336,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
     };
   }, [schedules]);
 
-  const totalItems = useMemo(
-    () => sections.reduce((sum, section) => sum + section.data.length, 0),
-    [sections]
-  );
 
   const totalVisible = page * limit;
 
@@ -407,8 +343,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
     const visibleData = section.data.slice(0, totalVisible);
     return { ...section, data: visibleData };
   });
-
-
 
   const groupSchedulesByWeek = (entries: any[]) => {
     const today = new Date();
@@ -683,40 +617,40 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
               tintColor={colors.primary}
             />
           }
-onEndReached={async () => {
-  const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
-  const visibleItems = page * limit;
+          onEndReached={async () => {
+            const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
+            const visibleItems = page * limit;
 
-  if (visibleItems < totalItems && !loadingMore) {
-    setLoadingMore(true);
-    // simulate short delay if needed or call API
-    await new Promise(resolve => setTimeout(resolve, 400));
-    setPage(prev => prev + 1);
-    setLoadingMore(false);
-  }
-}}
-onEndReachedThreshold={0.2}
-ListFooterComponent={() => {
-  const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
-  const visibleItems = page * limit;
+            if (visibleItems < totalItems && !loadingMore) {
+              setLoadingMore(true);
+              // simulate short delay if needed or call API
+              await new Promise(resolve => setTimeout(resolve, 400));
+              setPage(prev => prev + 1);
+              setLoadingMore(false);
+            }
+          }}
+          onEndReachedThreshold={0.2}
+          ListFooterComponent={() => {
+            const totalItems = sections.reduce((sum, s) => sum + s.data.length, 0);
+            const visibleItems = page * limit;
 
-  if (loadingMore) {
-    return (
-      <ActivityIndicator
-        style={{ marginVertical: 16 }}
-        size="small"
-        color={colors.primary}
-      />
-    );
-  }
+            if (loadingMore) {
+              return (
+                <ActivityIndicator
+                  style={{ marginVertical: 16 }}
+                  size="small"
+                  color={colors.primary}
+                />
+              );
+            }
 
-  if (visibleItems < totalItems) {
-    // Empty space before spinner shows up
-    return <View style={{ height: 20 }} />;
-  }
+            if (visibleItems < totalItems) {
+              // Empty space before spinner shows up
+              return <View style={{ height: 20 }} />;
+            }
 
-  return null;
-}}
+            return null;
+          }}
         />
 
 

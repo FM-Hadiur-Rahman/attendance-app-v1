@@ -13,17 +13,31 @@ import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import { Button1 } from "../../../components/Button";
 import Popup from "../../../components/Popup";
-import { User, users } from "../../../api/dummyapi/Users";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
-import { workHours, WorkHour, } from "../../../api/dummyapi/WorkHours";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 import CartBox from "../../../components/CartBox";
-import { branches, getBranchById } from "../../../api/dummyapi/Branch";
-import { Schedule, schedules } from "../../../api/dummyapi/Schedule";
 import { useNavigation } from "@react-navigation/native";
 import { getProfile, ProfileUser } from '../../../api/profile';
-import { startAttendance, endAttendance, getTodaySchedule, getBranchDetails } from '../../../api/checkin_checkout';
+import {
+  startAttendance,
+  endAttendance,
+  getTodaySchedule,
+  getBranchDetails,
+  getMyAttendanceHistory,
+} from '../../../api/checkin_checkout';
+import moment from 'moment';
+
+
+interface WorkHour {
+  id: string;
+  user_id: string;
+  check_in: string; // "HH:MM:SS"
+  check_out: string; // "HH:MM:SS" or empty
+  date: string; // YYYY-MM-DD
+  createDate: string;
+  updateDate: string;
+}
 
 // Props type
 interface HomeScreenProps {
@@ -40,21 +54,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [showCheckoutPopup, setShowCheckoutPopup] = useState(false);
   const currentLang = langId || "en";
   const lang = translations[currentLang];
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
-  const [checkOutTime, setCheckOutTime] = useState<string | null>(null);
-  const [duration, setDuration] = useState<string>("0h 0m");
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
-  const userBranchObj = currentUser ? getBranchById(currentUser.branch_id) : null;
-  const SHOP_LAT = userBranchObj?.location.latitude || 0;
-  const SHOP_LON = userBranchObj?.location.longitude || 0;
-  const [branchAddress, setBranchAddress] = useState<string | null>(null);
-  const navigation = useNavigation();
-  const [canCheckOut, setCanCheckOut] = useState(false);
-  const [checkedOut, setCheckedOut] = useState(false);
-  const todayDate = new Date().toISOString().split("T")[0];
-  const [loading, setLoading] = useState(true);
-  const [todaySchedule, setTodaySchedule] = useState<any>(null);
+
 
   // branchInfo will always contain a displayable string in `.address`
   const [branchInfo, setBranchInfo] = useState<{
@@ -64,59 +65,40 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     raw?: any;
   } | null>(null);
 
-  const [allSchedules, setAllSchedules] = useState<any[]>([]); // for all fetched schedules
+  // derive shop coords from branchInfo (no dummy getBranchById)
+  const SHOP_LAT = branchInfo?.coordinates?.latitude ?? 0;
+  const SHOP_LON = branchInfo?.coordinates?.longitude ?? 0;
 
-  const CHECKIN_RADIUS = 8912970.088506764; // keep radius same (meters)
+  const [branchAddress, setBranchAddress] = useState<string | null>(null);
+  const navigation = useNavigation();
+  const todayDate = new Date().toISOString().split("T")[0];
+  const [loading, setLoading] = useState(true);
+  const [todaySchedule, setTodaySchedule] = useState<any>(null);
+  const hasSchedule = !!todaySchedule && !!todaySchedule.start_time;
 
-  let nextSchedule: Schedule | undefined = undefined;
+  const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
+  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [checkOutTime, setCheckOutTime] = useState<string | null>(null);
+  const [duration, setDuration] = useState<string>("0h 0m");
+  const [checkedIn, setCheckedIn] = useState<boolean>(false);
+  const [checkedOut, setCheckedOut] = useState<boolean>(false);
+  const [canCheckOut, setCanCheckOut] = useState<boolean>(false);
 
-  if (!todaySchedule) {
-    nextSchedule = schedules
-      .filter(s => s.user_id === userId && new Date(s.date) > new Date(todayDate))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-  }
-useEffect(() => {
-    let mounted = true;
 
-    const loadSchedule = async () => {
-      try {
-        const branchId = currentUser?.branch_id;
-        const { schedules, todaySchedule } = await getTodaySchedule({
-          userId,
-          branchId,
-          timezone: "Asia/Colombo",
-        });
+  const [allSchedules, setAllSchedules] = useState<any[]>([]); // for schedules from API
 
-        if (!mounted) return;
+  // local work hours store (replaces dummy workHours)
+  const [localWorkHours, setLocalWorkHours] = useState<WorkHour[]>([]);
 
-        console.log("📌 Today schedule:", todaySchedule);
-        console.log("📦 Total schedules fetched:", schedules.length);
-
-        setTodaySchedule(todaySchedule ?? null);
-        setAllSchedules(schedules);
-      } catch (err) {
-        console.error("❌ Failed to load schedule:", err);
-        if (mounted) setTodaySchedule(null);
-      }
-    };
-
-    loadSchedule();
-    return () => { mounted = false; };
-  }, [userId, currentUser?.branch_id]);
-
-// பதிலாக இந்த useEffect-ஐ paste பண்ணுங்கள் (replace the old one)
-useEffect(() => {
-  let mounted = true;
+  const CHECKIN_RADIUS = 10000000; // keep radius same (meters)
 
   const tryReverseGeocode = async (lat: number, lon: number) => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        // permission denied -> fallback to coords string
         return `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`;
       }
 
-      // primary attempt
       const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
       if (places && places.length > 0) {
         const p = places[0];
@@ -130,19 +112,14 @@ useEffect(() => {
         ].filter(Boolean);
         return parts.join(", ");
       }
-
-      // If no result, return null to signal caller to try swap
       return null;
     } catch (err) {
       console.warn("❌ reverseGeocode failed:", err);
       return null;
     }
   };
-
   const extractLatLon = (branchRawOrObj: any): { lat?: number; lon?: number } | null => {
     if (!branchRawOrObj) return null;
-
-    // Common places to look for coordinates
     const candidates = [
       branchRawOrObj.location?.coordinates,
       branchRawOrObj.address?.coordinates,
@@ -150,165 +127,117 @@ useEffect(() => {
       branchRawOrObj.raw?.address?.coordinates,
       branchRawOrObj.coordinates,
     ];
-
     for (const c of candidates) {
       if (Array.isArray(c) && c.length >= 2 && typeof c[0] === "number" && typeof c[1] === "number") {
-        // c often is [lon, lat] (GeoJSON). But sometimes [lat, lon]
         const a = c[0], b = c[1];
-        // Heuristic detection:
-        // latitude must be between -90 and 90, longitude between -180 and 180.
-        // If a is in lat-range and b in lon-range => assume [lat, lon]
         if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-          // a could be lat (but could also be lon if lon in [-90,90] like some coords)
-          // We'll prefer GeoJSON standard [lon, lat], so check which makes more geographic sense:
-          // check two possibilities:
           const latIfA = a, lonIfA = b;
           const latIfB = b, lonIfB = a;
-          // prefer the pair where lat is within typical lat bounds and lon within typical lon bounds
           if (Math.abs(latIfA) <= 90 && Math.abs(lonIfA) <= 180 && Math.abs(latIfB) <= 90 && Math.abs(lonIfB) <= 180) {
-            // both plausible; choose GeoJSON [lon,lat] as default => treat as [lon,lat]
+            // assume GeoJSON [lon,lat]
             return { lat: b, lon: a };
           }
         }
-        // fallback: treat as [lon, lat] (most APIs use this)
         return { lat: c[1], lon: c[0] };
       }
     }
     return null;
   };
 
-  const fetchAndResolve = async () => {
-    const branchId =
-      todaySchedule?.raw?.branch_id?._id ??
-      todaySchedule?.branch?.rawBranch?._id ??
-      todaySchedule?.branch_id?._id ??
-      todaySchedule?.branch?.id ??
-      null;
+  useEffect(() => {
+    let mounted = true;
 
-    if (!branchId) return;
+    const fetchAndResolve = async () => {
+      const branchId =
+        todaySchedule?.raw?.branch_id?._id ??
+        todaySchedule?.branch?.rawBranch?._id ??
+        todaySchedule?.branch_id?._id ??
+        todaySchedule?.branch?.id ??
+        null;
 
-    try {
-      const branch = await getBranchDetails(branchId);
-      if (!branch) return;
+      if (!branchId) return;
 
-      // extract coordinates from branch (supports many shapes)
-      const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
+      try {
+        const branch = await getBranchDetails(branchId);
+        if (!branch) return;
 
-      let resolvedAddress: string | null = null;
-      let finalLat: number | undefined;
-      let finalLon: number | undefined;
+        const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
+        let resolvedAddress: string | null = null;
+        let finalLat: number | undefined;
+        let finalLon: number | undefined;
 
-      // If API already returned a string address, prefer that initially
-      if (typeof branch.address === "string" && branch.address.trim().length > 0) {
-        resolvedAddress = branch.address;
-      }
+        if (typeof branch.address === "string" && branch.address.trim().length > 0) {
+          resolvedAddress = branch.address;
+        }
 
-      if (coords) {
-        finalLat = coords.lat;
-        finalLon = coords.lon;
+        if (coords) {
+          finalLat = coords.lat;
+          finalLon = coords.lon;
 
-        // try reverse geocode with this order
-        const firstTry = await tryReverseGeocode(finalLat, finalLon);
-        if (firstTry) {
-          resolvedAddress = firstTry;
-        } else {
-          // attempt swap (some sources store [lat, lon])
-          const swappedTry = await tryReverseGeocode(finalLon, finalLat);
-          if (swappedTry) {
-            // if swapped worked, swap our final coords to match
-            resolvedAddress = swappedTry;
-            const tmp = finalLat; finalLat = finalLon; finalLon = tmp;
+          const firstTry = await tryReverseGeocode(finalLat, finalLon);
+          if (firstTry) {
+            resolvedAddress = firstTry;
+          } else {
+            const swappedTry = await tryReverseGeocode(finalLon, finalLat);
+            if (swappedTry) {
+              resolvedAddress = swappedTry;
+              const tmp = finalLat; finalLat = finalLon; finalLon = tmp;
+            }
           }
         }
+
+        if (!resolvedAddress && typeof finalLat === "number" && typeof finalLon === "number") {
+          resolvedAddress = `Lat: ${finalLat.toFixed(6)}, Lon: ${finalLon.toFixed(6)}`;
+        }
+
+        if (!resolvedAddress) {
+          resolvedAddress = branch.name ?? "Address not available";
+        }
+
+        if (mounted) {
+          setBranchInfo({
+            name: branch.name ?? branch.id ?? "Branch",
+            address: resolvedAddress,
+            coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
+              ? { latitude: finalLat, longitude: finalLon }
+              : null,
+            raw: branch.raw ?? branch,
+          });
+          console.log("✅ branchInfo updated:", { id: branch.id ?? branch._id, name: branch.name, address: resolvedAddress });
+        }
+      } catch (err) {
+        console.error("❌ Error resolving branch address:", err);
+        if (mounted) {
+          setBranchInfo((prev: any) => ({
+            ...(prev || {}),
+            name: prev?.name ?? (todaySchedule?.branch?.name ?? "Branch"),
+            address: prev?.address ?? "Address not available",
+          }));
+        }
       }
+    };
 
-      // final fallback -> show coords string if no human address
-      if (!resolvedAddress && typeof finalLat === "number" && typeof finalLon === "number") {
-        resolvedAddress = `Lat: ${finalLat.toFixed(6)}, Lon: ${finalLon.toFixed(6)}`;
-      }
+    fetchAndResolve();
+    return () => { mounted = false; };
+  }, [todaySchedule]);
 
-      if (!resolvedAddress) {
-        // final fallback: use branch.name or "Address not available"
-        resolvedAddress = branch.name ?? "Address not available";
-      }
-
-      // set a normalized branchInfo that UI can safely render
-      if (mounted) {
-        setBranchInfo({
-          name: branch.name ?? branch.id ?? "Branch",
-          address: resolvedAddress,
-          // keep coordinates if we successfully found them
-          coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
-            ? { latitude: finalLat, longitude: finalLon }
-            : null,
-          raw: branch.raw ?? branch,
-        });
-        console.log("✅ branchInfo updated:", { id: branch.id ?? branch._id, name: branch.name, address: resolvedAddress });
-      }
-    } catch (err) {
-      console.error("❌ Error resolving branch address:", err);
-      if (mounted) {
-        // ensure branchInfo at least contains name
-        setBranchInfo((prev: any) => ({
-          ...(prev || {}),
-          name: prev?.name ?? (todaySchedule?.branch?.name ?? "Branch"),
-          address: prev?.address ?? "Address not available",
-        }));
-      }
-    }
-  };
-
-  fetchAndResolve();
-
-  return () => {
-    mounted = false;
-  };
-}, [todaySchedule, getBranchDetails /* keep lint happy if needed */]);
-
-
-  //console.log("Next available schedule:", todaySchedule);
   useEffect(() => {
     if (todaySchedule?.raw?.branch_id?._id) {
       getBranchDetails(todaySchedule.raw.branch_id._id)
         .then((branch) => {
-          if (branch) setBranchInfo(branch);
+          if (branch) setBranchInfo(prev => prev ?? {
+            name: branch.name,
+            address: branch.address ?? undefined,
+            coordinates: (branch.location?.coordinates && Array.isArray(branch.location.coordinates))
+              ? { latitude: branch.location.coordinates[1], longitude: branch.location.coordinates[0] }
+              : null,
+            raw: branch.raw ?? branch,
+          });
         })
         .catch((err) => console.error("❌ Branch info fetch failed:", err));
     }
   }, [todaySchedule]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    const loadSchedule = async () => {
-      try {
-        const branchId = currentUser?.branch_id;
-        const { schedules, todaySchedule } = await getTodaySchedule({
-          userId,
-          branchId,
-          timezone: "Asia/Colombo",
-        });
-
-        if (!mounted) return;
-
-        console.log("📌 Today schedule:", todaySchedule);
-        console.log("📦 Total schedules fetched:", schedules.length);
-
-        setTodaySchedule(todaySchedule ?? null);  // <-- your state setter
-        setAllSchedules(schedules);               // <-- optional: keep all schedules
-      } catch (err) {
-        console.error("❌ Failed to load schedule:", err);
-        if (mounted) setTodaySchedule(null);
-      }
-    };
-
-    loadSchedule();
-    return () => { mounted = false };
-  }, [userId, currentUser?.branch_id]);
-
-
-
-  // 🔹 Optional helper to check and show toast
   const handleCheckInAttempt = () => {
     if (!todaySchedule) return;
 
@@ -324,95 +253,119 @@ useEffect(() => {
     return true;
   };
 
-  // replace your existing loadTodaySchedule useEffect with this exact code
-  useEffect(() => {
-    let mounted = true;
+  const loadTodaySchedule = async () => {
+    try {
+      setLoading(true);
 
-    const loadTodaySchedule = async () => {
-      try {
-        setLoading(true);
+      const branchId = currentUser?.branch_id;
 
-        // pass branchId if available (reduces results)
-        const branchId = currentUser?.branch_id;
+      const resp = await getTodaySchedule({
+        userId,
+        branchId,
+        timezone: "Asia/Colombo",
+      });
 
-        // CALL the helper INSIDE async function (no top-level await)
-        const resp = await getTodaySchedule({ userId, branchId, timezone: "Asia/Colombo" });
+      const schedules = resp?.schedules ?? [];
+      const rawToday = resp?.todaySchedule ?? resp ?? null;
 
-        // handle shape where helper returns either { schedules, todaySchedule } or just todaySchedule
-        const schedules = resp?.schedules ?? [];
-        const rawToday = resp?.todaySchedule ?? resp ?? null;
+      console.log("📌 Today schedule:", rawToday);
+      console.log("📦 Total schedules fetched:", schedules.length);
 
-        console.log("📌 HomeScreen getTodaySchedule resp:", resp);
-
-        if (!mounted) return;
-
-        if (!rawToday) {
-          setTodaySchedule(null);
-          setBranchInfo(null);
-          return;
-        }
-
-        // rawToday may already be normalized by helper (branchname/start_time/end_time)
-        const raw = rawToday.raw ?? rawToday;
-        const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
-        const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
-        let duration = typeof raw.duration === "number" ? raw.duration : 0;
-
-        // compute duration from start/end if needed
-        if (start_time && end_time && !duration) {
-          try {
-            const [sh = "0", sm = "0"] = String(start_time).split(":");
-            const [eh = "0", em = "0"] = String(end_time).split(":");
-            const sD = new Date(); sD.setHours(Number(sh), Number(sm), 0, 0);
-            const eD = new Date(); eD.setHours(Number(eh), Number(em), 0, 0);
-            if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
-            duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        const scheduleObj = {
-          start_time,
-          end_time,
-          duration,
-          date: raw.date ?? new Date().toISOString().split("T")[0],
-          branch: {
-            name: rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? "No Branch",
-            address: raw.branch_id?.address ?? raw.branch?.address ?? "",
-            rawBranch: raw.branch_id ?? raw.branch ?? null,
-          },
-          raw,
-        };
-
-        setTodaySchedule(scheduleObj);
-        setBranchInfo({
-          name: scheduleObj.branch.name,
-          address: scheduleObj.branch.address,
-        });
-      } catch (err) {
-        console.error("❌ Error loading today's schedule (HomeScreen):", err);
-        if (mounted) {
-          setTodaySchedule(null);
-          setBranchInfo(null);
-        }
-      } finally {
-        if (mounted) setLoading(false);
+      if (!rawToday) {
+        setTodaySchedule(null);
+        setBranchInfo(null);
+        setAllSchedules(schedules);
+        return;
       }
-    };
 
-    // run loader once (and when deps change)
-    loadTodaySchedule();
+      const raw = rawToday.raw ?? rawToday;
+      const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
+      const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
 
-    // optional polling: refresh every 5 minutes
+      let duration = typeof raw.duration === "number" ? raw.duration : 0;
+
+      if (start_time && end_time && !duration) {
+        try {
+          const [sh, sm] = String(start_time).split(":");
+          const [eh, em] = String(end_time).split(":");
+
+          const sD = new Date();
+          sD.setHours(Number(sh), Number(sm), 0, 0);
+
+          const eD = new Date();
+          eD.setHours(Number(eh), Number(em), 0, 0);
+
+          if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
+
+          duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
+        } catch (e) {
+          console.warn("❌ Failed to compute duration:", e);
+        }
+      }
+
+      const branchName = rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? null;
+      const branchAddress = raw.branch_id?.address ?? raw.branch?.address ?? "";
+
+      const scheduleObj = {
+        start_time,
+        end_time,
+        duration,
+        date: raw.date ?? new Date().toISOString().split("T")[0],
+        branch: branchName
+          ? { name: branchName, address: branchAddress, rawBranch: raw.branch_id ?? raw.branch ?? null }
+          : null,
+        raw,
+      };
+
+      setTodaySchedule(scheduleObj);
+      setBranchInfo(scheduleObj.branch);
+      setAllSchedules(schedules);
+    } catch (err) {
+      console.error("❌ Error loading today's schedule:", err);
+      setTodaySchedule(null);
+      setBranchInfo(null);
+      setAllSchedules([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        console.log("❌ Location permission denied");
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({});
+      const distance = getDistance(
+        loc.coords.latitude,
+        loc.coords.longitude,
+        SHOP_LAT,
+        SHOP_LON
+      );
+
+      setDistance(distance);
+      setWithinRange(distance <= CHECKIN_RADIUS);
+
+      console.log("📏 Distance updated:", distance.toFixed(2), "meters");
+    } catch (err) {
+      console.log("❌ Error refreshing location:", err);
+    }
+  };
+
+  const reloadAll = async () => {
+    await Promise.all([loadTodaySchedule(), refreshLocation()]);
+  };
+
+  useEffect(() => {
+    reloadAll();
+
     const interval = setInterval(loadTodaySchedule, 1000 * 60 * 5);
 
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [userId, currentUser?.branch_id]);
-
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -421,32 +374,17 @@ useEffect(() => {
         setCurrentUser(user);
       } catch (err) {
         console.error(err);
-      } finally {
-        setLoading(false);
       }
     };
     fetchProfile();
   }, []);
 
-
-  // useEffect(() => {
-  //   if (!checkInTime || !todaySchedule) return;
-
-  //   const startTime = new Date(checkInTime);
-  //   const endTime = new Date(startTime.getTime() + todaySchedule.duration * 60 * 60 * 1000);
-
-  //   const interval = setInterval(() => {
-  //     const now = new Date();
-  //     setCanCheckOut(now >= endTime);
-  //   }, 1000);
-
-  //   return () => clearInterval(interval);
-  // }, [checkInTime, todaySchedule]);
-
+  useEffect(() => {
+    console.log("📌 todaySchedule updated:", todaySchedule);
+  }, [todaySchedule]);
 
   useEffect(() => {
     if (!checkInTime || checkOutTime) return;
-
     const interval = setInterval(() => {
       const now = new Date();
       const startTime = parseTimeStringToDate(checkInTime);
@@ -459,7 +397,6 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, [checkInTime, checkOutTime]);
 
-
   useEffect(() => {
     if (!checkedIn || !checkInTime || !todaySchedule) return;
 
@@ -470,7 +407,6 @@ useEffect(() => {
 
     const checkInDate = new Date();
     checkInDate.setHours(h, m, s || 0, 0);
-
     // ⏰ Duration in milliseconds + 1 minute buffer
     const durationMs = todaySchedule.duration * 60 * 60 * 1000 + 60 * 1000;
     const allowedCheckoutTime = new Date(checkInDate.getTime() + durationMs);
@@ -484,27 +420,28 @@ useEffect(() => {
   }, [checkedIn, checkInTime, todaySchedule]);
 
 
-  // 🔧 Convert HH:MM:SS or locale time to 12h format like "02:30 PM"
-  // 🕒 Format time as "hh:mm AM/PM" (no seconds)
-  const formatDisplayTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
+  const formatTime12h = (date: Date | string) => {
+    let d: Date;
+    if (typeof date === "string") {
+      // If string like "14:35:00", parse to Date
+      const [hour, minute] = date.split(":").map(Number);
+      d = new Date();
+      d.setHours(hour, minute, 0, 0);
+    } else {
+      d = date;
+    }
+
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12; // convert 0 to 12
+    const minuteStr = minutes.toString().padStart(2, "0");
+
+    return `${hours}:${minuteStr} ${ampm}`;
   };
 
-  const formatTime12h = (date: Date) => {
-    // Return time like "02:30 PM" or "2:30 PM" depending on locale; consistent 12-hour format with minutes
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
 
-  // Utility function to safely parse time string into Date
-  // Accepts: "HH:MM:SS", "HH:MM", "hh:mm:ss AM/PM", "hh:mm AM/PM"
+
   const parseTimeStringToDate = (timeStr?: string | Date) => {
     const d = new Date();
     if (!timeStr) return d;
@@ -514,7 +451,6 @@ useEffect(() => {
     const trimmed = String(timeStr).trim();
     const lower = trimmed.toLowerCase();
 
-    // AM/PM format
     if (lower.includes("am") || lower.includes("pm")) {
       const parts = trimmed.split(" ");
       const timePart = parts[0];
@@ -529,60 +465,52 @@ useEffect(() => {
       return d;
     }
 
-    // Fallback for "HH:MM:SS" or "HH:MM"
     const [h = 0, m = 0, s = 0] = trimmed.split(":").map(Number);
     d.setHours(h || 0, m || 0, s || 0, 0);
     return d;
   };
 
 
-
-  // 🧮 Given checkInTime + duration, calculate end time
-  const getActualEndTime = (checkInTime: string, duration: number) => {
-    const now = new Date();
-
-    // Parse checkInTime (works for both 12h or 24h strings)
-    let h = 0, m = 0, s = 0;
-    const timeStr = checkInTime.replace(/[^0-9:]/g, "");
-    [h, m, s] = timeStr.split(":").map(Number);
-    now.setHours(h, m, s || 0, 0);
-
-    // Add duration (in hours → milliseconds)
-    const endTime = new Date(now.getTime() + duration * 60 * 60 * 1000);
-    return formatDisplayTime(endTime);
-  };
-
-  const addWorkHour = (userId: string, checkInTime: Date): WorkHour => {
-    const newId = `WH${(workHours.length + 1).toString().padStart(3, "0")}`;
-    const formattedTime = checkInTime.toTimeString().split(" ")[0];
-    const formattedDate = checkInTime.toISOString().split("T")[0];
+  // add / update local work hours (replaces dummy global workHours)
+  const addWorkHour = (uid: string, checkInTimeDate: Date): WorkHour => {
+    const newId = `WH${(localWorkHours.length + 1).toString().padStart(3, "0")}`;
+    const formattedTime = checkInTimeDate.toTimeString().split(" ")[0];
+    const formattedDate = checkInTimeDate.toISOString().split("T")[0];
 
     const newRecord: WorkHour = {
       id: newId,
-      user_id: userId,
+      user_id: uid,
       check_in: formattedTime,
       check_out: "",
       date: formattedDate,
-      createDate: checkInTime.toISOString(),
-      updateDate: checkInTime.toISOString(),
+      createDate: checkInTimeDate.toISOString(),
+      updateDate: checkInTimeDate.toISOString(),
     };
 
-    workHours.push(newRecord);
+    setLocalWorkHours(prev => [...prev, newRecord]);
     return newRecord;
   };
 
-  const updateWorkHour = (userId: string, checkOutTime: Date): WorkHour | null => {
-    const record = [...workHours].reverse().find(w => w.user_id === userId && !w.check_out);
-
-    if (!record) {
+  const updateWorkHour = (uid: string, checkOutTimeDate: Date): WorkHour | null => {
+    // Find last record for user without check_out
+    const idx = [...localWorkHours].reverse().findIndex(w => w.user_id === uid && !w.check_out);
+    if (idx === -1) {
       console.warn("⚠️ No active work record found for check-out.");
       return null;
     }
+    // reverse index -> actual index
+    const actualIndex = localWorkHours.length - 1 - idx;
+    const updated = { ...localWorkHours[actualIndex] };
+    const formattedTime = checkOutTimeDate.toTimeString().split(" ")[0];
+    updated.check_out = formattedTime;
+    updated.updateDate = checkOutTimeDate.toISOString();
 
-    const formattedTime = checkOutTime.toTimeString().split(" ")[0];
-    record.check_out = formattedTime;
-    record.updateDate = checkOutTime.toISOString();
-    return record;
+    setLocalWorkHours(prev => {
+      const next = [...prev];
+      next[actualIndex] = updated;
+      return next;
+    });
+    return updated;
   };
 
   useEffect(() => {
@@ -591,13 +519,12 @@ useEffect(() => {
       if (!branchId) return;
 
       try {
-        const branch = await getBranchDetails(branchId); // API call
+        const branch = await getBranchDetails(branchId);
 
         if (!branch?.location?.coordinates) return;
 
         const [longitude, latitude] = branch.location.coordinates; // GeoJSON format
 
-        // Permission
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") return;
 
@@ -609,6 +536,7 @@ useEffect(() => {
           setBranchInfo({
             name: branch.name,
             address: formatted,
+            coordinates: { latitude, longitude },
           });
           console.log("✅ Branch address:", formatted);
         }
@@ -620,16 +548,11 @@ useEffect(() => {
     fetchBranchAddress();
   }, [todaySchedule]);
 
-  useEffect(() => {
-    const user = users.find(u => u.id === userId);
-    if (user) setCurrentUser(user);
-  }, [userId]);
-
-  const [shopAddress, setShopAddress] = useState<string | null>(null); // ✅ new state
+  // shop address from branch coordinates
+  const [shopAddress, setShopAddress] = useState<string | null>(null);
   const displayBranchAddress = () => {
     if (!branchInfo) return "No branch address";
     if (typeof branchInfo.address === "string") return branchInfo.address;
-    // fallback when address somehow still not a string
     if (branchInfo.coordinates) {
       return `Lat: ${branchInfo.coordinates.latitude.toFixed(6)}, Lon: ${branchInfo.coordinates.longitude.toFixed(6)}`;
     }
@@ -642,20 +565,9 @@ useEffect(() => {
     day: "numeric",
     year: "numeric",
   });
-  // const today = new Date().toLocaleDateString(langId === "de" ? "de-DE" : "en-US", {
-  //   weekday: "long",
-  //   month: "long",
-  //   day: "numeric",
-  //   year: "numeric",
-  // });
   const [todayRecord, setTodayRecord] = useState<WorkHour | null>(null);
 
-  const employees = users.filter(user => user.role === "employee");
-  // Get the branch name dynamically using getBranchById
-  const userBranch = currentUser
-    ? getBranchById(currentUser.branch_id)?.name || "No Branch"
-    : "No Branch";
-
+  // formatTime helper
   const formatTime = (time: string | Date | null) => {
     if (!time) return "--:--";
     if (time instanceof Date) return formatTime12h(time);
@@ -666,20 +578,12 @@ useEffect(() => {
 
   const [now, setNow] = useState<Date>(new Date());
   useEffect(() => {
-    // Start ticking only when user is checked in (or you can always tick if preferred)
-    if (!checkedIn) return; // comment out this guard if you want continuous ticking always
+    if (!checkedIn) return;
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, [checkedIn]);
 
-
-  useEffect(() => {
-    const user = users.find((u) => u.id === userId);
-    if (user) setCurrentUser(user);
-  }, [userId]);
-
   const handleCheckIn = async () => {
-
     handleCheckInAttempt(); // shows toast if too early
 
     if (!todaySchedule) {
@@ -688,7 +592,6 @@ useEffect(() => {
     }
 
     try {
-      // Request location
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         showErrorToast("Location permission denied.");
@@ -699,27 +602,23 @@ useEffect(() => {
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branch: todaySchedule.branchname || "Unknown Branch", // Include branch info
+        branch: todaySchedule.branchname || "Unknown Branch",
       };
+      await startAttendance(payload);
+      const nowDate = new Date();
+      const inTime = formatTime12h(nowDate); // convert to 12-hour format
+      setCheckInTime(inTime);
 
-      await startAttendance(payload); // Call API
-
-      const now = new Date();
-      const inTime = formatTime12h(now);
-
-      // Update state
       setCheckedIn(true);
-      setCanCheckOut(true); // allow checkout after check-in
+      setCanCheckOut(true);
       setCheckInTime(inTime);
       setCheckOutTime(null);
       setDuration("--");
 
-      // Save work hour locally
-      const saved = addWorkHour(userId, now);
+      const saved = addWorkHour(userId, nowDate);
       setTodayRecord(saved);
 
       showSuccessToast(lang.checkInSuccess);
-
     } catch (error: any) {
       showErrorToast(error.response?.data?.message || "Check-in failed.");
     }
@@ -736,22 +635,19 @@ useEffect(() => {
       return;
     }
 
-    const now = new Date();
-
-    // Parse schedule start/end times
+    const nowDate = new Date();
     const [startHour, startMin] = (todaySchedule.start_time || "00:00").split(":").map(Number);
     const [endHour, endMin] = (todaySchedule.end_time || "23:59").split(":").map(Number);
 
-    const scheduleStart = new Date(now);
+    const scheduleStart = new Date(nowDate);
     scheduleStart.setHours(startHour, startMin, 0, 0);
 
-    const scheduleEnd = new Date(now);
+    const scheduleEnd = new Date(nowDate);
     scheduleEnd.setHours(endHour, endMin, 0, 0);
 
-    // Parse check-in time
     const checkInDate = parseTimeStringToDate(checkInTime);
 
-    if (now < scheduleStart) {
+    if (nowDate < scheduleStart) {
       showErrorToast(`You can only check out after ${todaySchedule.start_time}`);
       return;
     }
@@ -767,13 +663,16 @@ useEffect(() => {
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branch: todaySchedule.branch.name || "Unknown Branch",
+        branch: todaySchedule.branch?.name || "Unknown Branch",
       };
       await endAttendance(payload);
 
-      const checkOutStr = formatTime12h(now);
-      // Calculate duration from check-in
-      let diffMs = now.getTime() - checkInDate.getTime();
+      const nowDate = new Date();
+      const checkOutStr = formatTime12h(nowDate);
+      setCheckOutTime(checkOutStr);
+
+      setCheckOutTime(checkOutStr);
+      let diffMs = nowDate.getTime() - checkInDate.getTime();
       if (diffMs < 0) diffMs = 0;
 
       const diffMinutes = Math.floor(diffMs / 60000);
@@ -781,22 +680,22 @@ useEffect(() => {
       const remainingMinutes = diffMinutes % 60;
       const durationStr = `${diffHours > 0 ? diffHours + "h " : ""}${remainingMinutes}m`;
 
-      // Update state
       setCheckOutTime(checkOutStr);
       setDuration(durationStr);
       setCheckedOut(true);
       setCanCheckOut(false);
       setShowPopup(false);
 
-      const updated = updateWorkHour(userId, now);
+      const updated = updateWorkHour(userId, nowDate);
       if (updated) setTodayRecord(updated);
 
       showSuccessToast(lang.checkOutSuccess);
-
     } catch (error: any) {
       showErrorToast(error.response?.data?.message || "Check-out failed.");
     }
   };
+
+
 
   useEffect(() => {
     const getShopAddress = async () => {
@@ -806,6 +705,8 @@ useEffect(() => {
           console.log("❌ Location permission denied for reverse geocode");
           return;
         }
+
+        if (!SHOP_LAT || !SHOP_LON) return;
 
         const result = await Location.reverseGeocodeAsync({
           latitude: SHOP_LAT,
@@ -824,7 +725,7 @@ useEffect(() => {
     };
 
     getShopAddress();
-  }, []);
+  }, [SHOP_LAT, SHOP_LON]);
 
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3;
@@ -859,7 +760,6 @@ useEffect(() => {
 
         setDistance(distance);
         console.log("📏 Current distance to shop:", distance, "meters");
-        console.log("📏 latiitud:", loc);
 
         if (distance <= CHECKIN_RADIUS) {
           setWithinRange(true);
@@ -882,65 +782,11 @@ useEffect(() => {
       clearInterval(interval);
       clearTimeout(timer);
     };
-  }, []);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        console.log("❌ Permission denied");
-        setRefreshing(false);
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const newDistance = getDistance(
-        loc.coords.latitude,
-        loc.coords.longitude,
-        SHOP_LAT,
-        SHOP_LON
-      );
-
-      setDistance(newDistance);
-      console.log("📏 Distance after pull refresh:", newDistance.toFixed(2), "meters");
-
-      if (newDistance <= CHECKIN_RADIUS) {
-        setWithinRange(true);
-      } else {
-        setWithinRange(false);
-      }
-    } catch (error) {
-      console.log("❌ Error getting location on refresh:", error);
-    }
-
-    setRefreshing(false);
-  };
-
-  const getEndTime = (startTime: string, durationHours: number) => {
-    if (!startTime || !durationHours) return "--:--";
-
-    const [hour, minute, second] = startTime.split(":").map(Number);
-    const startDate = new Date();
-    startDate.setHours(hour, minute, second || 0);
-
-    const endDate = new Date(startDate.getTime() + durationHours * 60 * 60 * 1000);
-
-    const endHour = endDate.getHours();
-    const endMinute = endDate.getMinutes();
-    const ampm = endHour >= 12 ? "PM" : "AM";
-    const hour12 = endHour % 12 === 0 ? 12 : endHour % 12;
-
-    return `${hour12.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")} ${ampm}`;
-  };
-
+  }, [SHOP_LAT, SHOP_LON]);
 
   const parse12hToDate = (timeStr?: string | null): Date | null => {
     if (!timeStr) return null;
     const s = String(timeStr).trim();
-
-    // Matches: "2:30 PM", "02:30:12 AM", "14:30", "14:30:00"
     const regex = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?$/;
     const m = s.match(regex);
     if (!m) return null;
@@ -962,9 +808,7 @@ useEffect(() => {
   };
 
   const calculateDuration = (checkInTime: string | null, checkOutTime: string | null) => {
-    // always return a safe "Xh Ym" string
     if (!checkInTime) return "0h 0m";
-
     const start = parse12hToDate(checkInTime);
     if (!start) return "0h 0m";
 
@@ -975,7 +819,6 @@ useEffect(() => {
       end = new Date();
     }
 
-    // if end before start → assume next day
     if (end.getTime() < start.getTime()) {
       end.setDate(end.getDate() + 1);
     }
@@ -990,21 +833,18 @@ useEffect(() => {
     return `${hrs > 0 ? hrs + "h " : "0h "}${mins}m`;
   };
 
-
   useEffect(() => {
-
-
     if (!checkedIn) return;
-
     const interval = setInterval(() => {
       setDuration(calculateDuration(checkInTime, checkOutTime));
-    }, 1000); // update every second
-
+    }, 1000);
     return () => clearInterval(interval);
   }, [checkedIn, checkInTime, checkOutTime]);
+
+  // load today's record from localWorkHours
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-    const record = [...workHours].reverse().find(
+    const today = new Date().toISOString().split("T")[0];
+    const record = [...localWorkHours].reverse().find(
       (w) => w.user_id === userId && w.date === today
     );
     if (record) {
@@ -1017,30 +857,147 @@ useEffect(() => {
         setDuration(calculateDuration(record.check_in, record.check_out));
       }
     } else {
-      // no record for today → reset
       setTodayRecord(null);
       setCheckedIn(false);
       setCheckInTime(null);
       setCheckOutTime(null);
       setDuration("--");
     }
-  }, [userId]);
+  }, [userId, localWorkHours]);
+
   useEffect(() => {
     const interval = setInterval(() => {
-      const today = new Date().toISOString().split("T")[0];
-      if (todayRecord && todayRecord.date !== today) {
-        // midnight passed → reset UI
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (todayRecord && todayRecord.date !== todayStr) {
         setTodayRecord(null);
         setCheckedIn(false);
         setCheckInTime(null);
         setCheckOutTime(null);
         setDuration("--");
       }
-    }, 60000); // check every 1 min
-
+    }, 60000);
     return () => clearInterval(interval);
   }, [todayRecord]);
 
+  const formatTo12Hour = (time) => {
+    if (!time) return "";
+    const [hour, minute] = time.split(":");
+    let h = parseInt(hour, 10);
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12; // convert 0 to 12
+    return `${h}:${minute} ${ampm}`;
+  };
+
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchAttendance = async () => {
+      try {
+        const todayRecords = await getMyAttendanceHistory(); // Already filtered today
+        console.log("📌 Today Records from Helper:", todayRecords.length);
+        console.log("📌 Today Records from Helper records:", todayRecords);
+        if (!mounted) return;
+
+        if (!todayRecords || todayRecords.length === 0) {
+          // no attendance today
+          setAttendanceToday(null);
+          setCheckInTime(null);
+          setCheckOutTime(null);
+          setDuration("0h 0m");
+          setCheckedIn(false);
+          setCheckedOut(false);
+          setCanCheckOut(false);
+          return;
+        }
+
+        // pick latest record by In
+        todayRecords.sort((a, b) => moment(b.In).valueOf() - moment(a.In).valueOf());
+        const rec = todayRecords[0];
+
+        setAttendanceToday(rec);
+
+        const hasIn = !!rec?.In;
+        const hasOut = !!rec?.Out;
+
+        // times (HH:mm)
+        const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
+        const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
+
+        setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
+        setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
+
+        // duration: if out exists use out - in, otherwise now - in
+        const now = moment();
+        if (inMoment) {
+          const endMoment = outMoment || now;
+          const diff = moment.duration(endMoment.diff(inMoment));
+          const hrs = Math.floor(diff.asHours());
+          const mins = diff.minutes();
+          setDuration(`${hrs}h ${mins}m`);
+        } else {
+          setDuration("0h 0m");
+        }
+
+        // derive checked states from actual data
+        setCheckedIn(hasIn && !hasOut);
+        setCheckedOut(hasOut);
+
+        // 🔥 Shift / canCheckOut logic: allow checkout only if user has checked in and not checked out, and schedule allows
+        let shiftEndMoment: moment.Moment | null = null;
+        if (todaySchedule?.end_time && inMoment) {
+          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+          shiftEndMoment = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
+        }
+
+        // If there's an In and no Out, allow check out when now >= in + scheduled duration OR when now >= shiftEndMoment (fallback)
+        let allowedToCheckOut = false;
+        if (hasIn && !hasOut && inMoment) {
+          if (typeof todaySchedule?.duration === "number" && todaySchedule.duration > 0) {
+            const allowed = inMoment.clone().add(todaySchedule.duration, "hours");
+            allowedToCheckOut = now.isSameOrAfter(allowed);
+          }
+          if (!allowedToCheckOut && shiftEndMoment) {
+            allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
+          }
+        }
+
+        setCanCheckOut(allowedToCheckOut);
+      } catch (err) {
+        console.error("❌ fetchAttendance error:", err);
+
+        if (!mounted) return;
+
+        setAttendanceToday(null);
+        setCheckInTime(null);
+        setCheckOutTime(null);
+        setDuration("0h 0m");
+        setCheckedIn(false);
+        setCheckedOut(false);
+        setCanCheckOut(false);
+      }
+    };
+
+    fetchAttendance();
+
+    const interval = setInterval(fetchAttendance, 1000 * 60 * 2);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [userId, currentUser?.branch_id, todaySchedule]);
+
+
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await reloadAll();
+    setRefreshing(false);
+  };
+
+  // ---------- JSX (return) ----------
   return (
     <>
       <Header
@@ -1053,10 +1010,9 @@ useEffect(() => {
           width: 24,
           height: 24,
           onPress: () => {
-            // Navigate to NotificationScreen and pass userId & langId
             navigation.navigate("C_NotificationScreen" as any, {
-              userId: userId, // current logged-in user
-              langId: langId || "en", // current language
+              userId: userId,
+              langId: langId || "en",
             });
           },
         }}
@@ -1073,10 +1029,13 @@ useEffect(() => {
         }
       >
         <Text style={styles.date}>{today}</Text>
-        <Text style={styles.welcome}>
+        <Text
+          style={styles.welcome}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {lang.welcome} {loading ? "..." : currentUser?.fullname || "Guest"}
         </Text>
-
 
         {/* Heading */}
         <View style={styles.headingContainer}>
@@ -1092,23 +1051,35 @@ useEffect(() => {
             backgroundColor="#F1F2F4"
             borderRadius={12}
             width={"100%"}
-            borderWidth={1}
             alignItems='flex-start'
             paddingTop={10}
             paddingBottom={10}
             paddingLeft={10}
           >
             <View style={styles.addressContainer}>
-              {(branchInfo?.name || todaySchedule?.branch?.name) && (
+              {todaySchedule && branchInfo ? (
                 <View style={styles.addressLine}>
-                  <Image source={require("../../../assets/icons/branch.png")} style={styles.addressIcon1} />
+                  <Image
+                    source={require("../../../assets/icons/branch.png")}
+                    style={styles.addressIcon1}
+                  />
                   <Text style={styles.addressText}>
-                    {branchInfo?.name ?? todaySchedule?.branch?.name}
+                    {branchInfo.name}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.addressLine}>
+                  <Text
+                    style={[
+                      styles.addressText,
+                      { color: colors.button_text, },
+                    ]}
+                  >
+                    No assignment or shift scheduled for today.
                   </Text>
                 </View>
               )}
 
-              {/* Safe rendering: use displayBranchAddress() which returns a string */}
               {(branchInfo?.address || todaySchedule?.branch?.address) && (
                 <View style={styles.addressLine}>
                   <Image source={require("../../../assets/icons/location.png")} style={styles.addressIcon} />
@@ -1131,7 +1102,7 @@ useEffect(() => {
           </CartBox>
         )}
 
-        {!checkedIn ? (
+        {!(attendanceToday && attendanceToday.In) ? (
           <>
             <View style={styles.middle}>
               <Image
@@ -1143,35 +1114,46 @@ useEffect(() => {
 
             <Button1
               text={lang.checkIn}
-              // onPress={handleCheckIn}
-              // onPress={() => {
-              //     setShowPopup(true);
-              // }}
-
               onPress={() => {
-                // First: check if user is within allowed radius
+                if (!todaySchedule || !branchInfo) {
+                  showErrorToast("You don't have schedule for today");
+                  return;
+                }
+
                 if (!withinRange) {
                   showErrorToast("You are too far from the shop. Cannot check in.");
-                  return; // stop execution
+                  return;
                 }
 
-                // Second: check schedule timing
                 if (handleCheckInAttempt()) {
-                  setShowPopup(true); // show confirmation popup
+                  setShowPopup(true);
                 } else {
-                  showErrorToast(`You can only check in 15 minutes before ${todaySchedule?.start_time}`);
+                  showErrorToast(
+                    `You can only check in 15 minutes before ${todaySchedule?.start_time}`
+                  );
                 }
               }}
-              backgroundColor={withinRange ? colors.primary : colors.button_background}
-              textStyle={{ color: withinRange ? colors.button_background : colors.button_text }}
+              backgroundColor={
+                todaySchedule && branchInfo && withinRange
+                  ? colors.primary
+                  : colors.button_background
+              }
+              textStyle={{
+                color:
+                  todaySchedule && branchInfo && withinRange
+                    ? colors.button_background
+                    : colors.subtext2
+              }}
               containerStyle={styles.checkinBtn}
             />
           </>
+
         ) : (
           <View style={{ width: "100%", alignItems: "flex-start" }}>
-            {/* Status Row */}
             <View style={styles.statusRow}>
-              <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l }}>{lang.currentStatus}</Text>
+              <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l , alignItems : "flex-start", marginRight:20}}>
+                {lang.currentStatus}
+              </Text>
               <View style={styles.statusBadge(!!checkOutTime)}>
                 <Text style={styles.statusText}>
                   {checkOutTime ? lang.offDuty : lang.onDuty}
@@ -1179,23 +1161,21 @@ useEffect(() => {
               </View>
             </View>
 
-            {/* Info Box */}
             <View style={styles.infoBox}>
               {checkInTime && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Checkedin At</Text>
-                  <Text style={styles.infoValue}>{formatTime(checkInTime)}</Text>
+                  <Text style={styles.infoLabel}>Checked in At</Text>
+                  <Text style={styles.infoValue}>{formatTo12Hour(checkInTime)}</Text>
                 </View>
               )}
 
               {checkOutTime && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>CheckedOut At</Text>
-                  <Text style={styles.infoValue}>{formatTime(checkOutTime)}</Text>
+                  <Text style={styles.infoLabel}>Checked Out At</Text>
+                  <Text style={styles.infoValue}>{formatTo12Hour(checkOutTime)}</Text>
                 </View>
               )}
 
-              {/* ✅ Always show Duration if check-in exists */}
               {checkInTime && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Duration</Text>
@@ -1204,10 +1184,9 @@ useEffect(() => {
               )}
             </View>
 
-            {!checkedOut && (
+            {!checkOutTime && (
               <Button1
                 text={lang.checkOut}
-
                 backgroundColor={colors.primary}
                 textStyle={{ color: colors.secondary }}
                 containerStyle={styles.checkinBtn}
@@ -1221,11 +1200,9 @@ useEffect(() => {
               />
             )}
 
-            {/* Checkout Popup */}
             <Popup
               visible={showCheckoutPopup}
               onClose={() => setShowCheckoutPopup(false)}
-              // onConfirm={handleCheckOut} 
               popupBorderColor={colors.primary}
               dismissOnOverlayPress={false}
               title={lang.confirmCheckOut}
@@ -1241,7 +1218,7 @@ useEffect(() => {
                   width="45%"
                   onPress={() => {
                     handleCheckOut();
-                    setShowCheckoutPopup(false); // popup close for the checkout confirm popup
+                    setShowCheckoutPopup(false);
                   }}
                 />
 
@@ -1256,7 +1233,6 @@ useEffect(() => {
           </View>
         )}
 
-        {/* Check In Popup */}
         <Popup
           visible={showPopup}
           onClose={() => setShowPopup(false)}
@@ -1276,9 +1252,7 @@ useEffect(() => {
               onPress={() => {
                 handleCheckIn();
                 setShowPopup(false);
-
               }}
-
             />
             <Button1
               text={lang.no}
@@ -1287,14 +1261,13 @@ useEffect(() => {
               onPress={() => setShowPopup(false)}
             />
           </View>
-
         </Popup>
-
       </ScrollView>
       <Toast config={toastConfig} />
     </>
   );
 };
+
 export default C_Homescreen;
 
 const styles = StyleSheet.create({
@@ -1302,7 +1275,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     backgroundColor: colors.secondary,
     alignItems: "center",
-    paddingTop: "20%",
+    paddingTop: 50,
     padding: 20,
   },
   date: {
@@ -1314,6 +1287,8 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.xxl,
     fontWeight: fonts.weight.bold as any,
     marginBottom: 50,
+    textAlign: 'center',
+
   },
 
   headingContainer: {
@@ -1386,10 +1361,15 @@ const styles = StyleSheet.create({
   },
 
   statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    marginTop: 50
+    width: "100%",
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+    borderColor: "#000",
+    borderRadius: 10,
+    padding: 12,        // adds space inside border
+    marginTop: 20,
+    backgroundColor: "#fff",
+    flexDirection: 'row',
   },
   statusBadge: (offDuty: boolean) => ({
     backgroundColor: offDuty ? colors.primary : colors.primary,
@@ -1402,6 +1382,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontWeight: "600",
+
   },
 
   infoBox: {
@@ -1410,6 +1391,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#f9f9f9",
     marginBottom: 20,
+
   },
   infoRow: {
     flexDirection: "row",

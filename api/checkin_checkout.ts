@@ -416,6 +416,43 @@ export const getAttendanceReport = async (
   }
 };
 
+export const getMyAttendanceHistory = async (): Promise<AttendanceRecord[]> => {
+  try {
+    const res = await axiosInstance.get('/attendance/my-history');
+
+    if (!res?.data) {
+      console.warn('⚠️ Attendance API returned empty response');
+      return [];
+    }
+
+    if (res.data.success && Array.isArray(res.data.data)) {
+      const allRecords = res.data.data;
+
+      // 🔥 Get local date (correct)
+      const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+
+      console.log("📅 Local Today:", today);
+
+      // 🔥 Filter today's records based on created_at
+      const todaysRecords = allRecords.filter((record: any) => {
+        const createdDate = record.created_at?.split(" ")[0];
+        return createdDate === today;
+      });
+
+      // 🔥 Log only today’s attendance
+      console.log("📌 Today Attendance Records create_at 123455:", todaysRecords);
+
+      return todaysRecords;  // return only today’s records
+    }
+
+    console.warn('⚠️ Attendance API returned success=false or invalid data:', res.data);
+    return [];
+
+  } catch (err) {
+    console.error('❌ Error fetching attendance history:', err);
+    return [];
+  }
+};
 
 
 
