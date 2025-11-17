@@ -32,6 +32,7 @@ import InputBox from "../../../../components/InputBox";
 import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
+import { TextInput } from "react-native-gesture-handler";
 type LocalUser = {
   id: string;
   fullname: string;
@@ -63,6 +64,7 @@ export default function AddScheduleScreen(props: any) {
   const [localBranches, setLocalBranches] = useState<LocalBranch[]>([]);
   const [localSchedules, setLocalSchedules] = useState<Array<any>>([]);
   const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, any[]>>({});
+  const [initialLocalSchedules, setInitialLocalSchedules] = useState<any[]>([]);
   // UI state
   const [modalEditingId, setModalEditingId] = useState<string | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("");
@@ -84,10 +86,16 @@ export default function AddScheduleScreen(props: any) {
   const [durationHours, setDurationHours] = useState<string>("");
   const [durationError, setDurationError] = useState<string>("");
   const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
+  const [currentWeekErrorPopup, setCurrentWeekErrorPopup] = useState(false);
   const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update"; schedule: any }>>([]);
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const [weekOffset, setWeekOffset] = useState<number>(0);
+
+  const branchref = useRef<TextInput | null>(null);
+  const starttime = useRef<TextInput | null>(null);
+  const duration= useRef<TextInput | null>(null);
+
   const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
     return users.map((u) => {
       const id = (u as any)._id ?? (u as any).id ?? "";
@@ -177,6 +185,7 @@ export default function AddScheduleScreen(props: any) {
         console.log('getSchedules raw count:', Array.isArray(fetchedSchedules) ? fetchedSchedules.length : 0);
         const normalizedSchedules = normalizeSchedules(fetchedSchedules || []);
         setLocalSchedules(normalizedSchedules);
+        setInitialLocalSchedules(normalizedSchedules.map((s) => ({ ...s })));
       } catch (err) {
         console.warn('Failed to load schedules from API helper, continuing with empty schedules', err);
         setLocalSchedules([]);
@@ -335,15 +344,15 @@ export default function AddScheduleScreen(props: any) {
     let hasError = false;
     if (!selectedStaffId) {
       setStaffError(lang.Select_staff || "Please select staff");
-      showErrorToast(lang.Please_select_staff || "Select staff");
+      showErrorToast(lang.selectStaffFirst || "Please select staff first");
       hasError = true;
     }
     if (!selectedDayYmd) {
-      showErrorToast("No date selected");
+      showErrorToast(lang.noDateSelected || "No date selected");
       hasError = true;
     }
     if (!selectedBranchId) {
-      showErrorToast("Please select branch");
+      showErrorToast(lang.selectBranch || "Please select branch");
       hasError = true;
       setBranchFilterOpen(true);
     }
@@ -386,7 +395,7 @@ export default function AddScheduleScreen(props: any) {
       setChangeLog((c) => [...c, { type: "delete" as const, schedule: { user_id: selectedStaffId, date: normalizedDate } }]);
       setAddScheduleModalVisible(false);
       setModalEditingId(null);
-      showSuccessToast("Schedule cleared");
+      showSuccessToast(lang.scheduleCleared || "Schedule cleared");
       return;
     }
     const payload: any = {
@@ -462,7 +471,7 @@ export default function AddScheduleScreen(props: any) {
         return merged;
       });
       setChangeLog((c) => [...c, { type: "add", schedule: newSch }]);
-      showSuccessToast("Schedule added");
+      showSuccessToast(lang.schedule_added || "Schedule added");
     } else {
       // update existing
       setLocalSchedules((prev = []) => {
@@ -490,7 +499,7 @@ export default function AddScheduleScreen(props: any) {
         setLocalSchedulesByDate(map);
         return copy;
       });
-      showSuccessToast("Schedule updated");
+      showSuccessToast(lang.schedule_updated || "Schedule updated");
     }
     // close modal & ensure week view
     setAddScheduleModalVisible(false);
@@ -535,7 +544,7 @@ export default function AddScheduleScreen(props: any) {
     if (isBeforeToday(uiYmd)) return;
     if (!selectedStaffId) {
       setStaffError(lang.Select_staff || "Please select staff first");
-      showErrorToast(lang.Please_select_staff || "Select staff first");
+      showErrorToast(lang.Please_select_staff1 || "Please select staff first");
       setStaffFilterOpen(true);
       setTimeout(measureStaffInput, 40);
       return;
@@ -716,7 +725,7 @@ export default function AddScheduleScreen(props: any) {
               found = true;
               chosenOffset = off;
               finalSchedulesNormalized = items;
-              console.log("pre danuuuuuuuuuuuuuu", finalSchedulesNormalized)
+              console.log("finalSchedulesNormalized :", finalSchedulesNormalized)
               break;
             }
           } catch (e) {
@@ -724,7 +733,6 @@ export default function AddScheduleScreen(props: any) {
           }
         }
       }
-
       if (found) {
         console.log(`[DEBUG] handleStaffPick: found schedules at offset ${chosenOffset}`);
         setWeekOffset(chosenOffset);
@@ -764,8 +772,8 @@ export default function AddScheduleScreen(props: any) {
 
           // If current-week schedules exist => inform user they cannot change current-week schedules
           if (currentCount > 0) {
-            showErrorToast(lang.cannot_change_current_week_schedules || "Cannot change current-week schedules");
-            // optionally prevent further edit UI by clearing selection or disabling modal open logic
+            //showErrorToast(lang.currentWeekAlreadyAdded || "Current week schedule already added");
+            setCurrentWeekErrorPopup(true);
           }
           // No automatic action for prevCount here — saving logic will use it.
         } catch (e) {
@@ -785,30 +793,36 @@ export default function AddScheduleScreen(props: any) {
   };
   const onFooterSaveAndBack = () => {
     if (addScheduleModalVisible) {
-      showErrorToast("Please finish editing the schedule");
+      showErrorToast(lang.finishEditingSchedule || "Please finish editing the schedule");
       return;
     }
     if (staffError || timeFromError || durationError) {
       showErrorToast("Please fix errors before saving");
       return;
     }
-
     const hasChanges = Array.isArray(changeLog) && changeLog.length > 0;
-
     const viewedWeekDates = getWeekDates(weekOffset).map((d) => dateToYMD(d));
     const currentWeekDates = getWeekDates(0).map((d) => dateToYMD(d));
-
     const staffId = selectedStaffId || userId || null;
-    const staffSchedules = staffId ? (localSchedules || []).filter((s) => String(s.user_id) === String(staffId)) : [];
+    const originalStaffSchedules = staffId
+      ? (initialLocalSchedules || []).filter((s) => String(s.user_id) === String(staffId))
+      : [];
 
-    const viewedWeekStaffSchedules = staffSchedules.filter((s) => viewedWeekDates.includes(s.date));
-
-    if (weekOffset === 0 && viewedWeekStaffSchedules.length > 0) {
-      showErrorToast(lang.cannot_change_current_week_schedules || "Cannot change current-week schedules");
+    const viewedWeekOriginalStaffSchedules = originalStaffSchedules.filter((s) =>
+      viewedWeekDates.includes(s.date)
+    );
+    if (!selectedStaffId) {
+      showErrorToast(lang.selectStaffFirst || "Please select staff first");
+      setStaffFilterOpen(true);
       return;
     }
-
-    if (weekOffset !== 0 && viewedWeekStaffSchedules.length > 0) {
+    if (weekOffset === 0 && viewedWeekOriginalStaffSchedules.length > 0) {
+      //showErrorToast(lang.currentWeekAlreadyAdded || "Current week schedule already added");
+      setCurrentWeekErrorPopup(true);
+      return;
+    }
+    // For previous-week (or other offsets), if there are original schedules in the viewed week, confirm before overwriting.
+    if (weekOffset !== 0 && viewedWeekOriginalStaffSchedules.length > 0) {
       setSaveConfirmVisible(true);
       return;
     }
@@ -818,9 +832,6 @@ export default function AddScheduleScreen(props: any) {
     }
     showErrorToast(lang.no_changes_to_save || "No changes to save");
   };
-
-
-
   const screenH = Dimensions.get("window").height;
   const screenW = Dimensions.get("window").width;
   const employeeList = localUsers.filter((u) => {
@@ -855,6 +866,11 @@ export default function AddScheduleScreen(props: any) {
     setTimeFrom(`${hh}:${mm}:${ss}`);
     setTimeFromError("");
   };
+  const currentWeekDatesYMD = displayWeekDates.map((d) => dateToYMD(d));
+  const staffHasAnyCurrentWeekFromInitial =
+    !!selectedStaffId &&
+    (initialLocalSchedules || []).some((s) => currentWeekDatesYMD.includes(String(s.date)) && String(s.user_id) === String(selectedStaffId));
+
   return (
     <View style={styles.container}>
       <Header
@@ -921,7 +937,13 @@ export default function AddScheduleScreen(props: any) {
             />
           </View>
           <View style={{ marginTop: 0 }}>
+
             {Array.from({ length: 7 }).map((_, idx) => {
+              const staffHasAnyCurrentWeek = !!selectedStaffId && displayWeekDates.some(d => {
+                const ymd = dateToYMD(d);
+                const arr = localSchedulesByDate[ymd] || [];
+                return arr.some(s => String(s.user_id) === String(selectedStaffId));
+              });
               const displayD = displayWeekDates[idx]; // current-week date for showing number & weekday
               const dataD = weekDates[idx]; // schedule lookup date (may be offset week)
               const displayYmd = dateToYMD(displayD); // for UI/expired logic
@@ -950,18 +972,40 @@ export default function AddScheduleScreen(props: any) {
                   </CartBox>
                   <TouchableOpacity
                     style={{ flex: 1 }}
-                    activeOpacity={expired ? 1 : 0.8}
+                    activeOpacity={expired ? 1 : (hasScheduleForStaff ? 1 : 0.8)}
                     onPress={() => {
                       if (expired) return;
-                      const viewingPrevWeek = weekOffset !== 0;
-                      const daySchedulesArr = localSchedulesByDate[ymd] || [];
 
-                      if (viewingPrevWeek || daySchedulesArr.length === 0) {
-                        openAddModalForDate(ymd, displayYmd);
-                      } else {
-                        showErrorToast && showErrorToast("Schedule already added for current week");
+                      // must select staff first
+                      if (!selectedStaffId) {
+                        setStaffError(lang.selectStaffFirst || "Please select staff first");
+                        showErrorToast(lang.selectStaffFirst || "Please select staff first");
+                        setStaffFilterOpen(true);
+                        setTimeout(measureStaffInput, 40);
+                        return;
                       }
+
+                      const viewingPrevWeek = weekOffset !== 0;
+
+                      // ---- IMPORTANT: block whole current week only if the ORIGINAL (server-loaded) snapshot had schedules
+                      if (!viewingPrevWeek && staffHasAnyCurrentWeekFromInitial) {
+                        //showErrorToast(lang.currentWeekAlreadyAdded || "Current week schedule already added");
+                        setCurrentWeekErrorPopup(true);
+                        return;
+                      }
+
+                      // day-level check: if this particular day already has a schedule for this staff (local OR initial), block this day
+                      const daySchedulesArr = localSchedulesByDate[ymd] || [];
+                      const staffScheduleForDay = selectedStaffId ? daySchedulesArr.find((s) => String(s.user_id) === String(selectedStaffId)) : null;
+                      if (staffScheduleForDay) {
+                        // different message for day-level duplicate
+                        showErrorToast(lang.scheduleAlreadyAdded || "Schedule already added for this day");
+                        return;
+                      }
+                      // allow opening modal only for non-expired days (expired checked at top)
+                      openAddModalForDate(ymd, displayYmd);
                     }}
+
                   >
                     <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
@@ -1004,6 +1048,7 @@ export default function AddScheduleScreen(props: any) {
                   onLayout={onBranchLayout}
                 >
                   <InputBox
+                    ref={branchref}
                     label={lang.Branch}
                     placeholder={"Select branch"}
                     value={selectedBranch}
@@ -1025,6 +1070,8 @@ export default function AddScheduleScreen(props: any) {
                     onPress={undefined}
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}
+                    returnKeyType="next"
+                    onSubmitEditing={() => starttime.current?.focus()}
                     onRightIconPress={() => {
                       setSelectedBranch("");
                       setBranchFilterOpen(true);
@@ -1043,24 +1090,20 @@ export default function AddScheduleScreen(props: any) {
                   />
                 </View>
                 <InputBox
+                  ref={starttime}
                   label={lang.Start_time}
                   placeholder="HH:MM"
                   value={timeFrom}
                   setValue={(v: string) => {
-                    // Remove non-digits
                     let digits = v.replace(/[^0-9]/g, "");
-
                     let hh = "";
                     let mm = "";
-
                     if (digits.length > 0) {
-                      // Hours (max 2 digits)
                       hh = digits.slice(0, 2);
                       if (parseInt(hh) > 23) hh = "23"; // clamp to 24
                     }
 
                     if (digits.length > 2) {
-                      // Minutes (max 2 digits)
                       mm = digits.slice(2, 4);
                       if (parseInt(mm) > 59) mm = "59"; // clamp to 59
                     }
@@ -1078,15 +1121,19 @@ export default function AddScheduleScreen(props: any) {
                   rightIcon={require("../../../../assets/icons/clock_b.png")}
                   errorMessage={timeFromError}
                   rightIconStyle={{ tintColor: colors.primary }}
+                  returnKeyType="next"
+                  onSubmitEditing={() => duration.current?.focus()}
                   onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
                 />
                 <InputBox
+                  ref={duration}
                   label={lang.Duration}
                   placeholder={"Eg: 8"}
                   value={durationHours}
                   setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
                   errorMessage={durationError}
                   keyboardType="numeric"
+                  returnKeyType="done"
                   rightIconStyle={{ tintColor: colors.primary }}
                 />
                 <View style={{ height: 18 }} />
@@ -1179,7 +1226,7 @@ export default function AddScheduleScreen(props: any) {
         visible={saveConfirmVisible}
         onClose={() => setSaveConfirmVisible(false)}
         dismissOnOverlayPress={false}
-        title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
+        title={lang.confirmSavingSchedule || "Confirm saving of staff’s work schedule."}
         titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any }}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
@@ -1264,16 +1311,21 @@ export default function AddScheduleScreen(props: any) {
                 // Build set of existing schedule keys in localSchedulesByDate for the current week (avoid re-creating)
                 const existingKeys = new Set<string>();
                 try {
-                  const flatExisting = Object.values(localSchedulesByDate).flat() || [];
+                  // Use the initial snapshot (what we loaded from server) to avoid treating newly created local schedules as 'already existing'
+                  const flatExisting = (initialLocalSchedules || []).filter((s) => {
+                    // only consider schedules that belong to currentWeekDatesYMD
+                    const dateStr = String(s.date || "").split("T")[0];
+                    return currentWeekDatesYMD.includes(dateStr);
+                  }) || [];
+
                   for (const ex of flatExisting) {
                     const exNorm = normalizeRow(ex);
-                    // Only consider if it's in the currentWeekDatesYMD (we already filtered earlier but be safe)
                     if (!currentWeekDatesYMD.includes(exNorm.date)) continue;
                     const key = `${exNorm.user_id}-${exNorm.date}-${exNorm.start_time}-${exNorm.end_time}-${exNorm.branch_id}`;
                     existingKeys.add(key);
                   }
                 } catch (e) {
-                  console.warn("[sched] failed building existingKeys", e);
+                  console.warn("[sched] failed building existingKeys (from initialLocalSchedules)", e);
                 }
 
                 // Now process schedulesToSaveRaw (templatesToKeep + userChanges)
@@ -1337,7 +1389,7 @@ export default function AddScheduleScreen(props: any) {
                 });
 
                 if (schedulesPayload.length === 0) {
-                  showErrorToast("No valid schedules to create");
+                  showErrorToast(lang.noValidSchedulesToCreate || "No valid schedules to create");
                   setLoading(false);
                   return;
                 }
@@ -1352,10 +1404,6 @@ export default function AddScheduleScreen(props: any) {
                       start_time: timeToHHMM(s.start_time ?? s.start ?? ""),
                       end_time: timeToHHMM(s.end_time ?? s.end ?? "")
                     }];
-
-                    // If your backend exposes a bulk endpoint that accepts per-row branch_id you can
-                    // call it once with schedulesToSave and include branch_id per item instead.
-                    // Here we call the bulk endpoint per-row (passing a single-row array) to ensure branch correctness.
                     const r = await postSchedulesBulk(employeeIdToUse, targetBranchId, singlePayload);
                     perRowResponses.push(r);
                     console.log("[sched] postSchedulesBulk per-row resp for", s.date, targetBranchId, r);
@@ -1513,7 +1561,7 @@ export default function AddScheduleScreen(props: any) {
                       }
                       try {
                         const adminBranchDoc = {
-                          title: "Staff Assigned to Your Branch",
+                          title: lang.staffAssignedToBranch || "Staff Assigned to Your Branch",
                           body: adminBody,
                           type: "branch_staff_assigned",
                           meta: {
@@ -1548,7 +1596,7 @@ export default function AddScheduleScreen(props: any) {
                   selectedTab: "WorkSchedule",
                   userId,
                   langId,
-                  toastMessage: "Schedules created successfully",
+                  toastMessage: lang.schedulesCreatedSuccessfully || "Schedules created successfully",
                 });
               } catch (err: any) {
                 console.error("Failed to postSchedulesBulk / notify", err);
@@ -1570,6 +1618,32 @@ export default function AddScheduleScreen(props: any) {
           />
         </View>
       </Popup>
+      <Popup
+        visible={currentWeekErrorPopup}
+        onClose={() => setCurrentWeekErrorPopup(false)}
+        dismissOnOverlayPress={false}
+        title="Schedules have already been added for the current week, so adding or editing schedules is not allowed."
+        titleStyle={styles.alertpopup}
+        popupBorderColor={colors.primary}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'center', width: '100%' }}>
+          <Button1
+            text={lang.ok || "OK"}
+            onPress={() => {
+              setCurrentWeekErrorPopup(false);
+              navigation.navigate("Footer_A", {
+                selectedTab: "WorkSchedule",
+                userId,
+                langId,
+              });
+            }}
+            backgroundColor={colors.primary}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          />
+        </View>
+      </Popup>
+
     </View>
   );
 }
@@ -1596,6 +1670,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 20,
     elevation: 20,
+  },
+  alertpopup: {
+    color: colors.subtext,
+    marginBottom: 20,
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+    textAlign: "center",  
   },
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
   modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium as any, textAlign: "center", marginBottom: 8 },

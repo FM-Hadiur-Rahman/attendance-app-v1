@@ -262,39 +262,56 @@ const StaffRecordScreen: React.FC = (props: any) => {
     console.log("[DEBUG] employees shown length (after filtering):", employees.length);
   }, [employees]);
 
-
+  // --- AUTO REFRESH ON FOCUS ---
+  // whenever the screen receives focus (i.e. when navigating back to it), reload page 1.
   useFocusEffect(
     useCallback(() => {
-      const shouldRefresh = (route.params as any)?.refresh;
-      if (shouldRefresh) {
-        // reload using current branch
-        setPage(1);
-        setHasMore(true);
-        loadUsers(activeBranchId ?? null, 1, true);
+      let mounted = true;
+      const refreshOnFocus = async () => {
         try {
-          navigation.setParams({ refresh: false });
-        } catch { }
-      }
-    }, [route.params, activeBranchId])
+          // reset paging and fetch fresh data
+          if (!mounted) return;
+          setPage(1);
+          setHasMore(true);
+          await loadUsers(activeBranchId ?? null, 1, true);
+          // optionally reset search and bump version to update memoized lists
+          setQuery("");
+          setVersion((v) => v + 1);
+        } catch (e) {
+          console.warn("refresh on focus failed", e);
+        }
+      };
+      refreshOnFocus();
+
+      return () => { mounted = false; };
+    }, [activeBranchId])
   );
+  // --- end auto refresh ---
 
   const employees = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = Array.isArray(users) ? users : [];
     return list
-      .filter((u) => (u?.role ?? "user") === "user")
-      .filter((u) => {
-        const branchId = (u as any)?.branch_id ?? (u as any)?.branch?._id ?? (u as any)?.branch ?? null;
-        if (!activeBranchId) return true;
-        if (!branchId) return true;
-        return branchId === activeBranchId;
-      })
-      .filter((u) => {
-        if (!q) return true;
-        const name = u.fullname ?? `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
-        const full = `${name} ${u.position ?? ""}`.toLowerCase();
-        return full.includes(q);
-      });
+  .filter((u) => (u?.role ?? "user") === "user")
+  .filter((u) => {
+    const branchId = (u as any)?.branch_id ?? (u as any)?.branch?._id ?? (u as any)?.branch ?? null;
+    if (!activeBranchId) return true;
+    if (!branchId) return true;
+    return branchId === activeBranchId;
+  })
+  .filter((u) => {
+    if (!q) return true;
+    const name = u.fullname ?? `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
+    const full = `${name} ${u.position ?? ""}`.toLowerCase();
+    return full.includes(q);
+  })
+  .sort((a: any, b: any) => {
+    // Try sort by createdAt → fallback to updatedAt → fallback to _id
+    const dateA = new Date(a.createdAt || a.updateDate || 0).getTime();
+    const dateB = new Date(b.createdAt || b.updateDate || 0).getTime();
+    return dateB - dateA; // DESC => latest first
+  });
+
   }, [users, query, version, activeBranchId]);
 
   const navAndLog = (routeName: string, params?: any) => {
@@ -302,31 +319,6 @@ const StaffRecordScreen: React.FC = (props: any) => {
     console.log(`Navigate -> ${routeName}`, allParams);
     navigation.navigate(routeName as any, allParams);
   };
-
-  // const openAddStaff = () => {
-  //   navigation.navigate("AddStaffScreen" as any, {
-  //     userId,
-  //     langId,
-  //     branchId: activeBranchId ?? undefined,
-  //     onSave: (newStaff: Partial<ProfileUser> & { id?: string; firstname: string; lastname?: string; position?: string; role?: string }) => {
-  //       const newId = `U${(users.length + 1).toString().padStart(3, "0")}`;
-  //       const payload: ProfileUser = {
-  //         id: newId,
-  //         fullname: `${newStaff.firstname ?? "New"} ${newStaff.lastname ?? "Staff"}`.trim(),
-  //         username: ((newStaff.firstname ?? "user") as string).toLowerCase(),
-  //         role: newStaff.role ?? "user",
-  //         position: newStaff.position ?? "",
-  //         branch_id: activeBranchId,
-  //         createDate: new Date().toISOString(),
-  //         updateDate: new Date().toISOString(),
-  //       } as any;
-  //       setUsers((prev) => [payload, ...prev]);
-  //       setVersion((v) => v + 1);
-  //       showSuccessToast("Staff added");
-  //     },
-  //   });
-  // };
-  // replace your existing openAddStaff with this async version
   const openAddStaff = async () => {
     try {
       // Try to use existing activeBranchId first
@@ -383,7 +375,6 @@ const StaffRecordScreen: React.FC = (props: any) => {
       });
     }
   };
-
 
   const openStaffProfile = (staffId: string) => {
     const staff = safeFind(users, (u) => (u as any).id === staffId || (u as any)._id === staffId);

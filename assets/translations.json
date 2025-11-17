@@ -309,7 +309,21 @@
     "No_notifications": "No Notifications",
     "Contact_us": "Contact us",
     "No_records_for_selected_week": "No records for selected week",
-    "No_records_for_selected_month": "No records for selected month"
+    "No_records_for_selected_month": "No records for selected month",
+    "selectStaffFirst": "Please select staff first",
+    "noDateSelected": "No date selected",
+    "selectBranch": "Please select branch",
+    "invalidDuration": "Invalid duration",
+    "noValidDateForSchedule": "No valid date selected for schedule (abort)",
+    "scheduleCleared": "Schedule cleared",
+    "currentWeekAlreadyAdded": "Current week schedule already added",
+    "finishEditingSchedule": "Please finish editing the schedule",
+    "fixErrorsBeforeSaving": "Please fix errors before saving",
+    "scheduleAlreadyAdded": "Schedule already added for this day",
+    "confirmSavingSchedule": "Confirm saving of staff’s work schedule.",
+    "noValidSchedulesToCreate": "No valid schedules to create",
+    "staffAssignedToBranch": "Staff Assigned to Your Branch",
+    "schedulesCreatedSuccessfully": "Schedules created successfully"
   },
   "de": {
     "profile": "Profil",
@@ -619,6 +633,20 @@
     "No_notifications": "Keine Benachrichtigungen",
     "Contact_us": "Kontaktieren Sie uns",
     "No_records_for_selected_week": "Für die ausgewählte Woche liegen keine Datensätze vor.",
-    "No_records_for_selected_month": "Für den ausgewählten Monat liegen keine Datensätze vor."
+    "No_records_for_selected_month": "Für den ausgewählten Monat liegen keine Datensätze vor.",
+    "selectStaffFirst": "Bitte wählen Sie zuerst das Personal aus",
+    "noDateSelected": "Kein Datum ausgewählt",
+    "selectBranch": "Bitte wählen Sie die Filiale aus",
+    "invalidDuration": "Ungültige Dauer",
+    "noValidDateForSchedule": "Kein gültiges Datum für den Zeitplan ausgewählt (Abbruch)",
+    "scheduleCleared": "Zeitplan gelöscht",
+    "currentWeekAlreadyAdded": "Der Zeitplan für diese Woche wurde bereits hinzugefügt",
+    "finishEditingSchedule": "Bitte beenden Sie die Bearbeitung des Zeitplans",
+    "fixErrorsBeforeSaving": "Bitte beheben Sie Fehler, bevor Sie speichern",
+    "scheduleAlreadyAdded": "Für diesen Tag wurde bereits ein Zeitplan hinzugefügt",
+    "confirmSavingSchedule": "Bestätigen Sie das Speichern des Arbeitsplans des Personals.",
+    "noValidSchedulesToCreate": "Keine gültigen Zeitpläne zum Erstellen",
+    "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
+    "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt"
   }
 }
