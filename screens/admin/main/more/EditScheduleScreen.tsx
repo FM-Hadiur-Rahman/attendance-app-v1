@@ -32,6 +32,14 @@ import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
 
+
+type Branch = {
+  _id?: string;
+  id?: string;
+  name?: string;
+};
+
+
 type LocalUser = {
     id: string;
     fullname: string;
@@ -98,7 +106,14 @@ export default function EditScheduleScreen(props: any) {
         return users.map((u) => {
             const id = (u as any)._id ?? (u as any).id ?? "";
             const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
-            const branch_id = typeof u.branch === 'string' ? u.branch : (u.branch && (u.branch._id ?? u.branch.id)) ?? (u as any).branch_id ?? "";
+                   let branch_id = "";
+        if (typeof u.branch === "string") {
+            branch_id = u.branch;
+        } else if (u.branch) {
+            branch_id = (u.branch._id ?? (u.branch as any).id) ?? ""; // safe fallback for API that might include id
+        } else if (u.branch_id) {
+            branch_id = u.branch_id;
+        }
             return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
         });
     };
@@ -1044,14 +1059,14 @@ export default function EditScheduleScreen(props: any) {
                 </View>
             </ScrollView>
             <View style={styles.footerButtonWrap}>
-                <Button1 text={route.params?.id ? (lang.Save_Changes) : (lang.Add_Schedule)} width={"100%"} onPress={onFooterSaveAndBack} />
+                <Button1 text={lang.Save_Changes} width={"100%"} onPress={onFooterSaveAndBack} />
             </View>
-            <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
-                <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); setModalEditingId(null); }} pointerEvents="auto">
+            <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false);  }}>
+                <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true);}} pointerEvents="auto">
 
                     <View style={styles.modalContainer}>
                         <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>{modalEditingId ? lang.Edit_Schedule : lang.Add_Schedule}</Text>
+                        <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
                         <View>
                             <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
                                 <View

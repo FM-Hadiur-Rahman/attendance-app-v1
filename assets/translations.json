@@ -325,9 +325,12 @@
     "noValidSchedulesToCreate": "No valid schedules to create",
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
     "schedulesCreatedSuccessfully": "Schedules created successfully",
-    "editProfile": "Edit Profile",
-    "editPhoneNumber": "Edit Phone Number",
-    "editEmail": "Edit Email"
+
+    "noScheduleToday1": "No assignment or shift scheduled for today.",
+     "editProfile": "Edit Profile",
+      "editPhoneNumber": "Edit Phone Number",
+       "editEmail": "Edit Email"
+
   },
   "de": {
     "profile": "Profil",
@@ -653,8 +656,15 @@
     "noValidSchedulesToCreate": "Keine gültigen Zeitpläne zum Erstellen",
     "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
     "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt",
+
     "editProfile": "Profil bearbeiten",
     "editPhoneNumber": "Telefonnummer bearbeiten",
     "editEmail": "E-Mail bearbeiten"
+
+    "noScheduleToday1": "Heute sind keine Aufgaben oder Schichten geplant.",
+     "editProfile": "Profil bearbeiten",
+       "editPhoneNumber": "Telefonnummer bearbeiten",
+        "editEmail": "E-Mail bearbeiten"
+
   }
 }

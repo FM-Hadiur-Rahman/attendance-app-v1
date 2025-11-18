@@ -15,7 +15,6 @@ import colors from '../../styles/Colors';
 import { GroupedContactList, contactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
 import fonts from '../../styles/Fonts';
-import translations from '../../assets/translations.json';
 import { contents, Content } from '../../api/Content';
 
 type RouteParams = {
@@ -30,6 +29,8 @@ type RouteParams = {
     [k: string]: any;
   };
 };
+
+const translations = require('../../assets/translations.json');
 
 const TermsScreen = () => {
   const { width } = Dimensions.get('window');
@@ -122,7 +123,7 @@ const TermsScreen = () => {
             {termsContent ? (
               <Text style={styles.termDescription}>{termsContent.body}</Text>
             ) : (
-              <Text style={styles.termDescription}>No terms available</Text>
+              <Text style={styles.termDescription}>{lang.No_terms_available}</Text>
             )}
           </View>
         </View>
@@ -148,7 +149,6 @@ const styles = StyleSheet.create({
   scrollContainer: {
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 20,
   },
   logoImage: {
     width: 143,
@@ -172,6 +172,5 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.l,
     lineHeight: 16,
     color: colors.text,
-    marginBottom: 20,
   },
 });

@@ -137,6 +137,7 @@ export const getBranchDetails = async (branchId: string) => {
     const response = await axiosInstance.get(`/branch/${branchId}`);
     const branch = response.data?.branch || response.data?.data || response.data;
     if (!branch) throw new Error("Branch not found");
+
     let address: string | null = null;
     if (typeof branch.address === "string") {
       address = branch.address;
@@ -146,6 +147,7 @@ export const getBranchDetails = async (branchId: string) => {
     } else {
       address = "Address not available";
     }
+
     return {
       id: branch._id,
       name: branch.name,
@@ -153,12 +155,14 @@ export const getBranchDetails = async (branchId: string) => {
       phone: branch.phone || "N/A",
       email: branch.email || "N/A",
       raw: branch,
+      location: branch.location || null, // ✅ include location here
     };
   } catch (error: any) {
     console.error("❌ Error fetching branch details:", error.response?.data || error.message);
     return null;
   }
 };
+
 
 export const getWeeklySchedules = async (opts: { userId?: string; timezone?: string } = {}) => {
   const { userId, timezone = "Asia/Colombo" } = opts;

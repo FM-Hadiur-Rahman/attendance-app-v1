@@ -53,8 +53,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [refreshing, setRefreshing] = useState(false);
   const [showCheckoutPopup, setShowCheckoutPopup] = useState(false);
   const currentLang = langId || "en";
-  const lang = translations[currentLang];
+  const lang = translations[currentLang as keyof typeof translations] || translations['en'];
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
+  
 
 
   // branchInfo will always contain a displayable string in `.address`
@@ -144,36 +145,38 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return null;
   };
 
-  useEffect(() => {
-    let mounted = true;
+useEffect(() => {
+  let mounted = true;
 
-    const fetchAndResolve = async () => {
-      const branchId =
-        todaySchedule?.raw?.branch_id?._id ??
-        todaySchedule?.branch?.rawBranch?._id ??
-        todaySchedule?.branch_id?._id ??
-        todaySchedule?.branch?.id ??
-        null;
+  const fetchAndResolve = async () => {
+    const branchId =
+      todaySchedule?.raw?.branch_id?._id ??
+      todaySchedule?.branch?.rawBranch?._id ??
+      todaySchedule?.branch_id?._id ??
+      todaySchedule?.branch?.id ??
+      null;
 
-      if (!branchId) return;
+    if (!branchId) return;
 
-      try {
-        const branch = await getBranchDetails(branchId);
-        if (!branch) return;
+    try {
+      const branch = await getBranchDetails(branchId);
+      if (!branch) return;
 
-        const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
-        let resolvedAddress: string | null = null;
-        let finalLat: number | undefined;
-        let finalLon: number | undefined;
+      const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
+      let resolvedAddress: string | null = null;
+      let finalLat: number | undefined;
+      let finalLon: number | undefined;
 
-        if (typeof branch.address === "string" && branch.address.trim().length > 0) {
-          resolvedAddress = branch.address;
-        }
+      if (typeof branch.address === "string" && branch.address.trim().length > 0) {
+        resolvedAddress = branch.address;
+      }
 
-        if (coords) {
-          finalLat = coords.lat;
-          finalLon = coords.lon;
+      if (coords) {
+        finalLat = coords.lat;
+        finalLon = coords.lon;
 
+        // ✅ Only call if finalLat and finalLon are numbers
+        if (typeof finalLat === "number" && typeof finalLon === "number") {
           const firstTry = await tryReverseGeocode(finalLat, finalLon);
           if (firstTry) {
             resolvedAddress = firstTry;
@@ -181,62 +184,81 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
             const swappedTry = await tryReverseGeocode(finalLon, finalLat);
             if (swappedTry) {
               resolvedAddress = swappedTry;
-              const tmp = finalLat; finalLat = finalLon; finalLon = tmp;
+              const tmp = finalLat;
+              finalLat = finalLon;
+              finalLon = tmp;
             }
           }
         }
+      }
 
-        if (!resolvedAddress && typeof finalLat === "number" && typeof finalLon === "number") {
-          resolvedAddress = `Lat: ${finalLat.toFixed(6)}, Lon: ${finalLon.toFixed(6)}`;
-        }
+      if (!resolvedAddress && typeof finalLat === "number" && typeof finalLon === "number") {
+        resolvedAddress = `Lat: ${finalLat.toFixed(6)}, Lon: ${finalLon.toFixed(6)}`;
+      }
 
-        if (!resolvedAddress) {
-          resolvedAddress = branch.name ?? "Address not available";
-        }
+      if (!resolvedAddress) {
+        resolvedAddress = branch.name ?? "Address not available";
+      }
 
-        if (mounted) {
-          setBranchInfo({
-            name: branch.name ?? branch.id ?? "Branch",
-            address: resolvedAddress,
-            coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
+      if (mounted) {
+        setBranchInfo({
+          name: branch.name ?? branch.id ?? "Branch",
+          address: resolvedAddress ?? undefined,
+          coordinates:
+            typeof finalLat === "number" && typeof finalLon === "number"
               ? { latitude: finalLat, longitude: finalLon }
               : null,
-            raw: branch.raw ?? branch,
-          });
-          console.log("✅ branchInfo updated:", { id: branch.id ?? branch._id, name: branch.name, address: resolvedAddress });
-        }
-      } catch (err) {
-        console.error("❌ Error resolving branch address:", err);
-        if (mounted) {
-          setBranchInfo((prev: any) => ({
-            ...(prev || {}),
-            name: prev?.name ?? (todaySchedule?.branch?.name ?? "Branch"),
-            address: prev?.address ?? "Address not available",
-          }));
-        }
+          raw: branch.raw ?? branch,
+        });
       }
-    };
-
-    fetchAndResolve();
-    return () => { mounted = false; };
-  }, [todaySchedule]);
-
-  useEffect(() => {
-    if (todaySchedule?.raw?.branch_id?._id) {
-      getBranchDetails(todaySchedule.raw.branch_id._id)
-        .then((branch) => {
-          if (branch) setBranchInfo(prev => prev ?? {
-            name: branch.name,
-            address: branch.address ?? undefined,
-            coordinates: (branch.location?.coordinates && Array.isArray(branch.location.coordinates))
-              ? { latitude: branch.location.coordinates[1], longitude: branch.location.coordinates[0] }
-              : null,
-            raw: branch.raw ?? branch,
-          });
-        })
-        .catch((err) => console.error("❌ Branch info fetch failed:", err));
+    } catch (err) {
+      console.error("❌ Error resolving branch address:", err);
+      if (mounted) {
+        setBranchInfo((prev: any) => ({
+          ...(prev || {}),
+          name: prev?.name ?? todaySchedule?.branch?.name ?? "Branch",
+          address: prev?.address ?? "Address not available",
+        }));
+      }
     }
-  }, [todaySchedule]);
+  };
+
+  fetchAndResolve();
+  return () => {
+    mounted = false;
+  };
+}, [todaySchedule]);
+
+
+useEffect(() => {
+  if (todaySchedule?.raw?.branch_id?._id) {
+    getBranchDetails(todaySchedule.raw.branch_id._id)
+      .then((branch) => {
+        if (!branch) return;
+
+        // Extract coordinates from branch or branch.raw
+        const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
+        let finalLat: number | undefined;
+        let finalLon: number | undefined;
+
+        if (coords) {
+          finalLat = coords.lat;
+          finalLon = coords.lon;
+        }
+
+        setBranchInfo(prev => prev ?? {
+          name: branch.name,
+          address: branch.address ?? undefined,
+          coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
+            ? { latitude: finalLat, longitude: finalLon }
+            : null,
+          raw: branch.raw ?? branch,
+        });
+      })
+      .catch((err) => console.error("❌ Branch info fetch failed:", err));
+  }
+}, [todaySchedule]);
+
 
   const handleCheckInAttempt = () => {
     if (!todaySchedule) return;
@@ -253,82 +275,86 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return true;
   };
 
-  const loadTodaySchedule = async () => {
-    try {
-      setLoading(true);
+const loadTodaySchedule = async () => {
+  try {
+    setLoading(true);
 
-      const branchId = currentUser?.branch_id;
+    const branchId = currentUser?.branch_id;
 
-      const resp = await getTodaySchedule({
-        userId,
-        branchId,
-        timezone: "Asia/Colombo",
-      });
+    const resp = await getTodaySchedule({
+      userId,
+      branchId,
+      timezone: "Asia/Colombo",
+    });
 
-      const schedules = resp?.schedules ?? [];
-      const rawToday = resp?.todaySchedule ?? resp ?? null;
+    const schedules = resp?.schedules ?? [];
+    const rawToday = resp?.todaySchedule ?? resp ?? null;
 
-      console.log("📌 Today schedule:", rawToday);
-      console.log("📦 Total schedules fetched:", schedules.length);
+    console.log("📌 Today schedule:", rawToday);
+    console.log("📦 Total schedules fetched:", schedules.length);
 
-      if (!rawToday) {
-        setTodaySchedule(null);
-        setBranchInfo(null);
-        setAllSchedules(schedules);
-        return;
-      }
-
-      const raw = rawToday.raw ?? rawToday;
-      const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
-      const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
-
-      let duration = typeof raw.duration === "number" ? raw.duration : 0;
-
-      if (start_time && end_time && !duration) {
-        try {
-          const [sh, sm] = String(start_time).split(":");
-          const [eh, em] = String(end_time).split(":");
-
-          const sD = new Date();
-          sD.setHours(Number(sh), Number(sm), 0, 0);
-
-          const eD = new Date();
-          eD.setHours(Number(eh), Number(em), 0, 0);
-
-          if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
-
-          duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
-        } catch (e) {
-          console.warn("❌ Failed to compute duration:", e);
-        }
-      }
-
-      const branchName = rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? null;
-      const branchAddress = raw.branch_id?.address ?? raw.branch?.address ?? "";
-
-      const scheduleObj = {
-        start_time,
-        end_time,
-        duration,
-        date: raw.date ?? new Date().toISOString().split("T")[0],
-        branch: branchName
-          ? { name: branchName, address: branchAddress, rawBranch: raw.branch_id ?? raw.branch ?? null }
-          : null,
-        raw,
-      };
-
-      setTodaySchedule(scheduleObj);
-      setBranchInfo(scheduleObj.branch);
-      setAllSchedules(schedules);
-    } catch (err) {
-      console.error("❌ Error loading today's schedule:", err);
+    if (!rawToday || !("start_time" in rawToday)) {
+      // rawToday is either null or doesn't have schedule info
       setTodaySchedule(null);
       setBranchInfo(null);
-      setAllSchedules([]);
-    } finally {
-      setLoading(false);
+      setAllSchedules(schedules);
+      return;
     }
-  };
+
+    // Now TypeScript knows rawToday has schedule properties
+    const raw = "raw" in rawToday ? rawToday.raw : rawToday;
+
+    const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
+    const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
+
+    let duration = typeof raw.duration === "number" ? raw.duration : 0;
+
+    if (start_time && end_time && !duration) {
+      try {
+        const [sh, sm] = String(start_time).split(":");
+        const [eh, em] = String(end_time).split(":");
+
+        const sD = new Date();
+        sD.setHours(Number(sh), Number(sm), 0, 0);
+
+        const eD = new Date();
+        eD.setHours(Number(eh), Number(em), 0, 0);
+
+        if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
+
+        duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
+      } catch (e) {
+        console.warn("❌ Failed to compute duration:", e);
+      }
+    }
+
+    const branchName = rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? null;
+    const branchAddress = raw.branch_id?.address ?? raw.branch?.address ?? "";
+
+    const scheduleObj = {
+      start_time,
+      end_time,
+      duration,
+      date: raw.date ?? new Date().toISOString().split("T")[0],
+      branch: branchName
+        ? { name: branchName, address: branchAddress, rawBranch: raw.branch_id ?? raw.branch ?? null }
+        : null,
+      raw,
+    };
+
+    setTodaySchedule(scheduleObj);
+    setBranchInfo(scheduleObj.branch);
+    setAllSchedules(schedules);
+  } catch (err) {
+    console.error("❌ Error loading today's schedule:", err);
+    setTodaySchedule(null);
+    setBranchInfo(null);
+    setAllSchedules([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const refreshLocation = async () => {
     try {
@@ -513,40 +539,41 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return updated;
   };
 
-  useEffect(() => {
-    const fetchBranchAddress = async () => {
-      const branchId = todaySchedule?.branch?.rawBranch?._id;
-      if (!branchId) return;
+useEffect(() => {
+  const fetchBranchAddress = async () => {
+    const branchId = todaySchedule?.branch?.rawBranch?._id;
+    if (!branchId) return;
 
-      try {
-        const branch = await getBranchDetails(branchId);
+    try {
+      const branch = await getBranchDetails(branchId);
 
-        if (!branch?.location?.coordinates) return;
+      if (!branch || !("location" in branch) || !branch.location?.coordinates) return;
 
-        const [longitude, latitude] = branch.location.coordinates; // GeoJSON format
+      const [longitude, latitude] = branch.location.coordinates;
 
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
 
-        const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (result.length > 0) {
-          const place = result[0];
-          const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}${place.region ? ", " + place.region : ""}${place.postalCode ? ", " + place.postalCode : ""}${place.country ? ", " + place.country : ""}`;
+      const result = await Location.reverseGeocodeAsync({ latitude, longitude });
+      if (result.length > 0) {
+        const place = result[0];
+        const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}${place.region ? ", " + place.region : ""}${place.postalCode ? ", " + place.postalCode : ""}${place.country ? ", " + place.country : ""}`;
 
-          setBranchInfo({
-            name: branch.name,
-            address: formatted,
-            coordinates: { latitude, longitude },
-          });
-          console.log("✅ Branch address:", formatted);
-        }
-      } catch (err) {
-        console.log("❌ Error fetching branch address:", err);
+        setBranchInfo({
+          name: branch.name,
+          address: formatted,
+          coordinates: { latitude, longitude },
+        });
+        console.log("✅ Branch address:", formatted);
       }
-    };
+    } catch (err) {
+      console.log("❌ Error fetching branch address:", err);
+    }
+  };
 
-    fetchBranchAddress();
-  }, [todaySchedule]);
+  fetchBranchAddress();
+}, [todaySchedule]);
+
 
   // shop address from branch coordinates
   const [shopAddress, setShopAddress] = useState<string | null>(null);
@@ -879,14 +906,15 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return () => clearInterval(interval);
   }, [todayRecord]);
 
-  const formatTo12Hour = (time) => {
-    if (!time) return "";
-    const [hour, minute] = time.split(":");
-    let h = parseInt(hour, 10);
-    const ampm = h >= 12 ? "PM" : "AM";
-    h = h % 12 || 12; // convert 0 to 12
-    return `${h}:${minute} ${ampm}`;
-  };
+const formatTo12Hour = (time?: string): string => {
+  if (!time) return "";
+  const [hour, minute] = time.split(":");
+  let h = parseInt(hour, 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12; // convert 0 to 12
+  return `${h}:${minute} ${ampm}`;
+};
+
 
 
   useEffect(() => {
@@ -1075,7 +1103,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                       { color: colors.button_text, },
                     ]}
                   >
-                    No assignment or shift scheduled for today.
+                   
+                   {lang.noScheduleToday1}
                   </Text>
                 </View>
               )}
