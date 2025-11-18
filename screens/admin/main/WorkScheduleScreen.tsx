@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
+
 import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
@@ -22,6 +23,7 @@ import { getAllBranches, getBranchById } from "../../../api/Branchs";
 import { getSchedulesForDate } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
 import { ScheduleItem } from "../../../api/schedules";
+
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -157,29 +159,37 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
   const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
   const loadSchedules = useCallback(async (date: Date) => {
+    if (!user) return;
     try {
       setLoading(true);
       const dateYMD = date.toISOString().split("T")[0];
-
       let data = await getSchedulesForDate(dateYMD);
 
-      // Filter by activeBranchId
-      if (activeBranchId) {
-        data = data.filter((s) => {
-          const sBranchId =
-            typeof s.branch_id === "object" ? s.branch_id?._id : s.branch_id;
-          return sBranchId === activeBranchId;
-        });
-      }
+      const loggedUserBranchId =
+        typeof user.branch === "object" ? user.branch?._id : user.branch;
+
+      // Strict branch match filter
+      data = data.filter((s) => {
+        const employeeBranchId =
+          typeof s.employee_id.branch === "object"
+            ? s.employee_id.branch?._id
+            : s.employee_id.branch;
+
+        return employeeBranchId === loggedUserBranchId;
+      });
 
       setSchedules(data);
-
-    } catch (error) {
-      console.error("❌ Error loading schedules:", error);
+    } catch (err) {
+      console.error("❌ Error loading schedules:", err);
     } finally {
       setLoading(false);
     }
-  }, [activeBranchId]);
+  }, [user]);
+
+
+
+
+
 
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
@@ -219,46 +229,20 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
     const displayYMD = dateToYMD(displayDate);
 
-    // Filter schedules for this date
-    const filteredSchedules = schedules
+    return schedules
       .filter((s) => {
         if (!s?.date) return false;
 
-        // match date
         const schedDate = new Date(s.date).toISOString().split("T")[0];
-        if (schedDate !== displayYMD) return false;
-
-        // match branch
-        const sBranchId =
-          typeof s.branch_id === "object"
-            ? s.branch_id?._id
-            : s.branch_id;
-
-        if (activeBranchId && sBranchId !== activeBranchId) {
-          return false; // skip if branch doesn't match
-        }
-
-        return true;
+        return schedDate === displayYMD;
       })
       .map((s) => ({
         schedule: s,
         user: s.employee_id || null,
       }))
       .filter((x) => x.user && x.user.role === "user");
-
-    // Deduplicate by schedule ID, keep the last one
-    const uniqueById: Record<string, typeof filteredSchedules[0]> = {};
-    filteredSchedules.forEach((item) => {
-      const id = item.schedule._id || item.schedule.id;
-      if (id) {
-        // overwrite older duplicates automatically
-        uniqueById[id] = item;
-      }
-    });
-
-    // Convert back to array
-    return Object.values(uniqueById);
   }, [schedules, displayDate]);
+
 
   // If user presses the floating add button
   const openAddScreen = () => {
@@ -524,29 +508,36 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           ) : schedulesForDate.length === 0 ? (
             <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text>
           ) : (
-            schedulesForDate.map(({ schedule, user }, index) => {
-              if (!user) return null;
 
-              // Always use a unique key (covers both backend + local)
-              const uniqueKey =
-                schedule._id ||
-                schedule.id ||
-                `${schedule.date}-${schedule.start_time}-${user.user_id}-${index}`;
 
-              //  Convert to readable time format
-              const startTime = schedule.start_time || "";
-              const endTime = schedule.end_time || "";
-              const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+schedulesForDate.map(({ schedule, user }, index) => {
+  if (!user) return null;
 
-              const userBranchId = typeof user.branch === "object" ? user.branch?._id : user.branch;
-              const scheduleBranchId = typeof schedule.branch_id === "object" ? schedule.branch_id?._id : schedule.branch_id;
+  // Unique Key
+  const uniqueKey =
+    schedule._id ||
+    schedule.id ||
+    `${schedule.date}-${schedule.start_time}-${user.user_id}-${index}`;
 
-              // Show branch if the IDs are different
-              const showBranch = userBranchId && scheduleBranchId && userBranchId !== scheduleBranchId;
+  // Time String
+  const startTime = schedule.start_time || "";
+  const endTime = schedule.end_time || "";
+  const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
 
-              // If showing branch, get the name from the branch map
-              const branchNameToShow = showBranch ? branchMap[userBranchId] || "Unknown Branch" : "";
+  // 🔹 Branch Logic: compare schedule branch vs employee's default branch
+  const employeeBranchId =
+    typeof user.branch === "object" ? user.branch?._id : user.branch;
 
+  const scheduleBranchId =
+    typeof schedule.branch_id === "object" ? schedule.branch_id?._id : schedule.branch_id;
+
+  const scheduleBranchName =
+    typeof schedule.branch_id === "object"
+      ? schedule.branch_id?.name
+      : branchMap[scheduleBranchId] || "Unknown Branch";
+
+  // Show branch name only if schedule branch is different from employee's branch
+  const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
               return (
                 <TouchableOpacity
                   key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}`}
@@ -562,7 +553,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                           style={styles.branchIcon}
                           resizeMode="contain"
                         />
-                        <Text style={styles.branchName}>{branchNameToShow}</Text>
+                        <Text style={styles.branchName}>{scheduleBranchName}</Text>
                       </View>
                     )}
 
