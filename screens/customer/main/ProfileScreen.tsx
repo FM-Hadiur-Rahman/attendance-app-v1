@@ -344,7 +344,7 @@ export default function ProfileScreen(props: any) {
             paddingLeft={20}
             paddingTop={12}
             paddingBottom={12}
-            marginTop={20}
+            marginTop={0}
             marginBottom={30}
             alignItems="flex-start"
           >
