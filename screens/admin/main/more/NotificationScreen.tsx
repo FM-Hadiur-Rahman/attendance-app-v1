@@ -129,7 +129,7 @@ const AdminNotificationScreen: React.FC = () => {
       }
 
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }),
+        handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }as any),
       });
     })();
   }, []);
@@ -159,7 +159,7 @@ const AdminNotificationScreen: React.FC = () => {
     (async () => {
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? profile.branch?.id ?? null;
+        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? null;
         if (profBranch && String(profBranch) !== String(effectiveBranchId)) {
           setEffectiveBranchId(String(profBranch));
         }
@@ -518,14 +518,6 @@ const AdminNotificationScreen: React.FC = () => {
       />
 
       <View style={styles.body}>
-        {/* notifier running toast */}
-        {/* {notifierRunning ? (
-          // <View style={styles.notifierBanner}>
-            <ActivityIndicator size="large" color={colors.primary}  />
-            // <Text style={styles.notifierText}>Checking attendance for new check-ins...</Text>
-          // </View>
-        ) : null} */}
-
         {loading ? (
           <View style={{ padding: 20, alignItems: "center", justifyContent: "center" }}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -598,8 +590,4 @@ const styles = StyleSheet.create({
   timeText: { fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any, fontFamily: fonts.family.regular, color: colors.subtext, minHeight: 14 },
   unreadDotContainer: { position: "absolute", right: 12, top: 12, zIndex: 1000 },
   unreadDot: { width: 10, height: 10, borderRadius: 10, backgroundColor: colors.primary },
-
-  // notifier banner
-  notifierBanner: { flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 8, backgroundColor: colors.background, marginBottom: 10 },
-  notifierText: { color: colors.subtext, fontSize: fonts.size.s, fontFamily: fonts.family.regular },
 });

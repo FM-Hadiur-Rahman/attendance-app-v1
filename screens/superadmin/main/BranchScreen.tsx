@@ -65,35 +65,6 @@ const BranchScreen: React.FC = (props: any) => {
     }
   };
 
-  // --- geocode once (no caching) with safer headers and timeout fallback ---
-  // const geocodeOnce = async (lat: number, lon: number): Promise<string> => {
-  //   // Nominatim etc. may fail; return lat,lon fallback on any failure
-  //   try {
-  //     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
-  //     // small timeout helper
-  //     const controller = new AbortController();
-  //     const timeout = setTimeout(() => controller.abort(), 8000); // 8s
-  //     const res = await fetch(url, {
-  //       method: 'GET',
-  //       signal: controller.signal,
-  //       headers: {
-  //         'User-Agent': 'Mr-Baker-App/1.0 (your-email@example.com)',
-  //         Accept: 'application/json',
-  //       },
-  //     });
-  //     clearTimeout(timeout);
-  //     if (!res.ok) {
-  //       // fallback to coords string
-  //       return `${lat}, ${lon}`;
-  //     }
-  //     const json = await res.json();
-  //     return (json?.display_name as string) || `${lat}, ${lon}`;
-  //   } catch (e) {
-  //     // network error, timeout, or abort
-  //     return `${lat}, ${lon}`;
-  //   }
-  // };
-
   // REPLACE the existing geocodeOnce with this version
   const geocodeOnce = async (lat: number, lon: number): Promise<string> => {
     // try primary order (lat, lon), then fallback to swapped if result is not usable

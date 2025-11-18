@@ -126,7 +126,7 @@ const PrivacyScreen = () => {
               resizeMode="contain"
             />
 
-            <Text style={styles.heading}>Privacy Policy – Wholesale App</Text>
+            <Text style={styles.heading}>{lang.privacy_policy} – Attendance-App</Text>
 
             {terms.map((term, index) => (
               <CartBox

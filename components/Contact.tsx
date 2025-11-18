@@ -165,8 +165,8 @@ export const GroupedContactList = ({
             if (mounted && b) {
               setResolvedBranch({
                 _id: b._id,
-                phone: b.phone ?? null,
-                email: b.email ?? null,
+                phone: b.phone ?? undefined,
+                email: b.email ?? undefined,
               });
               setResolving(false);
               return;
@@ -176,7 +176,6 @@ export const GroupedContactList = ({
             // continue to fallback
           }
         }
-
         // fallback: get all branches and pick first with useful contact info
         //console.log('GroupedContactList -> fetching all branches fallback');
         const all = await getAllBranches();
@@ -185,8 +184,8 @@ export const GroupedContactList = ({
         if (first) {
           setResolvedBranch({
             _id: first._id,
-            phone: first.phone ?? null,
-            email: first.email ?? null,
+            phone: first.phone ?? undefined,
+            email: first.email ?? undefined,
           });
         } else {
           setResolvedBranch(null);
@@ -249,7 +248,6 @@ export const GroupedContactList = ({
       {itemsToRender.map((item, index) => (
         <ContactCard key={index} {...item} />
       ))}
-
       {/* optional: show resolution status for debugging */}
       {/* {resolving && <Text style={{ color: colors.subtext, marginTop: 8 }}>Resolving branch contact...</Text>} */}
       {!resolving && !resolvedBranch && (
@@ -258,7 +256,6 @@ export const GroupedContactList = ({
     </View>
   );
 };
-
 
 const styles = StyleSheet.create({
   groupCardWrapper: {

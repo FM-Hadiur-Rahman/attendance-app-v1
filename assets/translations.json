@@ -325,10 +325,12 @@
     "noValidSchedulesToCreate": "No valid schedules to create",
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
     "schedulesCreatedSuccessfully": "Schedules created successfully",
+
     "noScheduleToday1": "No assignment or shift scheduled for today.",
      "editProfile": "Edit Profile",
       "editPhoneNumber": "Edit Phone Number",
        "editEmail": "Edit Email"
+
   },
   "de": {
     "profile": "Profil",
@@ -659,6 +661,7 @@
        "editPhoneNumber": "Telefonnummer bearbeiten",
         "editEmail": "E-Mail bearbeiten"
        
+
 
   }
 }
