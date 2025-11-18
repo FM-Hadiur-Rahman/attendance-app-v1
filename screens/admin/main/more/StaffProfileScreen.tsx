@@ -57,8 +57,8 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const { id, userId: navUserId, langId } = route.params || {};
-  const currentLang = langId || "en";
-  const lang = translations[currentLang];
+const currentLang = (langId || "en") as keyof typeof translations;
+const lang = translations[currentLang];
 
   console.log("Route Params =>", route.params);
 
@@ -930,7 +930,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         />
         <View style={styles.modalContainer}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editPosition}</Text>
+          <Text style={styles.modalTitle}>{lang.position}</Text>
           <InputBox
             label="Position"
             value={positionInput}
@@ -941,7 +941,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSavePosition}
-            disabled={saving}
           />
         </View>
       </Modal>
@@ -977,7 +976,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSaveEmail}
-            disabled={saving}
           />
         </View>
       </Modal>
@@ -1062,7 +1060,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSavePhone}
-            disabled={saving}
           />
         </View>
       </Modal>
