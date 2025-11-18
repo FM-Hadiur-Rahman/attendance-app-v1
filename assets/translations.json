@@ -325,8 +325,12 @@
     "noValidSchedulesToCreate": "No valid schedules to create",
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
     "schedulesCreatedSuccessfully": "Schedules created successfully",
-    "No_content_found":"No content found",
-    "No_terms_available":"No terms available"
+
+    "noScheduleToday1": "No assignment or shift scheduled for today.",
+     "editProfile": "Edit Profile",
+      "editPhoneNumber": "Edit Phone Number",
+       "editEmail": "Edit Email"
+
   },
   "de": {
     "profile": "Profil",
@@ -652,7 +656,12 @@
     "noValidSchedulesToCreate": "Keine gültigen Zeitpläne zum Erstellen",
     "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
     "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt",
-    "No_content_found":"Kein Inhalt gefunden",
-    "No_terms_available":"Keine Bedingungen verfügbar"
+    "noScheduleToday1": "Heute sind keine Aufgaben oder Schichten geplant.",
+     "editProfile": "Profil bearbeiten",
+       "editPhoneNumber": "Telefonnummer bearbeiten",
+        "editEmail": "E-Mail bearbeiten"
+       
+
+
   }
 }
