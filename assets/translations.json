@@ -324,7 +324,9 @@
     "confirmSavingSchedule": "Confirm saving of staff’s work schedule.",
     "noValidSchedulesToCreate": "No valid schedules to create",
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
-    "schedulesCreatedSuccessfully": "Schedules created successfully"
+    "schedulesCreatedSuccessfully": "Schedules created successfully",
+    "No_content_found":"No content found",
+    "No_terms_available":"No terms available"
   },
   "de": {
     "profile": "Profil",
@@ -649,6 +651,8 @@
     "confirmSavingSchedule": "Bestätigen Sie das Speichern des Arbeitsplans des Personals.",
     "noValidSchedulesToCreate": "Keine gültigen Zeitpläne zum Erstellen",
     "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
-    "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt"
+    "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt",
+    "No_content_found":"Kein Inhalt gefunden",
+    "No_terms_available":"Keine Bedingungen verfügbar"
   }
 }

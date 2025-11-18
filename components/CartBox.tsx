@@ -60,8 +60,8 @@ const CartBox: React.FC<CartBoxProps> = ({
     activeOpacity = 0.8,
 }) => {
     const boxStyle: StyleProp<ViewStyle> = {
-        width,
-        height,
+        width: width as any, 
+        height: height as any, 
         borderRadius,
         borderWidth,
         borderColor,

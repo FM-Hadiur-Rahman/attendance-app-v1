@@ -347,41 +347,41 @@ const DashboardScreen = (props: any) => {
           {lang.logout_confirm}
         </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-<Button1
-  text={lang.yes}
-  onPress={async () => {
-    setLogoutPopupVisible(false);
+          <Button1
+            text={lang.yes}
+            onPress={async () => {
+              setLogoutPopupVisible(false);
 
-    try {
-      // Call backend logout. axiosInstance will include Authorization header from AsyncStorage.
-      await apiLogout();
-      console.log('apiLogout() succeeded.');
-    } catch (err) {
-      console.warn('apiLogout() failed (ignored):', err);
-      // continue — we'll still clear local data and navigate
-    }
+              try {
+                // Call backend logout. axiosInstance will include Authorization header from AsyncStorage.
+                await apiLogout();
+                console.log('apiLogout() succeeded.');
+              } catch (err) {
+                console.warn('apiLogout() failed (ignored):', err);
+                // continue — we'll still clear local data and navigate
+              }
 
-    try {
-      // Ensure local storage is cleared (AuthService.logout may already do this).
-      await clearAllAuthData();
-      console.log('Cleared auth data (token & userId).');
-    } catch (err) {
-      console.warn('Failed to clear auth data on logout:', err);
-      // continue to navigate even if clearing fails
-    }
+              try {
+                // Ensure local storage is cleared (AuthService.logout may already do this).
+                await clearAllAuthData();
+                console.log('Cleared auth data (token & userId).');
+              } catch (err) {
+                console.warn('Failed to clear auth data on logout:', err);
+                // continue to navigate even if clearing fails
+              }
 
-    // reset navigation to login screen
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
-    });
+              // reset navigation to login screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "LoginScreen", params: { langId: selectedLanguage } }],
+              });
 
-    console.log('Logout -> navigated to LoginScreen with params:', { userId, langId: selectedLanguage });
-  }}
-  backgroundColor={colors.primary}
-  width={'48%'}
-  textStyle={{ color: colors.secondary }}
-/>
+              console.log('Logout -> navigated to LoginScreen with params:', { userId, langId: selectedLanguage });
+            }}
+            backgroundColor={colors.primary}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }}
+          />
 
 
           <Button1

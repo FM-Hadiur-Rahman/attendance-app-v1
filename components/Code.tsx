@@ -10,13 +10,16 @@ import {
   View,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-
-import translations from '../assets/translations.json';
 import Header from './Header';
 import colors from '../styles/Colors';
 
 type RootStackParamList = {
-  Country_CodeScreen: { selectedLang: string };
+  Country_CodeScreen: {
+    selectedLang: string;
+    onSelect?: (item: CountryItem) => void;
+    onClose?: () => void;
+    initialSelectedId?: number;
+  };
 };
 
 export interface CountryItem {
@@ -42,63 +45,64 @@ export const countryList: CountryItem[] = [
   { id: 7, name: 'Srilanka', code: '94', flag: require('../assets/icons/c_lion.png') },
 ];
 
+const translations = require('../assets/translations.json');
+
 const Code: React.FC<CodesCProps> = (props) => {
   const navigation = useNavigation();
 
-
-  const route = useRoute<RouteProp<RootStackParamList, 'Code'>>();
-  const { selectedLang } = route.params || { selectedLang: 'en'};
+  // const route = useRoute<RouteProp<RootStackParamList, 'Code'>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Country_CodeScreen'>>();
+  const { selectedLang } = route.params || { selectedLang: 'en' };
   const lang = translations[selectedLang] || translations['en'];
 
   // Allow props OR route.params
   const onSelect = props.onSelect || route.params?.onSelect;
   const onClose =
-  props.onClose ||
-  route.params?.onClose ||
-  (() => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      console.log('No navigator to go back to, closing screen');
-    }
-  });
+    props.onClose ||
+    route.params?.onClose ||
+    (() => {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        console.log('No navigator to go back to, closing screen');
+      }
+    });
   const initialSelectedId =
-  props.initialSelectedId ?? route.params?.initialSelectedId ?? null;
+    props.initialSelectedId ?? route.params?.initialSelectedId ?? null;
 
   const [selectedId, setSelectedId] = useState<number | null>(initialSelectedId);
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
-const choose = (item: CountryItem) => {
-  setSelectedId(item.id);
+  const choose = (item: CountryItem) => {
+    setSelectedId(item.id);
 
-  if (typeof onSelect === "function") {
-    onSelect(item);
-  }
-
-  setTimeout(() => {
-    if (typeof onClose === "function") {
-      onClose();
+    if (typeof onSelect === "function") {
+      onSelect(item);
     }
-  }, 50);
-};
 
+    setTimeout(() => {
+      if (typeof onClose === "function") {
+        onClose();
+      }
+    }, 50);
+  };
 
   return (
     <View style={styles.container}>
-       <Header
-          left={[
-                    {
-                      type: 'image',
-                      url: require('../assets/icons/back_b.png'),
-                       width: 23, 
-                       height: 23,
-                      onPress: () => navigation.goBack(),
-                    },
+      <Header
+        left={[
+          {
+            type: 'image',
+            url: require('../assets/icons/back_b.png'),
+            width: 23,
+            height: 23,
+            onPress: () => navigation.goBack(),
+          },
 
-                  ]}
-                  center={{ type: 'text', value: "Country Code", color: colors.text }}
-              />
+        ]}
+        center={{ type: 'text', value: "Country Code", color: colors.text }}
+      />
 
       <View style={{ height: isTablet ? 40 : 20 }} />
 

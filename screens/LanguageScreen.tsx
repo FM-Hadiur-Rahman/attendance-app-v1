@@ -5,20 +5,18 @@ import {
   Text,
   StyleSheet,
   Image,
-  SafeAreaView,
   Dimensions,
   TouchableOpacity,
   Platform,
-  StatusBar,
   ScrollView,
+  useWindowDimensions,
+  PixelRatio,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Button1 } from "../components/Button";
 import colors from "../styles/Colors";
 import fonts from "../styles/Fonts";
 import CartBox from "../components/CartBox";
-
-const { width, height } = Dimensions.get("window");
 
 type LangId = "en" | "de";
 const { width: deviceWidth } = Dimensions.get("window");
@@ -28,24 +26,52 @@ const LanguageScreen: React.FC = () => {
   const navigation = useNavigation();
   const [selected, setSelected] = useState<LangId>("en");
 
+  // Responsive helpers
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const fontScale = PixelRatio.getFontScale();
+
+  // Original image dimensions (based on your styles). Apply base to keep consistent scaling.
+  const originalImageWidth = 308 * base;
+  const originalImageHeight = 229 * base;
+
+  // Estimate of vertical space taken by everything except the language image.
+  // Tweak if you change paddings/cards etc. (This is conservative; increase if needed.)
+  const RESERVED_VERTICAL = Math.round(360 * base);
+
+  // Available vertical space for the image (cannot be negative)
+  const availableForImage = Math.max(0, windowHeight - RESERVED_VERTICAL);
+
+  // Compute a clamped image height that shrinks when fontScale is large or vertical space is small.
+  // - Minimum height avoids vanishing images on extreme cases.
+  // - Maximum is the original image height.
+  const minImageHeight = 100 * (base > 1 ? 1 : base); // scale min slightly with base
+  const computedHeight = Math.floor((availableForImage * 0.45) / fontScale);
+  const maxImageHeight = Math.max(
+    minImageHeight,
+    Math.min(originalImageHeight, Math.max(0, computedHeight))
+  );
+
+  // Maintain original aspect ratio
+  const aspectRatio = originalImageWidth / originalImageHeight;
+  const maxImageWidth = Math.min(originalImageWidth, Math.floor(maxImageHeight * aspectRatio));
+
   const handleSelect = () => {
     console.log("Selected language id:", selected);
-    // navigate to OpenScreen with param
-    // @ts-ignore
+    // @ts-ignore - keep as your navigation usage
     navigation.navigate("OpenScreen", { langId: selected });
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.topImage}>
-        {/* Top image occupying about half the screen */}
         <Image
           source={require("../assets/icons/o_logo_b.png")}
           style={styles.topicon}
         />
       </View>
-      <CartBox containerStyle={styles.bottomoverlay}></CartBox>
-      {/* Bottom modal-like cart box */}
+
+      <CartBox containerStyle={styles.bottomoverlay} />
+
       <CartBox containerStyle={styles.modalCart}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -53,13 +79,22 @@ const LanguageScreen: React.FC = () => {
         >
           <Image
             source={require("../assets/images/o_language.png")}
-            style={styles.langimage}
+            style={[
+              styles.langimage,
+              {
+                width: maxImageWidth,
+                height: maxImageHeight,
+              },
+            ]}
+            resizeMode="contain"
           />
-          <Text style={styles.title}>Lanaguage</Text>
+
+          <Text style={styles.title}>Language</Text>
 
           <Text style={styles.subtitle}>
             Choose how you’d like to view the app
           </Text>
+
           {/* Language option 1 - English */}
           <TouchableOpacity
             activeOpacity={0.8}
@@ -195,7 +230,6 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingLeft: 20,
     marginBottom: 12,
-  
   },
   langCardSelected: {
     borderColor: colors.popupBorderColor,
@@ -246,6 +280,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 80, // prevent button cutoff when scrolling
-   width:390 * base
+    width: 390 * base,
   },
 });

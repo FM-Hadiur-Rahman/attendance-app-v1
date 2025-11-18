@@ -1,4 +1,4 @@
-// screens/main/ProfileScreen.tsx
+// screens/admin/main/MoreScreen.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { RefreshControl } from "react-native";
@@ -63,7 +64,7 @@ export default function MoreScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  const lang = translations[selectedLanguage];
+ const lang = translations[selectedLanguage as keyof typeof translations];
 
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string>(""); // no change to UI
@@ -288,8 +289,14 @@ export default function MoreScreen(props: any) {
             onRefresh={onRefresh}
             colors={[colors.primary]}
           />
-        }
+         }
       >
+        {loadingProfile ? (
+          <View style={{ justifyContent: "center", alignItems: "center", marginTop: "60%" }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <>
         {/* Profile Section */}
         <CartBox
           alignItems="center"
@@ -400,6 +407,8 @@ export default function MoreScreen(props: any) {
             </View>
           </CartBox>
         </View>
+            </>
+        )}
       </ScrollView>
 
       {/* Bottom Sheet Modal */}
