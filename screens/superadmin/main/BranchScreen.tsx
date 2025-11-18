@@ -39,26 +39,6 @@ const BranchScreen: React.FC = (props: any) => {
   const langId = propLangId || routeLangId || 'en';
   const lang = (translations as any)[langId] || (translations as any)['en'];
 
-  // inside BranchScreen component (after userId/langId declarations)
-  useFocusEffect(
-    useCallback(() => {
-      // If AddBranchScreen passed toastMessage through navigation params, show it
-      const msg = route.params?.toastMessage;
-      if (msg) {
-        try {
-          showSuccessToast(msg);
-          // clear it so it doesn't reappear each focus
-          navigation.setParams({ toastMessage: undefined });
-        } catch (e) {
-          console.warn('Failed to show success toast on BranchScreen', e);
-        }
-      }
-      // also refresh data when focused
-      fetchData();
-      return () => { };
-    }, [route.params?.toastMessage, fetchData])
-  );
-
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [managersByBranch, setManagersByBranch] = useState<Record<string, string | undefined>>({});
@@ -300,6 +280,25 @@ const BranchScreen: React.FC = (props: any) => {
     setRefreshing(true);
     fetchData();
   }, [fetchData]);
+    // inside BranchScreen component (after userId/langId declarations)
+  useFocusEffect(
+    useCallback(() => {
+      // If AddBranchScreen passed toastMessage through navigation params, show it
+      const msg = route.params?.toastMessage;
+      if (msg) {
+        try {
+          showSuccessToast(msg);
+          // clear it so it doesn't reappear each focus
+          navigation.setParams({ toastMessage: undefined });
+        } catch (e) {
+          console.warn('Failed to show success toast on BranchScreen', e);
+        }
+      }
+      // also refresh data when focused
+      fetchData();
+      return () => { };
+    }, [route.params?.toastMessage, fetchData])
+  );
 
   return (
     <View style={styles.screen}>
