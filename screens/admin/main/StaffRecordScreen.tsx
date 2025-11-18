@@ -258,10 +258,6 @@ const StaffRecordScreen: React.FC = (props: any) => {
     }
   }, [users]);
 
-  useEffect(() => {
-    console.log("[DEBUG] employees shown length (after filtering):", employees.length);
-  }, [employees]);
-
   // --- AUTO REFRESH ON FOCUS ---
   // whenever the screen receives focus (i.e. when navigating back to it), reload page 1.
   useFocusEffect(
@@ -292,25 +288,25 @@ const StaffRecordScreen: React.FC = (props: any) => {
     const q = query.trim().toLowerCase();
     const list = Array.isArray(users) ? users : [];
     return list
-  .filter((u) => (u?.role ?? "user") === "user")
-  .filter((u) => {
-    const branchId = (u as any)?.branch_id ?? (u as any)?.branch?._id ?? (u as any)?.branch ?? null;
-    if (!activeBranchId) return true;
-    if (!branchId) return true;
-    return branchId === activeBranchId;
-  })
-  .filter((u) => {
-    if (!q) return true;
-    const name = u.fullname ?? `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
-    const full = `${name} ${u.position ?? ""}`.toLowerCase();
-    return full.includes(q);
-  })
-  .sort((a: any, b: any) => {
-    // Try sort by createdAt → fallback to updatedAt → fallback to _id
-    const dateA = new Date(a.createdAt || a.updateDate || 0).getTime();
-    const dateB = new Date(b.createdAt || b.updateDate || 0).getTime();
-    return dateB - dateA; // DESC => latest first
-  });
+      .filter((u) => (u?.role ?? "user") === "user")
+      .filter((u) => {
+        const branchId = (u as any)?.branch_id ?? (u as any)?.branch?._id ?? (u as any)?.branch ?? null;
+        if (!activeBranchId) return true;
+        if (!branchId) return true;
+        return branchId === activeBranchId;
+      })
+      .filter((u) => {
+        if (!q) return true;
+        const name = u.fullname ?? `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
+        const full = `${name} ${u.position ?? ""}`.toLowerCase();
+        return full.includes(q);
+      })
+      .sort((a: any, b: any) => {
+        // Try sort by createdAt → fallback to updatedAt → fallback to _id
+        const dateA = new Date(a.createdAt || a.updateDate || 0).getTime();
+        const dateB = new Date(b.createdAt || b.updateDate || 0).getTime();
+        return dateB - dateA; // DESC => latest first
+      });
 
   }, [users, query, version, activeBranchId]);
 
@@ -461,6 +457,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
       setLoadingMore(false);
     }
   };
+
 
   const renderItem = ({ item, index }: ListRenderItemInfo<ProfileUser>) => {
     const u = item;
