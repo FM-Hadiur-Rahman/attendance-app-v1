@@ -24,10 +24,10 @@ const Footer_A = () => {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
   const route = useRoute<any>();
-
+  const langId = route.params?.langId ?? 'en';
   // states that we'll pass down to screens
   const [userIdState, setUserIdState] = useState<string | null>(route.params?.userId ?? null);
-  const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'de');
+  const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
   const [routeRefreshFlag, setRouteRefreshFlag] = useState<boolean>(!!route.params?.refresh);
   const [toastMessage, setToastMessage] = useState<string | null>(route.params?.toastMessage ?? null);
 
@@ -71,7 +71,8 @@ const Footer_A = () => {
           // Pass userId, langId and refresh flag down as props
           <ActiveScreen
             userId={userIdState}
-            langId={currentLangId}
+            langId={currentLangId}              
+            setLangId={setCurrentLangId} 
             routeRefresh={routeRefreshFlag}
             onConsumedRefresh={() => setRouteRefreshFlag(false)}
             toastMessage={toastMessage}

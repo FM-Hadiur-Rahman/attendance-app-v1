@@ -42,6 +42,7 @@ import {
   getUsers,
   getUserById,
   postSchedulesBulk,
+  getLoggedInUserBranch,
 } from "../../../../api/profile";
 
 const PHONE_RULES: Record<
@@ -560,19 +561,16 @@ const AddStaffScreen: React.FC = (props: any) => {
       valid = false;
     } else if (digits.length < rule.min) {
       if (rule.min === rule.max) {
-        newErrors.phone = `${
-          lang.Please_complete_all || "Please complete all"
-        } ${rule.max} ${lang.digits || "digits"}`;
+        newErrors.phone = `${lang.Please_complete_all || "Please complete all"
+          } ${rule.max} ${lang.digits || "digits"}`;
       } else {
-        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${
-          rule.min
-        } ${lang.digits || "digits"}`;
+        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${rule.min
+          } ${lang.digits || "digits"}`;
       }
       valid = false;
     } else if (digits.length > rule.max) {
-      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${
-        lang.digits || "digits"
-      }`;
+      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${lang.digits || "digits"
+        }`;
       valid = false;
     }
     setErrors(newErrors);
@@ -880,11 +878,11 @@ const AddStaffScreen: React.FC = (props: any) => {
       scheduleArray.length === 0
         ? "No schedules set for this week."
         : scheduleArray
-            .map(
-              (item) =>
-                `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
-            )
-            .join("\n");
+          .map(
+            (item) =>
+              `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
+          )
+          .join("\n");
 
     console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
 
@@ -931,7 +929,7 @@ const AddStaffScreen: React.FC = (props: any) => {
             ...prev,
             username:
               prev.username ===
-              (lang.username_exists || "Username already taken")
+                (lang.username_exists || "Username already taken")
                 ? ""
                 : prev.username,
           }));
@@ -1008,14 +1006,16 @@ const AddStaffScreen: React.FC = (props: any) => {
     const finalPhone = `${selectedCountry.code}${phoneRaw}`;
 
     // Determine branch id to use: prefer selectedBranchId, else use saved admin branch
-    let branchIdToUse: string | null = selectedBranchId ?? null;
-    if (!branchIdToUse) {
-      try {
-        const saved = await getBranchId();
-        if (saved) branchIdToUse = saved;
-      } catch (e) {
-        console.warn("Failed to read saved branch id", e);
+    let branchIdToUse: string | null = null;
+    try {
+      // Force server fetch to ensure we use the active logged-in user's branch
+      branchIdToUse = await getLoggedInUserBranch(false); // pass true to prefer cache if you want
+      if (!branchIdToUse) {
+        console.warn("No branch id found for logged-in user; payload will send empty string for branch");
       }
+    } catch (e) {
+      console.warn("Failed to obtain logged-in user's branch id", e);
+      branchIdToUse = null;
     }
 
     const payload: any = {
@@ -1026,8 +1026,9 @@ const AddStaffScreen: React.FC = (props: any) => {
       password: password,
       position: position,
       phone: finalPhone,
-      role: "", // omit or empty to let backend default
+      role: "",
     };
+
 
     // Save current admin token & userId so we can restore later
     let prevToken: string | null = null;
@@ -1123,20 +1124,30 @@ const AddStaffScreen: React.FC = (props: any) => {
         lang?.staff_created_success ?? "Staff created successfully"
       );
       setConfirmPopupVisible(false);
+      console.log("Creating staff with payload branch:", branchIdToUse, "payload:", {
+        fullname: fullName,
+        branch: branchIdToUse ?? "",
+        username, email, position, phone: finalPhone,
+      })
       navigation.goBack();
     } catch (err: any) {
-    //   console.error(
-    //     "Error creating staff via authRegister:",
-    //     err?.response ?? err
-    //   );
+      //   console.error(
+      //     "Error creating staff via authRegister:",
+      //     err?.response ?? err
+      //   );
       setConfirmPopupVisible(false);
-      
+      setErrors((prev) => ({
+        ...prev,
+        username: lang.username_exists_use||"This username already exists in another branch.",
+      }));
+      setUsernameExists(true);
+
       const message =
         err?.response?.data?.message ??
         err?.response?.data ??
         err?.message ??
         "Failed to create staff";
-        
+
       showErrorToast(String(message));
     } finally {
       // restore previous admin token and userId (if any) to avoid switching session
@@ -1416,17 +1427,15 @@ const AddStaffScreen: React.FC = (props: any) => {
                           if (newRule.min === newRule.max) {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${
-                                lang.Please_complete_all ||
+                              phone: `${lang.Please_complete_all ||
                                 "Please complete all"
-                              } ${newRule.max} digits`,
+                                } ${newRule.max} digits`,
                             }));
                           } else {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${
-                                lang.enterAtLeast || "Enter at least"
-                              } ${newRule.min} ${lang.digits || "digits"}`,
+                              phone: `${lang.enterAtLeast || "Enter at least"
+                                } ${newRule.min} ${lang.digits || "digits"}`,
                             }));
                           }
                         } else {
@@ -1488,10 +1497,10 @@ const AddStaffScreen: React.FC = (props: any) => {
                                   <Text style={styles.time_text}>
                                     {schedules[dayName]
                                       ? `${formatTime12(
-                                          schedules[dayName].startTime
-                                        )} - ${formatTime12(
-                                          schedules[dayName].endTime
-                                        )}`
+                                        schedules[dayName].startTime
+                                      )} - ${formatTime12(
+                                        schedules[dayName].endTime
+                                      )}`
                                       : ""}
                                   </Text>
                                 </View>
@@ -1561,7 +1570,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                   ref={passwordRef}
                   label={lang.password_label}
                   placeholder="********"
-                  secureTextEntry={!showPassword ? true : false}
+                  secureTextEntry={!showPassword ? false : false}
                   value={password}
                   setValue={(text) => {
                     setPassword(text);
@@ -1597,7 +1606,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                   ref={confirmPasswordRef}
                   label={lang.confirmPassword}
                   placeholder="********"
-                  secureTextEntry={!showConfirmPassword ? true : false}
+                  secureTextEntry={!showConfirmPassword ? false : false}
                   value={confirmPassword}
                   setValue={(text) => {
                     setConfirmPassword(text);

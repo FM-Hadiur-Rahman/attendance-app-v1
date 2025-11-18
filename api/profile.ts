@@ -356,3 +356,78 @@ export const postSchedulesBulk = async (
     throw e;
   }
 };
+// -----------------------------------------------------------------
+// Get logged-in user's branch id (server-authoritative fallback)
+// -----------------------------------------------------------------
+export const getLoggedInUserBranch = async (
+  preferCache = false
+): Promise<string | null> => {
+  try {
+    // 1) Return cached value if allowed
+    if (preferCache) {
+      const cached = await AsyncStorage.getItem(USER_BRANCH_KEY);
+      if (cached) {
+        console.log("getLoggedInUserBranch: returning cached branch id:", cached);
+        return cached;
+      }
+    }
+    const userId = await getUserId();
+    if (!userId) {
+      console.warn("getLoggedInUserBranch: no logged-in user id available");
+      return null;
+    }
+    const tryPaths = [
+      `/user/${userId}`,
+      `/users/${userId}`,
+      `/api/user/${userId}`,
+      `/api.users/${userId}`,
+      // absolute fallback:
+      `https://api.mrbrbackpunkte.de/api/user/${userId}`,
+    ];
+
+    let lastErr: any = null;
+    for (const p of tryPaths) {
+      try {
+        const res = await axiosInstance.get(p);
+        const data = res?.data ?? null;
+        const user =
+          data?.data?.user ?? data?.user ?? data?.data ?? data;
+
+        if (!user) continue;
+        const branchField = user.branch ?? user.branch_id ?? user.branchId ?? null;
+        let branchId: string | null = null;
+        if (!branchField) {
+          const nested = user.branch ?? null;
+          if (nested && (nested._id || nested.id)) {
+            branchId = String(nested._id ?? nested.id);
+          }
+        } else {
+          branchId =
+            typeof branchField === "string"
+              ? branchField
+              : branchField._id ?? branchField.id ?? null;
+        }
+
+        if (branchId) {
+          // cache it for next time
+          try {
+            await AsyncStorage.setItem(USER_BRANCH_KEY, String(branchId));
+            console.log("getLoggedInUserBranch: cached branch id:", branchId);
+          } catch (e) {
+            console.warn("getLoggedInUserBranch: failed to cache branch id", e);
+          }
+          return String(branchId);
+        }
+      } catch (err) {
+        lastErr = err;
+        // continue to next path
+      }
+    }
+
+    console.warn("getLoggedInUserBranch: all attempts failed", lastErr);
+    return null;
+  } catch (error: any) {
+    console.error("getLoggedInUserBranch failed:", error?.response ?? error);
+    return null;
+  }
+};
