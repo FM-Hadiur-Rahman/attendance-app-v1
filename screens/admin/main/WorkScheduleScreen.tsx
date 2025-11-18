@@ -18,9 +18,10 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
 import Toast, { showSuccessToast, toastConfig } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
-import { getBranchById } from "../../../api/Branchs";
+import { getAllBranches, getBranchById } from "../../../api/Branchs";
 import { getSchedulesForDate } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
+import { ScheduleItem } from "../../../api/schedules";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -80,14 +81,30 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   const [userProfiles, setUserProfiles] = useState<Record<string, ProfileUser>>({});
   const [userPositions, setUserPositions] = useState<Record<string, string>>({});
   const [skipNextLoad, setSkipNextLoad] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [version, setVersion] = useState<number>(0);
+  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const allBranches = await getAllBranches();
+        const map: Record<string, string> = {};
+        allBranches.forEach(b => {
+          map[b._id] = b.name;
+        });
+        setBranchMap(map);
+      } catch (err) {
+        console.error('Failed to load branches', err);
+      }
+    };
+    loadBranches();
+  }, []);
 
   useEffect(() => {
     const loadUserProfile = async () => {
       try {
         const profile = await getProfile();
-        console.log("✅ Loaded user profile:", profile);
+        console.log(" Loaded user profile:", profile);
         setUser(profile);
       } catch (err) {
         console.error("❌ Failed to load user profile:", err);
@@ -139,32 +156,30 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   }, [userId, activeBranchId]);
 
   const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
-
   const loadSchedules = useCallback(async (date: Date) => {
     try {
       setLoading(true);
       const dateYMD = date.toISOString().split("T")[0];
-      console.log("📅 Fetching schedules for:", dateYMD);
 
-      const data = await getSchedulesForDate(dateYMD);
-      console.log("✅ API response:", data);
+      let data = await getSchedulesForDate(dateYMD);
 
-      //  Store API data
+      // Filter by activeBranchId
+      if (activeBranchId) {
+        data = data.filter((s) => {
+          const sBranchId =
+            typeof s.branch_id === "object" ? s.branch_id?._id : s.branch_id;
+          return sBranchId === activeBranchId;
+        });
+      }
+
       setSchedules(data);
-
-      const displayYMD = date.toISOString().split("T")[0];
-      const filtered = data.filter((s) => {
-        const schedDate = new Date(s.date).toISOString().split("T")[0];
-        return schedDate === displayYMD;
-      });
-      //console.log("📅 Schedules for selected date:", displayYMD, filtered);
 
     } catch (error) {
       console.error("❌ Error loading schedules:", error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeBranchId]);
 
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
@@ -204,11 +219,26 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
     const displayYMD = dateToYMD(displayDate);
 
-    // 1️⃣ Filter schedules for this date
+    // Filter schedules for this date
     const filteredSchedules = schedules
       .filter((s) => {
+        if (!s?.date) return false;
+
+        // match date
         const schedDate = new Date(s.date).toISOString().split("T")[0];
-        return schedDate === displayYMD;
+        if (schedDate !== displayYMD) return false;
+
+        // match branch
+        const sBranchId =
+          typeof s.branch_id === "object"
+            ? s.branch_id?._id
+            : s.branch_id;
+
+        if (activeBranchId && sBranchId !== activeBranchId) {
+          return false; // skip if branch doesn't match
+        }
+
+        return true;
       })
       .map((s) => ({
         schedule: s,
@@ -216,7 +246,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       }))
       .filter((x) => x.user && x.user.role === "user");
 
-    // 2️⃣ Deduplicate by schedule ID, keep the last one
+    // Deduplicate by schedule ID, keep the last one
     const uniqueById: Record<string, typeof filteredSchedules[0]> = {};
     filteredSchedules.forEach((item) => {
       const id = item.schedule._id || item.schedule.id;
@@ -226,7 +256,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       }
     });
 
-    // 3️⃣ Convert back to array
+    // Convert back to array
     return Object.values(uniqueById);
   }, [schedules, displayDate]);
 
@@ -274,7 +304,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     setRefreshing(false);
   }, [displayDate, loadSchedules]);
 
-
   const goToPrevDay = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1);
@@ -304,64 +333,65 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         end_time: string;
         date: string;
       }) => {
-        setSchedulesArr((prev) => {
-          const updatedArr = [...prev];
-          const now = new Date().toISOString();
-
-          if (updated.id) {
-            const idx = updatedArr.findIndex((s) => s.id === updated.id);
-            if (idx !== -1) {
-              updatedArr[idx] = {
-                ...updatedArr[idx],
-                user_id: updated.user_id,
-                start_time: updated.start_time,
-                end_time: updated.end_time,
-                date: updated.date,
-                updateDate: now,
-              };
-            }
-          } else {
-            const id = `S${(updatedArr.length + 1).toString().padStart(3, "0")}`;
-            updatedArr.push({
-              id,
-              user_id: updated.user_id,
-              start_time: updated.start_time,
-              end_time: updated.end_time,
-              date: updated.date,
-              createDate: now,
-              updateDate: now,
-            } as any);
-          }
-          return updatedArr;
-        });
         setDisplayDate(ymdToDate(updated.date));
         setVersion((v) => v + 1);
-        await loadSchedules(ymdToDate(updated.date)); // 🔁 triggers spinner automatically
+        await loadSchedules(ymdToDate(updated.date)); // triggers spinner automatically
         showSuccessToast(updated.id ? lang.schedule_updated : lang.schedule_added);
       },
     });
   };
 
   useEffect(() => {
-    const loadUserProfiles = async () => {
-      const uniqueUserIds = Array.from(new Set(schedulesForDate.map(s => s.user.user_id)));
-      const profiles: Record<string, ProfileUser> = {};
-
-      for (const id of uniqueUserIds) {
-        try {
-          const profile = await getProfile(id); // adjust getProfile to accept userId
-          profiles[id] = profile;
-        } catch (err) {
-          console.warn("Failed to fetch profile for user:", id, err);
-        }
-      }
-
-      setUserProfiles(profiles);
-    };
-
-    if (schedulesForDate.length > 0) {
-      loadUserProfiles();
+    if (activeBranchId) {
+      loadSchedules(displayDate);
     }
+  }, [activeBranchId]);
+
+  // --- Fetch full profiles for employee IDs found in schedulesForDate ---
+  useEffect(() => {
+    if (!schedulesForDate || schedulesForDate.length === 0) {
+      setUserProfiles({});
+      return;
+    }
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        // collect unique employee IDs
+        const ids = Array.from(
+          new Set(
+            schedulesForDate.map(
+              (item) =>
+                item.schedule?.employee_id?._id ??
+                item.schedule?.employee_id
+            ).filter(Boolean)
+          )
+        ) as string[];
+
+        const profiles: Record<string, ProfileUser> = {};
+
+        await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const profile = await getUserById(id);
+              if (profile?.fullname) {
+                profiles[id] = profile; // only store if fullname exists
+              }
+            } catch (err) {
+              console.warn("getUserById failed for", id, err);
+            }
+          })
+        );
+
+        if (!mounted) return;
+        setUserProfiles(profiles);
+      } catch (err) {
+        console.warn("Failed to load user profiles for schedules", err);
+      }
+    })();
+
+    return () => { mounted = false; };
   }, [schedulesForDate]);
 
   useEffect(() => {
@@ -380,7 +410,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           }
         }
       }
-
       setUserPositions(positions);
     };
 
@@ -388,7 +417,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       fetchPositions();
     }
   }, [schedulesForDate]);
-
 
   useEffect(() => {
     if (skipNextLoad) {
@@ -485,23 +513,12 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           {loading ? (
             <View
               style={{
-                position: "absolute",
-                top: 20,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.25)",
                 justifyContent: "center",
                 alignItems: "center",
-                zIndex: 9999,
-
+                marginTop: "50%"
               }}
             >
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={{ color: colors.text, marginTop: 10 }}>
-                {lang.loading_schedules}
-              </Text>
-
+              <ActivityIndicator size="large" color={colors.primary} />
             </View>
 
           ) : schedulesForDate.length === 0 ? (
@@ -510,34 +527,25 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             schedulesForDate.map(({ schedule, user }, index) => {
               if (!user) return null;
 
-              // ✅ Always use a unique key (covers both backend + local)
+              // Always use a unique key (covers both backend + local)
               const uniqueKey =
                 schedule._id ||
                 schedule.id ||
                 `${schedule.date}-${schedule.start_time}-${user.user_id}-${index}`;
 
-              // ✅ Convert to readable time format
+              //  Convert to readable time format
               const startTime = schedule.start_time || "";
               const endTime = schedule.end_time || "";
               const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
 
-              // ✅ Resolve branch info safely
-              const userBranchId =
-                typeof user.branch === "object" ? user.branch?._id : user.branch;
-              const scheduleBranchId =
-                typeof schedule.branch_id === "object"
-                  ? schedule.branch_id?._id
-                  : schedule.branch_id;
+              const userBranchId = typeof user.branch === "object" ? user.branch?._id : user.branch;
+              const scheduleBranchId = typeof schedule.branch_id === "object" ? schedule.branch_id?._id : schedule.branch_id;
 
-              // ✅ Decide if branch name should be shown
-              const showBranch =
-                scheduleBranchId && userBranchId && scheduleBranchId !== userBranchId;
+              // Show branch if the IDs are different
+              const showBranch = userBranchId && scheduleBranchId && userBranchId !== scheduleBranchId;
 
-              // ✅ Safe branch name
-              const branchName =
-                typeof schedule.branch_id === "object"
-                  ? schedule.branch_id?.name
-                  : "Unknown Branch";
+              // If showing branch, get the name from the branch map
+              const branchNameToShow = showBranch ? branchMap[userBranchId] || "Unknown Branch" : "";
 
               return (
                 <TouchableOpacity
@@ -554,7 +562,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                           style={styles.branchIcon}
                           resizeMode="contain"
                         />
-                        <Text style={styles.branchName}>{branchName || "Unknown Branch"}</Text>
+                        <Text style={styles.branchName}>{branchNameToShow}</Text>
                       </View>
                     )}
 
@@ -567,9 +575,16 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                           style={styles.profileImage}
                         />
                         <View style={styles.name_position}>
-                          {/* Username */}
+                          {/* fullname */}
                           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                            {user?.username || user?.fullname || "Unknown User"}
+                            {(() => {
+                              const employeeId =
+                                schedule?.employee_id?._id ?? schedule?.employee_id;
+
+                              const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
+
+                              return fullname || "Unknown User"; // ONLY fullname
+                            })()}
                           </Text>
 
                           {/* Position */}
@@ -587,26 +602,18 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                       </View>
                     </View>
                   </CartBox>
-
                 </TouchableOpacity>
               );
             })
           )}
-
         </ScrollView>
       </View>
-
-
       {/* Floating Add Button */}
       <Button3 width={60} height={60} onPress={openAddScreen} />
-
       {/* Toast */}
       <Toast config={toastConfig} />
-
     </View>
   );
-
-
 };
 
 const styles = StyleSheet.create({
