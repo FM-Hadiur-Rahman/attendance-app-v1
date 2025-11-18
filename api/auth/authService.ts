@@ -66,10 +66,10 @@ export const register = async (data: RegisterPayload): Promise<AuthResponse> => 
 
     return response.data as AuthResponse;
   } catch (error: any) {
-    console.error('register() failed:', error?.response?.data ?? error);
+    //console.error('register() failed:', error?.response?.data ?? error);
     throw (
-      error?.response?.data?.message ||
-      error?.response?.data?.error ||
+      //error?.response?.data?.message ||
+      //error?.response?.data?.error ||
       'Registration failed'
     );
   }

@@ -10,33 +10,47 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FlashScreen = () => {
   const navigation = useNavigation();
 
+  // Helper: Check if JWT token is expired
+  const isTokenExpired = (token: string) => {
+    try {
+      const payloadBase64 = token.split('.')[1];
+      const decodedPayload = JSON.parse(atob(payloadBase64));
+      // exp is in seconds, Date.now() is in milliseconds
+      return Date.now() / 1000 > decodedPayload.exp;
+    } catch (e) {
+      console.warn('Invalid token format:', e);
+      return true; // treat invalid token as expired
+    }
+  };
+
   useEffect(() => {
     const checkLoginStatus = async () => {
       try {
         const token = await getToken();
         const userId = await getUserId();
-        const langId = await AsyncStorage.getItem('langId')
+        const langId = await AsyncStorage.getItem('langId');
         const userObjStr = await AsyncStorage.getItem('userObj');
         const userObj = userObjStr ? JSON.parse(userObjStr) : null;
         const roleRaw = userObj?.role ?? null;
-        const role = roleRaw ? String(roleRaw).toLowerCase() : null; // ✅ normalize to lowercase
+        const role = roleRaw ? String(roleRaw).toLowerCase() : null;
 
         console.log('FlashScreen check:', { token, role, userId, langId });
 
+        const validToken = token && !isTokenExpired(token);
+
         setTimeout(() => {
-          if (token && role && userId) {
-            // ✅ Logged in previously — go to correct footer
+          if (validToken && role && userId) {
+            // Logged in previously — go to correct footer
             let routeName = 'Footer_C'; // default for employee
             if (role === 'admin') routeName = 'Footer_A';
             else if (role === 'superadmin') routeName = 'Footer_S';
 
             navigation.reset({
               index: 0,
-              routes: [{ name: routeName as never, params: { userId, langId } as never, }],
-
+              routes: [{ name: routeName as never, params: { userId, langId } as never }],
             });
           } else {
-            // 🚪 No token → go to LanguageScreen
+            // Token missing or expired → go to LanguageScreen
             navigation.reset({
               index: 0,
               routes: [{ name: 'LanguageScreen' as never }],

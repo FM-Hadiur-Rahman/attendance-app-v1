@@ -1,5 +1,11 @@
 // screens/admin/main/AttendancerecordScreen.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -20,8 +26,15 @@ import { Button1 } from "../../../components/Button";
 import CartBox from "../../../components/CartBox";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
-import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
-import { getAttendanceReport, AttendanceReportItem } from "../../../api/checkin_checkout";
+import Toast, {
+  showErrorToast,
+  showSuccessToast,
+  toastConfig,
+} from "../../../components/Toast";
+import {
+  getAttendanceReport,
+  AttendanceReportItem,
+} from "../../../api/checkin_checkout";
 import { getBranchId, getProfile } from "../../../api/profile";
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
@@ -29,37 +42,55 @@ import * as Sharing from "expo-sharing";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 const FULL_MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 
 // --- helpers for parsing/formatting times & dates ---
-const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toYMD = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-// time formatting: accept ISO, "HH:MM", "HH:MM:SS", return "h:mm AM/PM"
+// time formatting: accept ISO, "YYYY-MM-DD HH:MM:SS", "HH:MM", "HH:MM:SS", return "h:mm AM/PM"
 const formatTimeFromAny = (value?: string | null) => {
   if (!value) return "";
   try {
-    // ISO-like?
-    if (value.includes("T") || value.includes("-") && value.includes("Z")) {
-      const dt = new Date(value);
-      if (!isNaN(dt.getTime())) {
-        let h = dt.getHours();
-        const m = dt.getMinutes();
-        const ampm = h >= 12 ? "PM" : "AM";
-        h = h % 12 || 12;
-        return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
-      }
+    const dt = new Date(value);
+    if (!isNaN(dt.getTime())) {
+      let h = dt.getHours();
+      const m = dt.getMinutes();
+      const ampm = h >= 12 ? "PM" : "AM";
+      h = h % 12 || 12;
+      return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
     }
     // plain HH:MM or HH:MM:SS
-    const parts = value.split(":").map(p => parseInt(p, 10) || 0);
+    const parts = value.split(":").map((p) => parseInt(p, 10) || 0);
     if (parts.length >= 2) {
       let h = parts[0];
       const m = parts[1];
@@ -73,17 +104,20 @@ const formatTimeFromAny = (value?: string | null) => {
   }
 };
 
-// return minutes since midnight for HH:MM or ISO string (local)
+// return minutes since midnight for various formats
 const timeToMinutesAny = (value?: string | null) => {
   if (!value) return null;
   try {
-    if (value.includes("T")) {
-      const dt = new Date(value);
-      if (!isNaN(dt.getTime())) return dt.getHours() * 60 + dt.getMinutes();
+    const dt = new Date(value);
+    if (!isNaN(dt.getTime())) {
+      return dt.getHours() * 60 + dt.getMinutes();
     }
-    const parts = value.split(":").map(p => parseInt(p, 10) || 0);
+    // plain HH:MM or HH:MM:SS
+    const parts = value.split(":").map((p) => parseInt(p, 10) || 0);
     if (parts.length >= 2) return parts[0] * 60 + parts[1];
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
   return null;
 };
 
@@ -122,21 +156,25 @@ const AttendancerecordScreen: React.FC = (props: any) => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
 
-
-
   const defaultToday = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   })();
-  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]} ${defaultToday.getDate()}`;
+  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${
+    MONTHS[defaultToday.getMonth()]
+  } ${defaultToday.getDate()}`;
   const [dateInput, setDateInput] = useState<string>(WEEKDAY_FMT);
   const [dateError, setDateError] = useState<string>("");
-  const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(defaultToday);
+  const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(
+    defaultToday
+  );
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
 
   // main attendance data from server (array of rows)
-  const [attendanceData, setAttendanceData] = useState<AttendanceReportItem[]>([]);
+  const [attendanceData, setAttendanceData] = useState<AttendanceReportItem[]>(
+    []
+  );
 
   // selectedRange computation (same logic you had)
   const pad = pad2;
@@ -150,7 +188,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       // try mon day
       const mon = parts[1].slice(0, 3);
       const dayStr = parts[2] ?? parts[1];
-      const monIndex = MONTHS.findIndex(m => m.toLowerCase() === mon.toLowerCase());
+      const monIndex = MONTHS.findIndex(
+        (m) => m.toLowerCase() === mon.toLowerCase()
+      );
       if (monIndex >= 0) {
         const day = parseInt(dayStr, 10);
         if (!isNaN(day)) {
@@ -188,16 +228,21 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       if (mode === "day") {
         const conv = dateInputToYMD(dateInput.trim());
         if (conv.ok) return { type: "day" as const, ymd: conv.ymd! };
-        if (selectedDateObj) return { type: "day" as const, ymd: toYMD(selectedDateObj) };
+        if (selectedDateObj)
+          return { type: "day" as const, ymd: toYMD(selectedDateObj) };
         return null;
       } else if (mode === "week") {
         const conv = dateInputToYMD(dateInput.trim());
         if (conv.ok) {
-          const [y, m, d] = conv.ymd!.split("-").map(x => parseInt(x, 10));
+          const [y, m, d] = conv.ymd!.split("-").map((x) => parseInt(x, 10));
           const dt = new Date(y, m - 1, d);
           const s = getStartOfWeekSunday(dt);
           const e = getEndOfWeekSaturday(dt);
-          return { type: "week" as const, startYmd: toYMD(s), endYmd: toYMD(e) };
+          return {
+            type: "week" as const,
+            startYmd: toYMD(s),
+            endYmd: toYMD(e),
+          };
         }
         const base = selectedDateObj ?? new Date();
         const s = getStartOfWeekSunday(base);
@@ -206,7 +251,11 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       } else {
         // month
         const dt = selectedDateObj ?? new Date();
-        return { type: "month" as const, year: dt.getFullYear(), monthIndex: dt.getMonth() };
+        return {
+          type: "month" as const,
+          year: dt.getFullYear(),
+          monthIndex: dt.getMonth(),
+        };
       }
     } catch (e) {
       return null;
@@ -235,9 +284,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         const year = selectedRange.year;
         const month = selectedRange.monthIndex;
         startDate = `${year}-${pad(month + 1)}-01`;
-        endDate = `${year}-${pad(
-          month + 1
-        )}-${pad(new Date(year, month + 1, 0).getDate())}`;
+        endDate = `${year}-${pad(month + 1)}-${pad(
+          new Date(year, month + 1, 0).getDate()
+        )}`;
       }
 
       // --- get logged-in profile ---
@@ -253,10 +302,12 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       setCurrentBranchId(loggedInBranchId);
 
       // --- fetch attendance data ---
-      const res = await getAttendanceReport(startDate, endDate, loggedInBranchId);
-      const rows = Array.isArray(res)
-        ? res
-        : res?.rows ?? res?.data ?? [];
+      const res = await getAttendanceReport(
+        startDate,
+        endDate,
+        loggedInBranchId
+      );
+      const rows = Array.isArray(res) ? res : res?.rows ?? res?.data ?? [];
       const normalized = Array.isArray(rows) ? rows : [];
       const normalizedWithCheckin = normalized.filter((r: any) => {
         const actualIn =
@@ -302,8 +353,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       if (userRole !== "admin") {
         filtered = enriched.filter(
           (r) =>
-            r.employeeId === loggedInUserId ||
-            r.employee_id === loggedInUserId
+            r.employeeId === loggedInUserId || r.employee_id === loggedInUserId
         );
       }
 
@@ -317,7 +367,6 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       setRefreshing(false);
     }
   }, [selectedRange]);
-
 
   useEffect(() => {
     fetchAttendanceReport();
@@ -337,10 +386,12 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       // { actualIn, actualOut, branchId, branchName, date, employeeId, endStatus, fullname, scheduledEnd, scheduledStart, startStatus, username }
       const dateYmd = normalizeDateToYMD(r.date ?? r.startDate ?? "");
       const checkInRaw = r.actualIn && r.actualIn !== "" ? r.actualIn : null;
-      const checkOutRaw = r.actualOut && r.actualOut !== "" ? r.actualOut : null;
-      const scheduledStart = r.scheduledStart ?? r.scheduledStart ?? r.scheduled_start ?? "";
+      const checkOutRaw =
+        r.actualOut && r.actualOut !== "" ? r.actualOut : null;
+      const scheduledStart = r.scheduledStart ?? r.scheduled_start ?? "";
       const scheduledEnd = r.scheduledEnd ?? r.scheduled_end ?? "";
-      const startStatus = r.startStatus ?? r.start_status ?? r.startstatus ?? r.start_status;
+      const startStatus =
+        r.startStatus ?? r.start_status ?? r.startstatus ?? r.start_status;
       const endStatus = r.endStatus ?? r.end_status ?? r.endstatus;
 
       // compute checkIn/checkOut time strings (HH:MM or ISO)
@@ -348,44 +399,46 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       const checkOutTime = checkOutRaw ? checkOutRaw : null;
 
       // compute display strings
-      const displayScheduledStart = scheduledStart ? formatTimeFromAny(scheduledStart) : "";
-      const displayScheduledEnd = scheduledEnd ? formatTimeFromAny(scheduledEnd) : "";
+      const displayScheduledStart = scheduledStart
+        ? formatTimeFromAny(scheduledStart)
+        : "";
+      const displayScheduledEnd = scheduledEnd
+        ? formatTimeFromAny(scheduledEnd)
+        : "";
       const displayCheckIn = checkInTime ? formatTimeFromAny(checkInTime) : "";
-      const displayCheckOut = checkOutTime ? formatTimeFromAny(checkOutTime) : "";
+      const displayCheckOut = checkOutTime
+        ? formatTimeFromAny(checkOutTime)
+        : "";
 
       // duration actualOut - actualIn (minutes)
       let durationMins: number | null = null;
-      const inMinutes = timeToMinutesAny(checkInTime);
-      const outMinutes = timeToMinutesAny(checkOutTime);
-      if (inMinutes !== null && outMinutes !== null) {
-        // if actual times are ISO with date, difference could be across days;
-        // prefer using Date when both are ISO
-        if ((checkInTime || "").includes("T") && (checkOutTime || "").includes("T")) {
-          const inD = new Date(checkInTime!);
-          const outD = new Date(checkOutTime!);
-          if (!isNaN(inD.getTime()) && !isNaN(outD.getTime())) {
-            durationMins = Math.max(0, Math.round((outD.getTime() - inD.getTime()) / 60000));
-          }
-        } else {
+      const inDt = checkInRaw ? new Date(checkInRaw) : null;
+      const outDt = checkOutRaw ? new Date(checkOutRaw) : null;
+      if (inDt && !isNaN(inDt.getTime()) && outDt && !isNaN(outDt.getTime())) {
+        durationMins = Math.max(
+          0,
+          Math.round((outDt.getTime() - inDt.getTime()) / 60000)
+        );
+      } else {
+        const inMinutes = timeToMinutesAny(checkInRaw);
+        const outMinutes = timeToMinutesAny(checkOutRaw);
+        if (inMinutes !== null && outMinutes !== null) {
           durationMins = Math.max(0, outMinutes - inMinutes);
         }
       }
 
-      // compute diff vs scheduled start (minutes)
+      // compute diffVsScheduleText as duration
       let diffVsScheduleText = "";
-      if (scheduledStart && checkInTime) {
-        const scheduleM = timeToMinutesAny(scheduledStart);
-        const checkM = timeToMinutesAny(checkInTime);
-        if (scheduleM !== null && checkM !== null) {
-          const diff = checkM - scheduleM; // positive => late
-          diffVsScheduleText = `${diff >= 0 ? "" : " "}${minutesToDurationText(Math.abs(diff))}`;
-        }
+      if (durationMins !== null && durationMins > 0) {
+        diffVsScheduleText = minutesToDurationText(durationMins);
       }
 
-      // status normalized
+      // status normalized (start status)
       let status = "no-schedule";
-      const scheduleMins = scheduledStart ? timeToMinutesAny(scheduledStart) : null;
-      const checkInMins = checkInRaw ? timeToMinutesAny(checkInRaw) : null;
+      const scheduleMins = scheduledStart
+        ? timeToMinutesAny(scheduledStart)
+        : null;
+      const checkInMins = checkInTime ? timeToMinutesAny(checkInTime) : null;
 
       if (scheduleMins !== null && checkInMins !== null) {
         if (checkInMins < scheduleMins) status = "early";
@@ -395,12 +448,21 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         const s = startStatus.toLowerCase();
         if (s.includes("early")) status = "early";
         else if (s.includes("late")) status = "late";
-        else if (s.includes("on") || s.includes("ontime") || s.includes("on_time")) status = "on_time";
+        else if (
+          s.includes("on") ||
+          s.includes("ontime") ||
+          s.includes("on_time")
+        )
+          status = "on_time";
       }
 
       return {
         raw: r,
-        id: r.employeeId ?? r.employee_id ?? r._id ?? Math.random().toString(36).slice(2),
+        id:
+          r.employeeId ??
+          r.employee_id ??
+          r._id ??
+          Math.random().toString(36).slice(2),
         name: r.fullname ?? r.username ?? r.name ?? "Unknown",
         username: r.username ?? "",
         branchId: r.branchId ?? r.branch_id ?? "",
@@ -415,7 +477,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         checkInTime: displayCheckIn,
         checkOutTime: displayCheckOut,
         durationMins,
-        durationText: durationMins !== null ? minutesToDurationText(durationMins) : "",
+        durationText:
+          durationMins !== null ? minutesToDurationText(durationMins) : "",
         diffVsScheduleText,
         status,
       } as const;
@@ -427,18 +490,23 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     if (!selectedRange) return [];
 
     // ✅ Step 1: Keep only users who have a real check-in (not empty, not "No Schedule")
-    const onlyCheckedIn = enriched.filter(item => {
+    const onlyCheckedIn = enriched.filter((item) => {
       const checkIn = item?.checkInRaw || "";
       return checkIn.trim() !== "";
     });
 
     // ✅ Step 2: Filter by selected range (Day / Week / Month)
+    const getRecordDate = (item: any) => {
+      const d = new Date(item.date);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
     if (selectedRange.type === "day") {
       const target = new Date(selectedRange.ymd);
       target.setHours(0, 0, 0, 0);
 
-      return onlyCheckedIn.filter(item => {
-        const d = new Date(item.checkInRaw || item.date);
+      return onlyCheckedIn.filter((item) => {
+        const d = getRecordDate(item);
         return d && d.toDateString() === target.toDateString();
       });
     }
@@ -449,15 +517,15 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       s.setHours(0, 0, 0, 0);
       e.setHours(23, 59, 59, 999);
 
-      return onlyCheckedIn.filter(item => {
-        const d = new Date(item.checkInRaw || item.date);
+      return onlyCheckedIn.filter((item) => {
+        const d = getRecordDate(item);
         return d && d >= s && d <= e;
       });
     }
 
     if (selectedRange.type === "month") {
-      return onlyCheckedIn.filter(item => {
-        const d = new Date(item.checkInRaw || item.date);
+      return onlyCheckedIn.filter((item) => {
+        const d = getRecordDate(item);
         return (
           d &&
           d.getFullYear() === selectedRange.year &&
@@ -470,22 +538,24 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     return onlyCheckedIn;
   }, [enriched, selectedRange]);
 
-
   // search filter (by name/username)
   const displayedRecords = useMemo(() => {
     const q = (query || "").trim().toLowerCase();
 
-    return todayRecords
-      // absolute safety: only records with checkInRaw
-      .filter(r => !!r.checkInRaw && String(r.checkInRaw).trim() !== "")
-      // also make sure status is not the 'no-schedule' fallback
-      .filter(r => r.status !== "no-schedule")
-      // apply search
-      .filter(r =>
-        !q ||
-        (r.name || "").toLowerCase().includes(q) ||
-        (r.username || "").toLowerCase().includes(q)
-      );
+    return (
+      todayRecords
+        // absolute safety: only records with checkInRaw
+        .filter((r) => !!r.checkInRaw && String(r.checkInRaw).trim() !== "")
+        // also make sure status is not the 'no-schedule' fallback
+        .filter((r) => r.status !== "no-schedule")
+        // apply search
+        .filter(
+          (r) =>
+            !q ||
+            (r.name || "").toLowerCase().includes(q) ||
+            (r.username || "").toLowerCase().includes(q)
+        )
+    );
   }, [todayRecords, query]);
 
   // UI handlers
@@ -502,9 +572,17 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       } else if (mode === "week") {
         const s = getStartOfWeekSunday(selectedDate);
         const e = getEndOfWeekSaturday(selectedDate);
-        setDateInput(`${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]}, ${MONTHS[e.getMonth()]} ${e.getDate()}`);
+        setDateInput(
+          `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
+            WEEKDAYS[e.getDay()]
+          }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
+        );
       } else {
-        setDateInput(`${FULL_MONTHS[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`);
+        setDateInput(
+          `${
+            FULL_MONTHS[selectedDate.getMonth()]
+          } ${selectedDate.getFullYear()}`
+        );
       }
     }
   };
@@ -514,14 +592,22 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     setSelectedDateObj(today);
-    setDateInput(`${WEEKDAYS[today.getDay()]}, ${MONTHS[today.getMonth()]} ${today.getDate()}`);
+    setDateInput(
+      `${WEEKDAYS[today.getDay()]}, ${
+        MONTHS[today.getMonth()]
+      } ${today.getDate()}`
+    );
   };
   const onSelectWeek = () => {
     setMode("week");
     const dt = selectedDateObj ?? new Date();
     const s = getStartOfWeekSunday(dt);
     const e = getEndOfWeekSaturday(dt);
-    setDateInput(`${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]}, ${MONTHS[e.getMonth()]} ${e.getDate()}`);
+    setDateInput(
+      `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
+        WEEKDAYS[e.getDay()]
+      }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
+    );
   };
   const onSelectMonth = () => {
     setMode("month");
@@ -537,8 +623,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         return;
       }
 
-      // ✅ Only include checked-in users
-      const checkedInRecords = todayRecords.filter((item) => !!item.checkInRaw);
+      // ✅ Prepare data for Excel sheet (todayRecords already filtered)
+      const checkedInRecords = todayRecords;
 
       if (checkedInRecords.length === 0) {
         showErrorToast("No checked-in users available to export");
@@ -557,10 +643,10 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           item.status === "late"
             ? "Late"
             : item.status === "early"
-              ? "Early"
-              : item.status === "on_time"
-                ? "On Time"
-                : "No Schedule",
+            ? "Early"
+            : item.status === "on_time"
+            ? "On Time"
+            : "",
         Difference: item.diffVsScheduleText || "",
       }));
 
@@ -574,14 +660,22 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       const buf = Buffer.from(wbout, "binary");
       const wboutBase64 = buf.toString("base64");
 
-      // ✅ Filename based on mode
-      const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-      const now = new Date();
-      const ymd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-
-      let fileName = `attendance_${ymd}.xlsx`;
-      if (mode === "week") fileName = `attendance_week_${ymd}.xlsx`;
-      else if (mode === "month") fileName = `attendance_month_${ymd}.xlsx`;
+      // ✅ Filename based on mode and selected range
+      let fileName = "";
+      if (mode === "day" && selectedRange?.type === "day") {
+        fileName = `attendance_day_${selectedRange.ymd}.xlsx`;
+      } else if (mode === "week" && selectedRange?.type === "week") {
+        fileName = `attendance_week_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
+      } else if (mode === "month" && selectedRange?.type === "month") {
+        const monthPad = pad2(selectedRange.monthIndex + 1);
+        fileName = `attendance_month_${selectedRange.year}-${monthPad}.xlsx`;
+      } else {
+        const now = new Date();
+        const ymd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(
+          now.getDate()
+        )}`;
+        fileName = `attendance_${ymd}.xlsx`;
+      }
 
       // ✅ Use documentDirectory (trusted location)
       const fileUri = FileSystem.documentDirectory + fileName;
@@ -594,7 +688,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       // ✅ Share or show file location
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
-          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           dialogTitle: fileName,
         });
         showSuccessToast("✅ Excel file exported successfully");
@@ -613,32 +708,81 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       <Header
         backgroundColor={colors.secondary}
         position="relative"
-        center={{ type: "text", value: lang.Attendance_Record, color: colors.text }}
+        center={{
+          type: "text",
+          value: lang.Attendance_Record,
+          color: colors.text,
+        }}
         right={{
           type: "image",
           url: require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
-          onPress: () => navigation.navigate("NotificationScreen" as any, { userId, langId,  branchId: currentBranchId, }),
+          onPress: () =>
+            navigation.navigate("NotificationScreen" as any, {
+              userId,
+              langId,
+              branchId: currentBranchId,
+            }),
         }}
       />
 
       <View style={styles.container}>
         <View style={styles.body}>
           <View style={styles.Date_control_Buttons}>
-            <Button1 text={lang.Now} onPress={onSelectNow} width={'30%'} backgroundColor={mode === 'day' ? undefined : colors.background} textStyle={{ color: mode === 'day' ? colors.secondary : colors.subtext }} />
-            <Button1 text={lang.Week} onPress={onSelectWeek} width={'30%'} backgroundColor={mode === 'week' ? undefined : colors.background} textStyle={{ color: mode === 'week' ? colors.secondary : colors.subtext }} />
-            <Button1 text={lang.Month} onPress={onSelectMonth} width={'30%'} backgroundColor={mode === 'month' ? undefined : colors.background} textStyle={{ color: mode === 'month' ? colors.secondary : colors.subtext }} />
+            <Button1
+              text={lang.Now}
+              onPress={onSelectNow}
+              width={"30%"}
+              backgroundColor={mode === "day" ? undefined : colors.background}
+              textStyle={{
+                color: mode === "day" ? colors.secondary : colors.subtext,
+              }}
+            />
+            <Button1
+              text={lang.Week}
+              onPress={onSelectWeek}
+              width={"30%"}
+              backgroundColor={mode === "week" ? undefined : colors.background}
+              textStyle={{
+                color: mode === "week" ? colors.secondary : colors.subtext,
+              }}
+            />
+            <Button1
+              text={lang.Month}
+              onPress={onSelectMonth}
+              width={"30%"}
+              backgroundColor={mode === "month" ? undefined : colors.background}
+              textStyle={{
+                color: mode === "month" ? colors.secondary : colors.subtext,
+              }}
+            />
           </View>
 
           <View style={styles.searchWrap}>
-            <SearchBar value={query} onChangeText={setQuery} placeholder={lang.search_name_position} />
+            <SearchBar
+              value={query}
+              onChangeText={setQuery}
+              placeholder={lang.search_name_position}
+            />
           </View>
 
           <View style={styles.inputWrap}>
             <InputBox
-              label={mode === "day" ? lang.date_label : (mode === "week" ? "Week" : "Month")}
-              placeholder={mode === "day" ? "Thu, Aug 18" : (mode === "week" ? "Sun, Oct 12 - Sat, Oct 18" : "October 2025")}
+              label={
+                mode === "day"
+                  ? lang.date_label
+                  : mode === "week"
+                  ? "Week"
+                  : "Month"
+              }
+              placeholder={
+                mode === "day"
+                  ? "Thu, Aug 18"
+                  : mode === "week"
+                  ? "Sun, Oct 12 - Sat, Oct 18"
+                  : "October 2025"
+              }
               value={dateInput}
               setValue={setDateInput}
               onBlur={() => {
@@ -658,45 +802,77 @@ const AttendancerecordScreen: React.FC = (props: any) => {
               width={"100%"}
               onPress={onGenerateXLSX}
             />
-
           </View>
 
           <ScrollView
-            style={{ marginBottom: '15%' }}
+            style={{ marginBottom: "15%" }}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+              />
+            }
           >
             <View style={styles.details}>
               {loading ? (
                 <View style={{ alignItems: "center", marginTop: 20 }}>
                   <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={{ marginTop: 12, color: colors.text }}>Loading attendance records...</Text>
+                  <Text style={{ marginTop: 12, color: colors.text }}>
+                    Loading attendance records...
+                  </Text>
                 </View>
-              ) : !Array.isArray(displayedRecords) || displayedRecords.length === 0 ? (
+              ) : !Array.isArray(displayedRecords) ||
+                displayedRecords.length === 0 ? (
                 <Text style={styles.noDataText}>
-                  {mode === "day" ? "No records found for selected day" : mode === "week" ? "No records for selected week" : "No records for selected month"}
+                  {mode === "day"
+                    ? "No records found for selected day"
+                    : mode === "week"
+                    ? "No records for selected week"
+                    : "No records for selected month"}
                 </Text>
               ) : (
                 displayedRecords.map((r, index) => {
                   return (
-                    <CartBox key={r.id ?? index} containerStyle={styles.detail_cartbox}>
-                      <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                    <CartBox
+                      key={`${r.employeeId}-${r.date}-${index}`}
+                      containerStyle={styles.detail_cartbox}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                        }}
+                      >
                         <View style={{ flex: 1 }}>
-                          {/* 🔹 Branch name row (above avatar) */}
-                          {r.branchName && currentBranchId && r.branchId && r.branchId !== currentBranchId ? (
+                          {/* 🔹 Branch name row */}
+                          {r.branchName &&
+                          currentBranchId &&
+                          r.branchId &&
+                          r.branchId !== currentBranchId ? (
                             <View style={styles.branchRow}>
                               <Image
                                 source={require("../../../assets/icons/branch.png")}
                                 style={styles.branchIcon}
                               />
-                              <Text style={styles.branchName} numberOfLines={1} ellipsizeMode="tail">
+                              <Text
+                                style={styles.branchName}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
                                 {r.branchName}
                               </Text>
                             </View>
                           ) : null}
 
                           {/* 🧑 Avatar + user info */}
-                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                            }}
+                          >
                             <View style={styles.avatarPlaceholder}>
                               <Image
                                 source={require("../../../assets/images/profile2.png")}
@@ -705,46 +881,57 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                             </View>
 
                             <View style={styles.name_position}>
-                              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                              <Text
+                                style={styles.name}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
                                 {r.name}
                               </Text>
+
                               <Text style={styles.time}>
                                 {r.scheduledStartDisplay
                                   ? `${r.scheduledStartDisplay} - ${r.scheduledEndDisplay}`
                                   : "No Schedule"}
                               </Text>
+
                               <Text style={styles.time}>
                                 {r.date
-                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${MONTHS[new Date(r.date).getMonth()]
-                                  } ${new Date(r.date).getDate()}`
+                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${
+                                      MONTHS[new Date(r.date).getMonth()]
+                                    } ${new Date(r.date).getDate()}`
                                   : ""}
                               </Text>
                             </View>
                           </View>
                         </View>
 
-                        {/* ⏱️ Status (Right side) */}
-                        <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                        {/* ⏱️ Status */}
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "flex-end",
+                          }}
+                        >
                           <Text
                             style={
                               r.status === "late"
                                 ? styles.status_late
                                 : r.status === "early"
-                                  ? styles.status_early
-                                  : r.status === "on_time"
-                                    ? styles.status_on_time
-                                    : { display: "none" } // ✅ Hide "No Schedule" text completely
+                                ? styles.status_early
+                                : r.status === "on_time"
+                                ? styles.status_on_time
+                                : { display: "none" }
                             }
                           >
                             {r.status === "late"
                               ? "Late"
                               : r.status === "early"
-                                ? "Early"
-                                : r.status === "on_time"
-                                  ? "On Time"
-                                  : ""} {/* ✅ Empty string instead of "No Schedule" */}
+                              ? "Early"
+                              : r.status === "on_time"
+                              ? "On Time"
+                              : ""}
                           </Text>
-
 
                           {r.diffVsScheduleText ? (
                             <Text style={[styles.time1, { marginTop: 6 }]}>
@@ -754,7 +941,6 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                         </View>
                       </View>
                     </CartBox>
-
                   );
                 })
               )}
@@ -781,10 +967,15 @@ const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: colors.secondary },
   container: { marginHorizontal: 20, flex: 1 },
   body: { flex: 1, paddingTop: 20 },
-  Date_control_Buttons: { marginBottom: 20, flexDirection: 'row', width: '100%', justifyContent: 'space-between' },
-  searchWrap: { marginBottom: 12, },
-  inputWrap: { paddingBottom: 8, },
-  buttonWrap: { paddingBottom: 20, },
+  Date_control_Buttons: {
+    marginBottom: 20,
+    flexDirection: "row",
+    width: "100%",
+    justifyContent: "space-between",
+  },
+  searchWrap: { marginBottom: 12 },
+  inputWrap: { paddingBottom: 8 },
+  buttonWrap: { paddingBottom: 20 },
   recordCard: {
     backgroundColor: "#fff",
     marginHorizontal: 12,
@@ -805,13 +996,30 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 12,
-    justifyContent: "flex-start"
+    justifyContent: "flex-start",
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    alignItems: "center",
   },
   name_position: { marginLeft: 10, width: "65%" },
-  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
+  name: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.text,
+  },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
   time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
-  duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8 },
+  duration: {
+    color: colors.primary,
+    fontWeight: "500",
+    fontSize: 14,
+    marginLeft: 8,
+  },
   status_early: {
     fontWeight: fonts.weight.regular as any,
     color: colors.status_early,
@@ -834,6 +1042,17 @@ const styles = StyleSheet.create({
     marginRight: 7,
     textAlign: "center",
   },
+  status_on_time: {
+    fontWeight: fonts.weight.regular as any,
+    color: colors.status_early,
+    fontSize: fonts.size.xs,
+    paddingVertical: 2,
+    paddingHorizontal: 12,
+    backgroundColor: colors.status_early_bg,
+    borderRadius: 10,
+    marginRight: 7,
+    textAlign: "center",
+  },
   status_noschedule: {
     fontWeight: fonts.weight.regular as any,
     color: colors.subtext,
@@ -846,12 +1065,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
-  profileImage: { width: 40, height: 40, borderRadius: 20, resizeMode: "cover" },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    resizeMode: "cover",
+  },
   branchHeader: {
     flexDirection: "row",
     marginBottom: 10,
-    alignSelf: 'flex-start',
-    width: '90%'
+    alignSelf: "flex-start",
+    width: "90%",
   },
   branchRow: {
     flexDirection: "row",
@@ -868,7 +1092,7 @@ const styles = StyleSheet.create({
 
   branchName: {
     color: colors.text,
-    fontSize: fonts.size.m
+    fontSize: fonts.size.m,
   },
 });
 
