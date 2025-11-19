@@ -57,7 +57,7 @@ export const exportMonthlyAttendanceXLSX = async (employeeId: string) => {
     XLSX.utils.book_append_sheet(wb, ws, "Attendance");
 
     // Convert workbook to base64
-    const wboutBase64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+    const aboutBase64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
 
     // Use first record's fullname or default
     const fullnameRaw = records[0]?.fullname || "attendance";
@@ -70,7 +70,7 @@ export const exportMonthlyAttendanceXLSX = async (employeeId: string) => {
     const fileUri = FileSystem.documentDirectory + fileName;
 
     // Write file (legacy API)
-    await FileSystem.writeAsStringAsync(fileUri, wboutBase64, {
+    await FileSystem.writeAsStringAsync(fileUri, aboutBase64, {
       encoding: "base64",
     });
 
