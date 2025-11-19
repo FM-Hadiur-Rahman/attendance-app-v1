@@ -548,7 +548,7 @@ const AddBranchScreen: React.FC = (props: any) => {
       console.log('Navigating to Footer_S with', {
   selectedTab: 'Branch',
   branchId: newBranch?._id,
-  createdUserId: createdUser?._id ?? createdUser?.id,
+  createdUserId: createdUser?.id,
   toastMessage: lang.Branch_Created_successfully,
 });
 

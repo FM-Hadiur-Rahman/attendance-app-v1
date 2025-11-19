@@ -18,30 +18,25 @@ export interface LoginPayload {
 }
 
 export interface RegisterPayload {
-  salutation?: string;
-  firstName: string;
-  lastName: string;
-  dob?: string;
+  fullname: string;
+  position?: string;
   phone?: string;
   email: string;
   password: string;
   username?: string;
-  fullname?: string; // added
 }
 
 export interface AuthResponse {
   token: string;
   user: {
-    _id?: string;
-    id?: string;
-    salutation?: string;
-    firstName?: string;
-    lastName?: string;
-    fullname?: string; // added
-    dob?: string;
+    id: string;
+    email: string;
+    username: string;
+    role: string;
+    fullname?: string;
+    position?: string;
     phone?: string;
-    username?: string;
-    email?: string;
+    branch?: string;
   };
 }
 
@@ -68,8 +63,8 @@ export const register = async (data: RegisterPayload): Promise<AuthResponse> => 
   } catch (error: any) {
     //console.error('register() failed:', error?.response?.data ?? error);
     throw (
-      //error?.response?.data?.message ||
-      //error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.response?.data?.error ||
       'Registration failed'
     );
   }

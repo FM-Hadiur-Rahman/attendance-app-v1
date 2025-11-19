@@ -182,7 +182,7 @@ export default function BranchProfileScreen(props: any) {
       lat = Number(b.location.coordinates[1]);
     }
 
-    if (!isFinite(lat) || !isFinite(lon)) return { lat: undefined, lon: undefined };
+    if (lat === undefined || lon === undefined || !isFinite(lat) || !isFinite(lon)) return { lat: undefined, lon: undefined };
     return { lat, lon };
   };
 
@@ -204,6 +204,10 @@ export default function BranchProfileScreen(props: any) {
 
       const { lat: bl, lon: blo } = normalizeBranchCoord(b);
       if (bl === undefined || blo === undefined) continue;
+      
+      // Check if bl and blo are valid numbers before using Math.abs
+      if (typeof bl !== 'number' || typeof blo !== 'number' || 
+          !isFinite(bl) || !isFinite(blo)) continue;
 
       if (Math.abs(bl - lat) < COORD_TOLERANCE && Math.abs(blo - lon) < COORD_TOLERANCE) {
         return true;

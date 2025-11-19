@@ -11,10 +11,14 @@ export interface BranchCreatePayload {
 
 export interface Branch {
   _id: string;
+  id?: string;
   name: string;
-  phone?: string;
-  email?: string;
-  location?: any;
+  phone: string;
+  email: string;
+  location?: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
   [k: string]: any;
 }
 

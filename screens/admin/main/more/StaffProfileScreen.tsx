@@ -58,7 +58,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const route = useRoute<any>();
   const { id, userId: navUserId, langId } = route.params || {};
   const currentLang = langId || "en";
-  const lang = translations[currentLang];
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
 
   console.log("Route Params =>", route.params);
 
@@ -430,7 +430,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       const lang = route.params?.langId ?? "de";
 
       // navigate back to Footer_A opening StaffRecord tab and pass props
-      navigation.navigate("Footer_A" as any, {
+      (navigation as any).navigate("Footer_A", {
         selectedTab: "StaffRecord",
         userId: currentUserId,
         langId: lang,
@@ -930,7 +930,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         />
         <View style={styles.modalContainer}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editPosition}</Text>
+          <Text style={styles.modalTitle}>{lang.position}</Text>
           <InputBox
             label="Position"
             value={positionInput}
@@ -941,7 +941,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSavePosition}
-            disabled={saving}
           />
         </View>
       </Modal>
@@ -959,7 +958,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         />
         <View style={styles.modalContainer}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editEmail}</Text>
+          <Text style={styles.modalTitle}>{lang.email}</Text>
           <InputBox
             label="Email"
             value={emailInput}
@@ -977,7 +976,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSaveEmail}
-            disabled={saving}
           />
         </View>
       </Modal>
@@ -995,7 +993,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         />
         <View style={styles.modalContainer}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editPhoneNumber}</Text>
+          <Text style={styles.modalTitle}>{lang.phoneNumber}</Text>
           {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
           <InputBox
             label="Phone"
@@ -1006,7 +1004,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             leftIcon={selectedCountry.flag}
             leftIcon2={require("../../../../assets/icons/down_b.png")}
             onLeftIcon2Press={() =>
-              navigation.navigate("Code", {
+              (navigation as any).navigate("Code", {
                 initialSelectedId: selectedCountry.id,
                 onSelect: (item: any) => {
                   setSelectedCountry(item);
@@ -1062,7 +1060,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             text={lang.save}
             width="100%"
             onPress={handleSavePhone}
-            disabled={saving}
           />
         </View>
       </Modal>
@@ -1075,7 +1072,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         />
         <View style={styles.modalContainer}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editProfile}</Text>
+          <Text style={styles.modalTitle}>{lang.profile}</Text>
 
           <TouchableOpacity
             style={styles.modalOption}

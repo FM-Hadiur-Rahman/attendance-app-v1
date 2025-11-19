@@ -18,6 +18,17 @@ import MoreScreen from '../screens/admin/main/MoreScreen';
 import colors from '../styles/Colors';
 import fonts from '../styles/Fonts';
 
+// Define the props interface for screen components
+interface ScreenProps {
+  userId?: string | null;
+  langId?: string;
+  setLangId?: React.Dispatch<React.SetStateAction<string>>;
+  routeRefresh?: boolean;
+  onConsumedRefresh?: () => void;
+  toastMessage?: string | null;
+  onConsumedToast?: () => void;
+}
+
 const Footer_A = () => {
   // default tab
   const [selectedTab, setSelectedTab] = useState<string>('Home');
@@ -32,12 +43,19 @@ const Footer_A = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(route.params?.toastMessage ?? null);
 
   // keep tab config as before
+  // Type the components properly
+  const HomeScreenTyped = HomeScreen as React.ComponentType<ScreenProps>;
+  const AttendancerecordScreenTyped = AttendancerecordScreen as React.ComponentType<ScreenProps>;
+  const WorkScheduleScreenTyped = WorkScheduleScreen as React.ComponentType<ScreenProps>;
+  const StaffRecordScreenTyped = StaffRecordScreen as React.ComponentType<ScreenProps>;
+  const MoreScreenTyped = MoreScreen as React.ComponentType<ScreenProps>;
+  
   const tabConfig = [
-    { key: 'Home', component: HomeScreen, icon: require('../assets/icons/a_home_g.png'), activeIcon: require('../assets/icons/a_home_b.png') },
-    { key: 'Attendancerecord', component: AttendancerecordScreen, icon: require('../assets/icons/a_attendance_g.png'), activeIcon: require('../assets/icons/a_attendance_b.png') },
-    { key: 'WorkSchedule', component: WorkScheduleScreen, icon: require('../assets/icons/a_workschedule_g.png'), activeIcon: require('../assets/icons/a_workschedule_b.png') },
-    { key: 'StaffRecord', component: StaffRecordScreen, icon: require('../assets/icons/a_staffrecord_g.png'), activeIcon: require('../assets/icons/a_staffrecord_b.png') },
-    { key: 'More', component: MoreScreen, icon: require('../assets/icons/a_more_g.png'), activeIcon: require('../assets/icons/a_more_b.png') },
+    { key: 'Home', component: HomeScreenTyped, icon: require('../assets/icons/a_home_g.png'), activeIcon: require('../assets/icons/a_home_b.png') },
+    { key: 'Attendancerecord', component: AttendancerecordScreenTyped, icon: require('../assets/icons/a_attendance_g.png'), activeIcon: require('../assets/icons/a_attendance_b.png') },
+    { key: 'WorkSchedule', component: WorkScheduleScreenTyped, icon: require('../assets/icons/a_workschedule_g.png'), activeIcon: require('../assets/icons/a_workschedule_b.png') },
+    { key: 'StaffRecord', component: StaffRecordScreenTyped, icon: require('../assets/icons/a_staffrecord_g.png'), activeIcon: require('../assets/icons/a_staffrecord_b.png') },
+    { key: 'More', component: MoreScreenTyped, icon: require('../assets/icons/a_more_g.png'), activeIcon: require('../assets/icons/a_more_b.png') },
   ];
 
   // When route.params changes (navigation.navigate(...) from other screens), react and update states

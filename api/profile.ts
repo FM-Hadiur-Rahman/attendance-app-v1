@@ -9,13 +9,14 @@ import { getUserId } from './auth/authToken'; // only userId from authToken
 
 export interface ProfileUser {
   _id: string;
-  username?: string;
-  fullname?: string;
+  id?: string;
+  username: string;
+  fullname: string;
   position?: string;
-  phone?: string;
-  email?: string;
-  role?: string;
-  branch?: string | { _id?: string; name?: string };
+  phone: string;
+  email: string;
+  role: string;
+  branch: string | { _id: string; name: string };
   [key: string]: any;
 }
 
@@ -233,9 +234,15 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
     const users = await getUsers({ limit: params.limit ?? 1000 });
     const map: Record<string, string | undefined> = {};
 
-    users.forEach((u: any) => {
+    users.forEach((u: ProfileUser) => {
       if (u?.role === 'admin') {
-        const branchId = u.branch?._id ?? (typeof u.branch === 'string' ? u.branch : undefined);
+        let branchId: string | undefined;
+        if (typeof u.branch === 'string') {
+          branchId = u.branch;
+        } else if (u.branch && typeof u.branch === 'object' && '_id' in u.branch) {
+          branchId = u.branch._id;
+        }
+        
         if (branchId && !map[branchId]) {
           map[branchId] = u.fullname ?? u.username ?? undefined;
         }

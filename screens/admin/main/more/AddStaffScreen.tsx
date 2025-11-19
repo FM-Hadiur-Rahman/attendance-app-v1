@@ -65,7 +65,7 @@ const AddStaffScreen: React.FC = (props: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const { userId, langId, onSave } = route.params || {};
   const currentLang = langId || "en";
-  const lang = translations[currentLang];
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
 
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,6 +172,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       startTime: string;
       endTime: string;
       duration?: number;
+      date?: string | null;
     };
   }>({});
   const [activeDate, setActiveDate] = useState<string | null>(null); // will hold weekday name like "Sunday"
@@ -234,7 +235,12 @@ const AddStaffScreen: React.FC = (props: any) => {
     setTimeFrom(`${hh}:${mm}:${ss}`);
     setTimeFromError("");
   };
-  const [finalSchedule, setFinalSchedule] = useState([]);
+  const [finalSchedule, setFinalSchedule] = useState<Array<{
+    date: string;
+    day_of_week: string;
+    start_time: string;
+    end_time: string;
+  }>>([]);
 
   const buildScheduleArray = () => {
     const result: Array<{
@@ -889,11 +895,11 @@ const AddStaffScreen: React.FC = (props: any) => {
     if (scheduleArray.length > 0) {
       console.table(
         scheduleArray.map((item) => ({
-          day: item.day,
+          day: item.day_of_week,
           date: item.date,
           start: item.start_time,
           end: item.end_time,
-          duration: item.duration,
+          duration: undefined,
         }))
       );
     }
@@ -1045,7 +1051,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       const result = await authRegister(payload);
       // result contains { token, user } per interface
       const createdUser = result?.user ?? null;
-      const createdId = createdUser?._id ?? createdUser?.id ?? null;
+      const createdId = (createdUser && typeof createdUser === 'object' && '_id' in createdUser) ? createdUser._id : createdUser?.id ?? null;
 
       // call onSave callback without password
       if (onSave) {
@@ -1434,7 +1440,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                           } else {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${lang.enterAtLeast || "Enter at least"
+                              phone: `${lang.Enter_at_least || "Enter at least"
                                 } ${newRule.min} ${lang.digits || "digits"}`,
                             }));
                           }
@@ -1780,13 +1786,11 @@ const AddStaffScreen: React.FC = (props: any) => {
               backgroundColor={colors.secondary}
               width={"45%"}
             />
-            {/* <Button1 text={lang.save} onPress={() => { if (validateStep2()) setConfirmPopupVisible(true); }} backgroundColor={colors.primary} width={"45%"} /> */}
             <Button1
               text={lang.save}
               onPress={onSavePress}
               backgroundColor={colors.primary}
               width={"45%"}
-              disabled={checkingUsername} // optional - depends on Button1 props
             />
           </View>
         )}
@@ -1826,9 +1830,9 @@ const AddStaffScreen: React.FC = (props: any) => {
                     placeholder={""}
                     value={selectedBranch}
                     editable={false}
-                    setValue={() => {
-                      setSelectedBranch(item.name ?? String(item._id));
-                      setSelectedBranchId(item._id ?? item.id ?? null);
+                    onPress={() => {
+                      // Open branch selection modal or logic here
+                      console.log('Open branch selection');
                     }}
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}

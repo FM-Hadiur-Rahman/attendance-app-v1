@@ -113,8 +113,8 @@ export const getTodaySchedule = async (opts: { userId?: string; branchId?: strin
     });
     if (todaySchedule) {
       // Optional filter by user/branch
-      if (userId && todaySchedule.employee_id?._id !== userId) return { schedules: allSchedules, todaySchedule: null };
-      if (branchId && todaySchedule.branch_id?._id !== branchId) return { schedules: allSchedules, todaySchedule: null };
+      if (userId && (typeof todaySchedule.employee_id === 'object' && todaySchedule.employee_id !== null ? todaySchedule.employee_id._id : todaySchedule.employee_id) !== userId) return { schedules: allSchedules, todaySchedule: null };
+      if (branchId && (typeof todaySchedule.branch_id === 'object' && todaySchedule.branch_id !== null ? todaySchedule.branch_id._id : todaySchedule.branch_id) !== branchId) return { schedules: allSchedules, todaySchedule: null };
       return {
         schedules: allSchedules,
         todaySchedule: {
@@ -181,7 +181,7 @@ export const getWeeklySchedules = async (opts: { userId?: string; timezone?: str
       if (!s?.date) return false;
       const schedDate = new Date(s.date!);
       return schedDate >= sunday && schedDate <= saturday &&
-        (!userId || s.employee_id?._id === userId);
+        (!userId || (typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id) === userId);
     });
     // 🧠 Debug log for your user’s weekly schedule
     if (userId) {
@@ -200,10 +200,10 @@ export const getWeeklySchedules = async (opts: { userId?: string; timezone?: str
 
     return weekSchedules.map((s: any) => ({
       id: s._id,
-      userId: s.employee_id?._id,
-      username: s.employee_id?.username,
-      branchId: s.branch_id?._id, // schedule branch ID
-      branchName: s.branch_id?.name, // schedule branch name
+      userId: typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id,
+      username: typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id.username : undefined,
+      branchId: typeof s.branch_id === 'object' && s.branch_id !== null ? s.branch_id._id : s.branch_id, // schedule branch ID
+      branchName: typeof s.branch_id === 'object' && s.branch_id !== null ? s.branch_id.name : undefined, // schedule branch name
       date: s.date,
       start_time: s.start_time,
       end_time: s.end_time,
@@ -319,8 +319,8 @@ export const getSchedulesForDate = async (
       const schedDate = new Date(s.date).toLocaleDateString("en-CA", { timeZone: timezone });
       return (
         schedDate === dateYMD &&
-        (!userId || s.employee_id?._id === userId) &&
-        (!branchId || s.branch_id?._id === branchId)
+        (!userId || (typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id) === userId) &&
+        (!branchId || (typeof s.branch_id === 'object' && s.branch_id !== null ? s.branch_id._id : s.branch_id) === branchId)
       );
     });
     console.log(`📅 Found ${filtered.length} schedules for ${dateYMD}`);

@@ -13,7 +13,7 @@ const attendanceUniqueId = (att: AttendanceHistoryItem) => {
   return (
     att.id ??
     (att as any)._id ??
-    `${att.user?.id ?? (att.user as any)?._id ?? 'unknown'}_${att.branch_id ?? att.branch?._id ?? 'unknown'}_${String(att.In ?? att.created_at ?? '')}`
+    `${att.user?.id ?? (typeof att.user === 'object' && att.user !== null ? (att.user as any)._id : att.user) ?? 'unknown'}_${att.branch_id ?? (att.branch ? (typeof att.branch === 'object' && att.branch !== null ? att.branch._id : att.branch) : 'unknown')}_${String(att.In ?? att.created_at ?? '')}`
   );
 };
 
@@ -84,7 +84,7 @@ export const sendCheckedInNotificationsToBranchAdmin = async (opts?: {
     const employeeBranchIdsSet = new Set<string>();
     for (const uid of uniqueUserIds) {
       const p = userProfilesById[uid];
-      const branchId = p?.branch?._id ?? (typeof p?.branch === 'string' ? p.branch : null);
+      const branchId = p?.branch ? (typeof p.branch === 'object' && p.branch !== null ? p.branch._id : p.branch) : null;
       if (branchId) employeeBranchIdsSet.add(String(branchId));
     }
     const employeeBranchIds = Array.from(employeeBranchIdsSet);
@@ -145,7 +145,7 @@ export const sendCheckedInNotificationsToBranchAdmin = async (opts?: {
       }
 
       const employeeProfile = userProfilesById[userId] ?? null;
-      const employeeBranchId = employeeProfile?.branch?._id ?? (typeof employeeProfile?.branch === 'string' ? employeeProfile.branch : null) ?? null;
+      const employeeBranchId = employeeProfile?.branch ? (typeof employeeProfile.branch === 'object' && employeeProfile.branch !== null ? employeeProfile.branch._id : employeeProfile.branch) : null;
       if (!employeeBranchId) {
         skippedNoAdmin++;
         continue;

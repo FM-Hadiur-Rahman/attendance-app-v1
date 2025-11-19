@@ -10,9 +10,11 @@ import {
 } from 'react-native';
 import colors from '../styles/Colors';
 
+import { DimensionValue } from 'react-native';
+
 type CartBoxProps = {
-    width?: number | string;
-    height?: number | string;
+    width?: DimensionValue;
+    height?: DimensionValue;
     borderRadius?: number;
     borderWidth?: number;
     borderColor?: string;
@@ -36,7 +38,7 @@ type CartBoxProps = {
 };
 
 const CartBox: React.FC<CartBoxProps> = ({
-    width = '100%',
+    width,
     height,
     borderRadius = 16,
     borderWidth = 0,
@@ -60,8 +62,8 @@ const CartBox: React.FC<CartBoxProps> = ({
     activeOpacity = 0.8,
 }) => {
     const boxStyle: StyleProp<ViewStyle> = {
-        width,
-        height,
+        width: width ?? undefined,
+        height: height ?? undefined,
         borderRadius,
         borderWidth,
         borderColor,

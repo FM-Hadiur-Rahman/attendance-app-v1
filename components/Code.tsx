@@ -16,7 +16,7 @@ import Header from './Header';
 import colors from '../styles/Colors';
 
 type RootStackParamList = {
-  Country_CodeScreen: { selectedLang: string };
+  Country_CodeScreen: { selectedLang: string; onSelect?: (item: CountryItem) => void; onClose?: () => void; initialSelectedId?: number };
 };
 
 export interface CountryItem {
@@ -46,9 +46,9 @@ const Code: React.FC<CodesCProps> = (props) => {
   const navigation = useNavigation();
 
 
-  const route = useRoute<RouteProp<RootStackParamList, 'Code'>>();
-  const { selectedLang } = route.params || { selectedLang: 'en'};
-  const lang = translations[selectedLang] || translations['en'];
+  const route = useRoute<RouteProp<RootStackParamList, 'Country_CodeScreen'>>();
+  const { selectedLang } = (route.params as { selectedLang: string; }) || { selectedLang: 'en'};
+  const lang = (translations as any)[selectedLang] || (translations as any)['en'];
 
   // Allow props OR route.params
   const onSelect = props.onSelect || route.params?.onSelect;
