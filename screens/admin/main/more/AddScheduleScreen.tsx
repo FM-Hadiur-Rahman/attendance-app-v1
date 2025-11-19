@@ -97,25 +97,13 @@ export default function AddScheduleScreen(props: any) {
   const duration= useRef<TextInput | null>(null);
 
   const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
-  return users.map((u) => {
-    const id = (u as any)._id ?? (u as any).id ?? "";
-    const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
-
-    // Safer branch extraction using optional chaining and casts:
-    let branch_id = "";
-    if (typeof u.branch === "string") {
-      branch_id = u.branch;
-    } else if (u.branch && typeof u.branch === "object") {
-      // try common keys: _id, id, branch_id
-      branch_id = (u.branch as any)._id ?? (u.branch as any).id ?? (u as any).branch_id ?? "";
-    } else {
-      branch_id = (u as any).branch_id ?? "";
-    }
-
-    return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
-  });
-};
-
+    return users.map((u) => {
+      const id = (u as any)._id ?? (u as any).id ?? "";
+      const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
+      const branch_id = typeof u.branch === 'string' ? u.branch : (u.branch && (u.branch._id ?? u.branch.id)) ?? (u as any).branch_id ?? "";
+      return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
+    });
+  };
   const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
     return branches.map((b) => ({ id: (b as any)._id ?? (b as any).id ?? "", name: (b as any).name ?? (b as any).branch_name ?? "", raw: b }));
   };
@@ -1009,6 +997,12 @@ export default function AddScheduleScreen(props: any) {
                       // day-level check: if this particular day already has a schedule for this staff (local OR initial), block this day
                       const daySchedulesArr = localSchedulesByDate[ymd] || [];
                       const staffScheduleForDay = selectedStaffId ? daySchedulesArr.find((s) => String(s.user_id) === String(selectedStaffId)) : null;
+                      if (staffScheduleForDay) {
+                        // different message for day-level duplicate
+                        showErrorToast(lang.scheduleAlreadyAdded || "Schedule already added for this day");
+                        return;
+                      }
+                      // allow opening modal only for non-expired days (expired checked at top)
                       openAddModalForDate(ymd, displayYmd);
                     }}
 

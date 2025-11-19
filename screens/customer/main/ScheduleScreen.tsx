@@ -78,37 +78,22 @@ export default function ScheduleScreen(props: any) {
   };
   const weekDates = getWeekDates();
 
-const fetchWeeklySchedules = useCallback(async () => {
-  setRefreshing(true);
-  try {
-    const user = await getProfile();
+  const fetchWeeklySchedules = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const user = await getProfile();
+      setLocalUsers([user]);
+      setLocalBranches([{ _id: user.branch?._id, name: user.branch?.name }]);
+      setSelectedStaffId(user._id);
 
-    setLocalUsers([user]);
-
-    // ✅ Normalize branch because API sometimes returns string or object
-    const branchObj =
-      typeof user.branch === "object" && user.branch !== null
-        ? user.branch
-        : { _id: String(user.branch || ""), name: "" };
-
-    setLocalBranches([
-      {
-        _id: branchObj._id,
-        name: branchObj.name,
-      },
-    ]);
-
-    setSelectedStaffId(user._id);
-
-    const data = await getWeeklySchedules({ userId: user._id });
-    setWeeklySchedules(data);
-  } catch (err) {
-    console.error("❌ Error fetching weekly schedules:", err);
-  } finally {
-    setRefreshing(false);
-  }
-}, []);
-
+      const data = await getWeeklySchedules({ userId: user._id });
+      setWeeklySchedules(data);
+    } catch (err) {
+      console.error("❌ Error fetching weekly schedules:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchWeeklySchedules();

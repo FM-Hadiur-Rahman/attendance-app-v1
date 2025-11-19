@@ -161,8 +161,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     d.setHours(0, 0, 0, 0);
     return d;
   })();
-  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]
-    } ${defaultToday.getDate()}`;
+  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${
+    MONTHS[defaultToday.getMonth()]
+  } ${defaultToday.getDate()}`;
   const [dateInput, setDateInput] = useState<string>(WEEKDAY_FMT);
   const [dateError, setDateError] = useState<string>("");
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(
@@ -289,37 +290,24 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       }
 
       // --- get logged-in profile ---
-      // --- get logged-in profile (safe) ---
-      let prof: any = null;
-      try {
-        prof = await getProfile();
-      } catch (err) {
-        console.warn("getProfile() threw error:", err);
-        prof = null;
-      }
-
-      // defensive fallbacks (avoid reading properties of null/undefined)
+      const prof = await getProfile(); // current logged-in user
       const loggedInBranchId =
-        prof?.branch && typeof prof.branch === "string"
+        typeof prof.branch === "string"
           ? prof.branch
-          : prof?.branch?._id ?? null;
+          : prof.branch?._id ?? null;
+      const loggedInUserId = prof._id;
+      const userRole = prof.role;
 
-      const loggedInUserId = prof?._id ?? null;
-      const userRole = prof?.role ?? null;
-
-      // optional: log for debugging
-      if (!prof) {
-        console.warn("getProfile() returned empty. Using null fallbacks for branch/user/role.");
-      } else {
-        console.log("Loaded profile:", { id: loggedInUserId, branch: loggedInBranchId, role: userRole });
-      }
       // save branch id for later comparison in UI
       setCurrentBranchId(loggedInBranchId);
 
       // --- fetch attendance data ---
-      const res = await getAttendanceReport(startDate, endDate, loggedInBranchId);
-      const resAny: any = res;
-      const rows = Array.isArray(resAny) ? resAny : resAny?.rows ?? resAny?.data ?? [];
+      const res = await getAttendanceReport(
+        startDate,
+        endDate,
+        loggedInBranchId
+      );
+      const rows = Array.isArray(res) ? res : res?.rows ?? res?.data ?? [];
       const normalized = Array.isArray(rows) ? rows : [];
       const normalizedWithCheckin = normalized.filter((r: any) => {
         const actualIn =
@@ -585,12 +573,14 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         const s = getStartOfWeekSunday(selectedDate);
         const e = getEndOfWeekSaturday(selectedDate);
         setDateInput(
-          `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]
+          `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
+            WEEKDAYS[e.getDay()]
           }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
         );
       } else {
         setDateInput(
-          `${FULL_MONTHS[selectedDate.getMonth()]
+          `${
+            FULL_MONTHS[selectedDate.getMonth()]
           } ${selectedDate.getFullYear()}`
         );
       }
@@ -603,7 +593,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     today.setHours(0, 0, 0, 0);
     setSelectedDateObj(today);
     setDateInput(
-      `${WEEKDAYS[today.getDay()]}, ${MONTHS[today.getMonth()]
+      `${WEEKDAYS[today.getDay()]}, ${
+        MONTHS[today.getMonth()]
       } ${today.getDate()}`
     );
   };
@@ -613,7 +604,8 @@ const AttendancerecordScreen: React.FC = (props: any) => {
     const s = getStartOfWeekSunday(dt);
     const e = getEndOfWeekSaturday(dt);
     setDateInput(
-      `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]
+      `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
+        WEEKDAYS[e.getDay()]
       }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
     );
   };
@@ -651,10 +643,10 @@ const AttendancerecordScreen: React.FC = (props: any) => {
           item.status === "late"
             ? "Late"
             : item.status === "early"
-              ? "Early"
-              : item.status === "on_time"
-                ? "On Time"
-                : "",
+            ? "Early"
+            : item.status === "on_time"
+            ? "On Time"
+            : "",
         Difference: item.diffVsScheduleText || "",
       }));
 
@@ -781,15 +773,15 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                 mode === "day"
                   ? lang.date_label
                   : mode === "week"
-                    ? "Week"
-                    : "Month"
+                  ? "Week"
+                  : "Month"
               }
               placeholder={
                 mode === "day"
                   ? "Thu, Aug 18"
                   : mode === "week"
-                    ? "Sun, Oct 12 - Sat, Oct 18"
-                    : "October 2025"
+                  ? "Sun, Oct 12 - Sat, Oct 18"
+                  : "October 2025"
               }
               value={dateInput}
               setValue={setDateInput}
@@ -837,14 +829,14 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                   {mode === "day"
                     ? "No records found for selected day"
                     : mode === "week"
-                      ? "No records for selected week"
-                      : "No records for selected month"}
+                    ? "No records for selected week"
+                    : "No records for selected month"}
                 </Text>
               ) : (
                 displayedRecords.map((r, index) => {
                   return (
                     <CartBox
-                      key={`${r.id ?? r.raw?.employeeId ?? index}-${r.date ?? "nodate"}`}
+                      key={`${r.employeeId}-${r.date}-${index}`}
                       containerStyle={styles.detail_cartbox}
                     >
                       <View
@@ -856,9 +848,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                         <View style={{ flex: 1 }}>
                           {/* 🔹 Branch name row */}
                           {r.branchName &&
-                            currentBranchId &&
-                            r.branchId &&
-                            r.branchId !== currentBranchId ? (
+                          currentBranchId &&
+                          r.branchId &&
+                          r.branchId !== currentBranchId ? (
                             <View style={styles.branchRow}>
                               <Image
                                 source={require("../../../assets/icons/branch.png")}
@@ -905,8 +897,9 @@ const AttendancerecordScreen: React.FC = (props: any) => {
 
                               <Text style={styles.time}>
                                 {r.date
-                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${MONTHS[new Date(r.date).getMonth()]
-                                  } ${new Date(r.date).getDate()}`
+                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${
+                                      MONTHS[new Date(r.date).getMonth()]
+                                    } ${new Date(r.date).getDate()}`
                                   : ""}
                               </Text>
                             </View>
@@ -925,19 +918,19 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                               r.status === "late"
                                 ? styles.status_late
                                 : r.status === "early"
-                                  ? styles.status_early
-                                  : r.status === "on_time"
-                                    ? styles.status_on_time
-                                    : { display: "none" }
+                                ? styles.status_early
+                                : r.status === "on_time"
+                                ? styles.status_on_time
+                                : { display: "none" }
                             }
                           >
                             {r.status === "late"
                               ? "Late"
                               : r.status === "early"
-                                ? "Early"
-                                : r.status === "on_time"
-                                  ? "On Time"
-                                  : ""}
+                              ? "Early"
+                              : r.status === "on_time"
+                              ? "On Time"
+                              : ""}
                           </Text>
 
                           {r.diffVsScheduleText ? (
