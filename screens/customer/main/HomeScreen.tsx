@@ -939,18 +939,18 @@ const formatTo12Hour = (time?: string): string => {
           return;
         }
 
-        // pick latest record by In
-        todayRecords.sort((a, b) => moment(b.In).valueOf() - moment(a.In).valueOf());
+        // pick latest record by actualIn
+        todayRecords.sort((a, b) => moment(b.actualIn).valueOf() - moment(a.actualIn).valueOf());
         const rec = todayRecords[0];
 
         setAttendanceToday(rec);
 
-        const hasIn = !!rec?.In;
-        const hasOut = !!rec?.Out;
+        const hasIn = !!rec?.actualIn;
+        const hasOut = !!rec?.actualOut;
 
         // times (HH:mm)
-        const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
-        const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
+        const inMoment = hasIn ? moment(rec.actualIn, "YYYY-MM-DD HH:mm:ss") : null;
+        const outMoment = hasOut ? moment(rec.actualOut, "YYYY-MM-DD HH:mm:ss") : null;
 
         setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
         setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
@@ -1038,10 +1038,7 @@ const formatTo12Hour = (time?: string): string => {
           width: 24,
           height: 24,
           onPress: () => {
-            navigation.navigate("C_NotificationScreen" as any, {
-              userId: userId,
-              langId: langId || "en",
-            });
+            (navigation as any).navigate("C_NotificationScreen");
           },
         }}
       />
@@ -1070,6 +1067,7 @@ const formatTo12Hour = (time?: string): string => {
           <Image
             source={require("../../../assets/icons/f_schedule_b.png")}
             style={styles.headingIcon}
+            resizeMode="contain"
           />
           <Text style={styles.headingText}>{lang.todaySchedule}</Text>
         </View>
@@ -1090,6 +1088,7 @@ const formatTo12Hour = (time?: string): string => {
                   <Image
                     source={require("../../../assets/icons/branch.png")}
                     style={styles.addressIcon1}
+                    resizeMode="contain"
                   />
                   <Text style={styles.addressText}>
                     {branchInfo.name}
@@ -1111,7 +1110,7 @@ const formatTo12Hour = (time?: string): string => {
 
               {(branchInfo?.address || todaySchedule?.branch?.address) && (
                 <View style={styles.addressLine}>
-                  <Image source={require("../../../assets/icons/location.png")} style={styles.addressIcon} />
+                  <Image source={require("../../../assets/icons/location.png")} style={styles.addressIcon} resizeMode="contain" />
                   <Text style={[styles.addressText, { fontSize: 14, color: "#555", width: '70%' }]}
                     numberOfLines={1} ellipsizeMode="tail">
                     {displayBranchAddress()}
@@ -1121,7 +1120,7 @@ const formatTo12Hour = (time?: string): string => {
 
               {(todaySchedule?.start_time || todaySchedule?.end_time) && (
                 <View style={styles.addressLine}>
-                  <Image source={require("../../../assets/icons/clock.png")} style={styles.addressIcon} />
+                  <Image source={require("../../../assets/icons/clock.png")} style={styles.addressIcon} resizeMode="contain" />
                   <Text style={[styles.addressText, { fontSize: 14, color: "#333" }]}>
                     {formatTime(todaySchedule.start_time)} - {formatTime(todaySchedule.end_time)}
                   </Text>
@@ -1131,12 +1130,13 @@ const formatTo12Hour = (time?: string): string => {
           </CartBox>
         )}
 
-        {!(attendanceToday && attendanceToday.In) ? (
+        {!(attendanceToday && attendanceToday.actualIn) ? (
           <>
             <View style={styles.middle}>
               <Image
                 source={require("../../../assets/icons/timer_gray.png")}
                 style={styles.icon}
+                resizeMode="contain"
               />
               <Text style={styles.subText}>{lang.readyToStartShift}</Text>
             </View>
@@ -1183,7 +1183,7 @@ const formatTo12Hour = (time?: string): string => {
               <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l , alignItems : "flex-start", marginRight:20}}>
                 {lang.currentStatus}
               </Text>
-              <View style={styles.statusBadge(!!checkOutTime)}>
+              <View style={styles.statusBadge}>
                 <Text style={styles.statusText}>
                   {checkOutTime ? lang.offDuty : lang.onDuty}
                 </Text>
@@ -1235,7 +1235,7 @@ const formatTo12Hour = (time?: string): string => {
               popupBorderColor={colors.primary}
               dismissOnOverlayPress={false}
               title={lang.confirmCheckOut}
-              titleStyle={colors.primary}
+              titleStyle={{ color: colors.primary }}
             >
               <Text style={styles.popupText}>
                 {lang.checkoutMessage}
@@ -1355,13 +1355,11 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     marginRight: 6,
-    resizeMode: "contain",
   },
   addressIcon1: {
     width: 16,
     height: 16,
     marginRight: 6,
-    resizeMode: "contain",
   },
   addressText: {
     fontSize: fonts.size.m,
@@ -1378,7 +1376,6 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     marginBottom: 20,
-    resizeMode: "contain",
   },
   subText: {
     fontSize: fonts.size.m,
@@ -1400,13 +1397,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     flexDirection: 'row',
   },
-  statusBadge: (offDuty: boolean) => ({
-    backgroundColor: offDuty ? colors.primary : colors.primary,
+  statusBadge: {
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 20,
-
-  }),
+  },
   statusText: {
     color: "#fff",
     fontSize: 12,

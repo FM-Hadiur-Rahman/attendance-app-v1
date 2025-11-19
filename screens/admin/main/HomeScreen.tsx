@@ -83,7 +83,19 @@ const formatYMDDisplay = (ymd: string) => {
   return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
 };
 
-const HomeScreen_A = (props: any) => {
+interface ScreenProps {
+  userId?: string | null;
+  langId?: string;
+  setLangId?: React.Dispatch<React.SetStateAction<string>>;
+  routeRefresh?: boolean;
+  onConsumedRefresh?: () => void;
+  toastMessage?: string | null;
+  onConsumedToast?: () => void;
+  branch?: any;
+  createdUser?: any;
+}
+
+const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
@@ -204,9 +216,9 @@ const HomeScreen_A = (props: any) => {
   // helper to test if schedule belongs to a role:user
   const scheduleIsUser = (s: any) => {
     if (s.employee_id) {
-      const role = s.employee_id.role ?? s.employee_id?.role;
+      const role = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id.role : undefined;
       if (typeof role === "string") return role === "user";
-      const id = s.employee_id._id ?? s.employee_id;
+      const id = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id;
       if (id) {
         const found = usersState.find((u) => u._id === id || (u as any).id === id);
         return found?.role === "user";
@@ -232,11 +244,21 @@ const TotalstaffCount = useMemo(() => {
     const sYMD = toYMDLocal(sDate);
 
     // branch id can be object or string
-    const branchIdOfSchedule = s.branch_id?._id ?? s.branch_id ?? null;
+    let branchIdOfSchedule = null;
+    if (s.branch_id && typeof s.branch_id === 'object' && '_id' in s.branch_id) {
+      branchIdOfSchedule = (s.branch_id as any)._id;
+    } else if (typeof s.branch_id === 'string') {
+      branchIdOfSchedule = s.branch_id;
+    }
 
     if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
       // employee_id may be object or string
-      const empId = s.employee_id?._id ?? s.employee_id ?? null;
+      let empId = null;
+      if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
+        empId = (s.employee_id as any)._id;
+      } else if (typeof s.employee_id === 'string') {
+        empId = s.employee_id;
+      }
       if (empId) uniqueEmpIds.add(String(empId));
     }
   });
@@ -258,7 +280,7 @@ const TotalstaffCount = useMemo(() => {
       const all = await getAttendanceAllHistory();
       const now = new Date();
       const filtered = (all || []).filter((a) => {
-        const aBranchId = a.branch?.id ?? a.branch_id ?? null;
+        const aBranchId = (a.branch as any)?.id ?? a.branch_id ?? null;
         if (!aBranchId) return false;
         if (String(aBranchId) !== String(branchIdToUse)) return false;
         if (!a.In) return false;
@@ -279,14 +301,19 @@ const TotalstaffCount = useMemo(() => {
           }
 
           const schedule = schedulesState.find((s) => {
-            const empId = s.employee_id?._id ?? s.employee_id;
+            let empId = null;
+            if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
+              empId = (s.employee_id as any)._id;
+            } else if (typeof s.employee_id === 'string') {
+              empId = s.employee_id;
+            }
             if (!empId || !uid) return false;
             const sDate = s.date ? toYMD(new Date(s.date)) : null;
             return String(empId) === String(uid) && sDate === todayYMD;
           }) ?? null;
 
           // compute status (early/late/noschedule) same as before (based on schedule start_time)
-          let status: "early" | "late" | "noschedule" = "noschedule";
+          let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
           let diffText = "";
 
           try {
@@ -328,10 +355,12 @@ const TotalstaffCount = useMemo(() => {
           try {
             if (userProfile) {
               // Extract user's actual branch info
-              const userBranchId =
-                typeof userProfile.branch === "string"
-                  ? userProfile.branch
-                  : userProfile.branch?._id ?? null;
+              let userBranchId = null;
+              if (typeof userProfile.branch === "string") {
+                userBranchId = userProfile.branch;
+              } else if (userProfile.branch && typeof userProfile.branch === "object" && '_id' in userProfile.branch) {
+                userBranchId = (userProfile.branch as any)._id;
+              }
               const userBranchName =
                 typeof userProfile.branch === "object"
                   ? userProfile.branch?.name ?? null
@@ -347,7 +376,7 @@ const TotalstaffCount = useMemo(() => {
             } else if (att.branch_id) {
               // fallback if userProfile not loaded
               const b = await getBranchById(att.branch_id);
-              const userBranchId = b?._id;
+              const userBranchId = (b as any)?._id;
               if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
                 branchNameToShow = b?.name ?? null;
               }
@@ -438,7 +467,7 @@ const TotalstaffCount = useMemo(() => {
   const handleNotificationPress = () => {
     console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
     // use same param keys you expect in NotificationScreen
-    navigation.navigate("NotificationScreen" as any, { userId, langId, branchId: activeBranchId });
+    (navigation.navigate as any)("NotificationScreen", { userId, langId, branchId: activeBranchId });
   };
 
   return (

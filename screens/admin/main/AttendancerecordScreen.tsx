@@ -138,7 +138,19 @@ const normalizeDateToYMD = (s?: string | null) => {
 };
 
 // ---------------- component ----------------
-const AttendancerecordScreen: React.FC = (props: any) => {
+interface ScreenProps {
+  userId?: string | null;
+  langId?: string;
+  setLangId?: React.Dispatch<React.SetStateAction<string>>;
+  routeRefresh?: boolean;
+  onConsumedRefresh?: () => void;
+  toastMessage?: string | null;
+  onConsumedToast?: () => void;
+  branch?: any;
+  createdUser?: any;
+}
+
+const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
@@ -307,7 +319,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
         endDate,
         loggedInBranchId
       );
-      const rows = Array.isArray(res) ? res : res?.rows ?? res?.data ?? [];
+      const rows = Array.isArray(res) ? res : (res as any)?.rows ?? (res as any)?.data ?? [];
       const normalized = Array.isArray(rows) ? rows : [];
       const normalizedWithCheckin = normalized.filter((r: any) => {
         const actualIn =
@@ -353,7 +365,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
       if (userRole !== "admin") {
         filtered = enriched.filter(
           (r) =>
-            r.employeeId === loggedInUserId || r.employee_id === loggedInUserId
+            r.employeeId === loggedInUserId
         );
       }
 
@@ -836,7 +848,7 @@ const AttendancerecordScreen: React.FC = (props: any) => {
                 displayedRecords.map((r, index) => {
                   return (
                     <CartBox
-                      key={`${r.employeeId}-${r.date}-${index}`}
+                      key={`${r.id}-${r.date}-${index}`}
                       containerStyle={styles.detail_cartbox}
                     >
                       <View

@@ -21,7 +21,8 @@ export default function ScheduleScreen(props: any) {
   const route = useRoute<any>();
   const userId = props?.userId || route.params?.userId || route.params?.id || null;
   const langId = props?.langId || route.params?.langId || route.params?.language || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const currentLang = langId || "en";
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
   const [weeklySchedules, setWeeklySchedules] = useState<any[]>([]);
   const [localUsers, setLocalUsers] = useState<any[]>([]);
   const [localBranches, setLocalBranches] = useState<any[]>([]);
@@ -83,7 +84,18 @@ export default function ScheduleScreen(props: any) {
     try {
       const user = await getProfile();
       setLocalUsers([user]);
-      setLocalBranches([{ _id: user.branch?._id, name: user.branch?.name }]);
+      
+      // Fix the branch access by checking the type properly
+      const branchObj = typeof user.branch === 'object' && user.branch !== null 
+        ? { _id: user.branch._id, name: user.branch.name } 
+        : typeof user.branch === 'string' 
+          ? { _id: user.branch, name: '' } 
+          : null;
+      
+      if (branchObj) {
+        setLocalBranches([branchObj]);
+      }
+      
       setSelectedStaffId(user._id);
 
       const data = await getWeeklySchedules({ userId: user._id });

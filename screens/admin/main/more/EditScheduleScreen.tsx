@@ -413,6 +413,11 @@ export default function EditScheduleScreen(props: any) {
                 }
 
                 // Otherwise update normally
+                if (!selectedStaffId || !selectedBranchId) {
+                    showErrorToast("Please select both staff and branch");
+                    return;
+                }
+
                 const payload = {
                     employee_id: selectedStaffId,
                     branch_id: selectedBranchId,
@@ -429,6 +434,11 @@ export default function EditScheduleScreen(props: any) {
                 // ➕ Create new schedule
                 if (isNaN(dur) || dur <= 0) {
                     showErrorToast("Cannot create schedule with duration 0");
+                    return;
+                }
+
+                if (!selectedStaffId || !selectedBranchId) {
+                    showErrorToast("Please select both staff and branch");
                     return;
                 }
 

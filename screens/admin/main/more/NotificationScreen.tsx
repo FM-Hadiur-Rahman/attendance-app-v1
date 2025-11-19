@@ -129,7 +129,13 @@ const AdminNotificationScreen: React.FC = () => {
       }
 
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }),
+        handleNotification: async () => ({ 
+          shouldShowAlert: true, 
+          shouldPlaySound: true, 
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true
+        }),
       });
     })();
   }, []);
@@ -159,7 +165,7 @@ const AdminNotificationScreen: React.FC = () => {
     (async () => {
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? profile.branch?.id ?? null;
+        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? null;
         if (profBranch && String(profBranch) !== String(effectiveBranchId)) {
           setEffectiveBranchId(String(profBranch));
         }

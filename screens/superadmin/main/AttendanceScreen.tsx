@@ -212,7 +212,7 @@ const AttendanceScreen: React.FC = (props: any) => {
       attendance: AttendanceHistoryItem;
       userProfile: any | null;
       schedule?: ScheduleItem | null;
-      status: "early" | "late" | "noschedule";
+      status: "early" | "late" | "noschedule" | "not_checked_in";
       diffText: string;
       branchNameToShow?: string | null;
     }>
@@ -314,49 +314,6 @@ const AttendanceScreen: React.FC = (props: any) => {
   };
   const [loadingData, setLoadingData] = useState<boolean>(false);
 
-  // REPLACE existing TotalstaffCount with this
-  const TotalstaffCount = useMemo(() => {
-    if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
-
-    const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const toYMDLocal = (d: Date) =>
-      `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
-
-    const uniqueEmpIds = new Set<string>();
-
-    // Determine the target YMD for "day" mode; fall back to selectedDateObj or today
-    let targetYmdForDay = toYMD(new Date());
-    if (selectedRange && selectedRange.type === "day" && rangeStartEnd) {
-      targetYmdForDay = rangeStartEnd.startDate;
-    } else if (selectedDateObj) {
-      targetYmdForDay = `${selectedDateObj.getFullYear()}-${pad2Local(selectedDateObj.getMonth() + 1)}-${pad2Local(selectedDateObj.getDate())}`;
-    }
-
-    schedulesState.forEach((s) => {
-      if (!s?.date) return;
-
-      const sDate = new Date(s.date);
-      const sYMD = toYMDLocal(sDate);
-
-      // branch id can be object or string
-      const branchIdOfSchedule = s.branch_id?._id ?? s.branch_id ?? null;
-
-      if (!branchIdOfSchedule) return;
-      if (String(branchIdOfSchedule) !== String(activeBranchId)) return;
-
-      // Only count schedules for the selected day (when in day mode)
-      if (mode === "day") {
-        if (sYMD !== targetYmdForDay) return;
-      }
-
-      const empId = s.employee_id?._id ?? s.employee_id ?? null;
-      if (empId) uniqueEmpIds.add(String(empId));
-    });
-
-    return uniqueEmpIds.size;
-  }, [schedulesState, activeBranchId, selectedRange, rangeStartEnd, selectedDateObj, mode]);
-
-
   const selectedRange = useMemo(() => {
     const baseDate = selectedDateObj ?? new Date();
     try {
@@ -418,6 +375,64 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
     return null;
   }, [selectedRange]);
+
+  // REPLACE existing TotalstaffCount with this
+  const TotalstaffCount = useMemo(() => {
+    if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
+
+    const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const toYMDLocal = (d: Date) =>
+      `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
+
+    const uniqueEmpIds = new Set<string>();
+
+    // Determine the target YMD for "day" mode; fall back to selectedDateObj or today
+    let targetYmdForDay = toYMD(new Date());
+    if (selectedRange && selectedRange.type === "day" && rangeStartEnd) {
+      targetYmdForDay = rangeStartEnd.startDate;
+    } else if (selectedDateObj) {
+      targetYmdForDay = `${selectedDateObj.getFullYear()}-${pad2Local(selectedDateObj.getMonth() + 1)}-${pad2Local(selectedDateObj.getDate())}`;
+    }
+
+    schedulesState.forEach((s) => {
+      if (!s?.date) return;
+
+      const sDate = new Date(s.date);
+      const sYMD = toYMDLocal(sDate);
+
+      // branch id can be object or string
+      const branchIdOfSchedule = typeof s.branch_id === 'object' && s.branch_id !== null ? (s.branch_id as any)._id || s.branch_id : s.branch_id ?? null;
+
+      if (!branchIdOfSchedule) return;
+      if (String(branchIdOfSchedule) !== String(activeBranchId)) return;
+
+      // Only count schedules for the selected day (when in day mode)
+      if (mode === "day") {
+        if (sYMD !== targetYmdForDay) return;
+      }
+
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+        ? (s.employee_id as any)._id || s.employee_id
+        : s.employee_id ?? null;
+      if (empId) uniqueEmpIds.add(String(empId));
+    });
+
+    return uniqueEmpIds.size;
+  }, [schedulesState, activeBranchId, selectedRange, rangeStartEnd, selectedDateObj, mode]);
+
+
+  // Derived: total employees scheduled for the active branch (only role === 'user')
+  const totalScheduledEmployees = useMemo(() => {
+    const uniqueEmpIds = new Set<string>();
+    schedulesState.forEach((s) => {
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+        ? (s.employee_id as any)._id || s.employee_id
+        : s.employee_id ?? null;
+      if (empId) uniqueEmpIds.add(String(empId));
+    });
+
+    return uniqueEmpIds.size;
+  }, [schedulesState, activeBranchId]);
 
   // helper to convert a start/end yyyy-mm-dd into an array of ymd strings
   const ymdRangeToArray = (startYmd: string, endYmd: string) => {
@@ -517,7 +532,14 @@ const AttendanceScreen: React.FC = (props: any) => {
       // newest first
       filtered.sort((a, b) => (a.In < b.In ? 1 : -1));
 
-      const enriched = await Promise.all(filtered.map(async (att) => {
+      const enriched: Array<{
+        attendance: AttendanceHistoryItem;
+        userProfile: any | null;
+        schedule?: ScheduleItem | null;
+        status: "early" | "late" | "noschedule" | "not_checked_in";
+        diffText: string;
+        branchNameToShow?: string | null;
+      }> = await Promise.all(filtered.map(async (att) => {
         const uid = att.user?.id ?? att.user;
         // try to get userProfile from the provided users list first
         let userProfile = usersLocal.find((u) => String(u._id) === String(uid) || String((u as any).id) === String(uid));
@@ -529,7 +551,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         const inDt = new Date(String(att.In).replace(' ', 'T'));
         const inYMD = `${inDt.getFullYear()}-${(inDt.getMonth() + 1).toString().padStart(2, '0')}-${inDt.getDate().toString().padStart(2, '0')}`;
         const schedule = schedulesLocal.find((s: any) => {
-          const empId = s.employee_id?._id ?? s.employee_id;
+          const empId = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id;
           const sDate = s.date ? (() => {
             try { const dd = new Date(s.date); return `${dd.getFullYear()}-${(dd.getMonth() + 1).toString().padStart(2, '0')}-${dd.getDate().toString().padStart(2, '0')}`; } catch (e) { return null; }
           })() : null;
@@ -843,7 +865,7 @@ const AttendanceScreen: React.FC = (props: any) => {
       let filename = "attendance.xlsx";
       if (selectedRange?.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
       else if (selectedRange?.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
-      else filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
+      else if (selectedRange?.type === "month") filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
 
       const fileUri = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + filename;
       const enc: any =
@@ -926,7 +948,9 @@ const AttendanceScreen: React.FC = (props: any) => {
       if (String(schedBranchId) !== String(activeBranchId)) return;
 
       // employee id can be object or string
-      const empId = s.employee_id?._id ?? s.employee_id ?? null;
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+        ? (s.employee_id as any)._id || s.employee_id
+        : s.employee_id ?? null;
       // find optional attendance matching this schedule
       const matchedAttObj = findAttendanceFor(empId, sYMD); // may be null
 

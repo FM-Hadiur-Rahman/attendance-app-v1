@@ -165,12 +165,16 @@ const DashboardScreen = (props: any) => {
   const scheduleIsUser = (s: ScheduleItem) => {
     if (s.employee_id) {
       // sample backend returns employee_id as object with role/_id
-      const role = s.employee_id.role ?? s.employee_id?.role;
-      if (typeof role === 'string') {
-        return role === 'user';
+      // First check if employee_id is an object before accessing role
+      if (typeof s.employee_id === 'object' && s.employee_id !== null) {
+        const role = (s.employee_id as any).role ?? (s.employee_id as any)?.role;
+        if (typeof role === 'string') {
+          return role === 'user';
+        }
       }
       // fallback: try match against usersState by id
-      const id = s.employee_id._id ?? s.employee_id;
+      const id = typeof s.employee_id === 'object' && s.employee_id !== null ? 
+        (s.employee_id as any)._id ?? s.employee_id : s.employee_id;
       if (id) {
         const found = usersState.find((u) => u._id === id || (u as any).id === id);
         return found?.role === 'user';
@@ -187,7 +191,8 @@ const DashboardScreen = (props: any) => {
     const set = new Set<string>();
     schedulesState.forEach((s) => {
       if (!scheduleIsUser(s)) return;
-      const uid = s.employee_id?._id ?? s.employee_id;
+      const uid = typeof s.employee_id === 'object' && s.employee_id !== null ? 
+        (s.employee_id as any)._id ?? s.employee_id : s.employee_id;
       if (uid) set.add(String(uid));
     });
     return set.size;
@@ -212,11 +217,13 @@ const DashboardScreen = (props: any) => {
       schedulesState.forEach((s) => {
         // schedule must be of today already since schedulesState is filtered by today
         // check branch match
-        const sBranchId = s.branch_id?._id ?? s.branch_id;
+        const sBranchId = typeof s.branch_id === 'object' && s.branch_id !== null ? 
+          (s.branch_id as any)._id ?? s.branch_id : s.branch_id;
         if (!sBranchId) return;
         if (String(sBranchId) !== String(branchId)) return;
         if (!scheduleIsUser(s)) return;
-        const uid = s.employee_id?._id ?? s.employee_id;
+        const uid = typeof s.employee_id === 'object' && s.employee_id !== null ? 
+          (s.employee_id as any)._id ?? s.employee_id : s.employee_id;
         if (uid) workingSet.add(String(uid));
       });
 

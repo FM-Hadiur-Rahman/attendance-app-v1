@@ -167,7 +167,7 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
     const loadAddresses = async () => {
       const branches = await getAllBranches();
       const branchAddrs = await fetchBranchAddresses(branches);
-      setBranchAddresses(branchAddrs);
+      setBranchAddresses(branchAddrs || {}); // Add fallback to empty object
     };
 
     loadAddresses();
@@ -185,8 +185,9 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
           namesMap[b._id] = b.name || "Unnamed Branch";
 
-          if (b.location?.address) {
-            addressesMap[b._id] = b.location.address;
+          // Check if location has an address property (may not exist on all branch objects)
+          if (b.location && 'address' in b.location && b.location.address) {
+            addressesMap[b._id] = b.location.address as string;
           } else if (b.location?.coordinates?.length === 2) {
             const lat = b.location.coordinates[1];
             const lon = b.location.coordinates[0];
@@ -255,7 +256,7 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
 
   const currentLang = langId || "en";
-  const lang = (translations as any)[currentLang] || translations["en"];
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
   //const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
@@ -428,7 +429,7 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
 
       const monthSchedules = await getMonthlySchedules({
         userId: currentUser._id,
-        userBranchId: currentUser.branch_id, // 👈 pass user's default branch
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       });
 
       setSchedules(monthSchedules);

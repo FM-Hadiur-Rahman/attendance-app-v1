@@ -52,7 +52,6 @@ export default function MoreScreen(props: any) {
 
   const [selectedLanguage, setSelectedLanguage] = useState(initialLang);
   const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
-
   const [branchId, setBranchId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,7 +62,7 @@ export default function MoreScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  const lang = translations[selectedLanguage];
+  const lang = translations[selectedLanguage as keyof typeof translations] || translations["en"];
 
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string>(""); // no change to UI

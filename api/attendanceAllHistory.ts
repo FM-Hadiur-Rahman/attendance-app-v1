@@ -3,15 +3,17 @@ import axiosInstance from './axiosInstance';
 
 export interface AttendanceHistoryItem {
   id: string;
+  _id?: string;
   user: {
     id: string;
+    _id?: string;
     username?: string;
     email?: string;
   };
   In: string; // "YYYY-MM-DD HH:mm:ss"
   Out?: string;
   branch_id?: string;
-  branch?: { id?: string; name?: string };
+  branch?: { id?: string; _id?: string; name?: string };
   created_at?: string;
   updated_at?: string;
   [k: string]: any;

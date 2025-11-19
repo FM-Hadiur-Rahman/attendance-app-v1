@@ -61,7 +61,7 @@ const TermsScreen = () => {
     branchId: incomingBranchId,
   });
 
-  const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
+  const lang = translations[incomingLangId as keyof typeof translations] || translations['en'];
 
   const [refreshing, setRefreshing] = useState(false);
   const [termsContent, setTermsContent] = useState<Content | null>(null);

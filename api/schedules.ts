@@ -3,9 +3,13 @@ import axiosInstance from './axiosInstance';
 
 export interface ScheduleItem {
   _id: string;
-  employee_id?: any; // backend sometimes returns object or id - sample has object with role & _id
-  branch_id?: any;   // object { _id, name } or id
-  date?: string;     // ISO date string
+  id?: string;
+  employee_id: string | { _id: string; username: string; role: string };
+  branch_id: string | { _id: string; name: string };
+  date: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
   [k: string]: any;
 }
 

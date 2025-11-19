@@ -3,6 +3,8 @@ import axiosInstance from './axiosInstance';
 
 export interface AttendanceReportRow {
   employeeId: string;
+  id?: string;
+  _id?: string;
   username?: string;
   fullname?: string;
   date: string; // "YYYY-MM-DD"
@@ -49,10 +51,10 @@ export const getAttendanceReport = async (params: {
     const rows = data.rows ?? data.data ?? [];
     // Normalize rows so we always expose `fullname` (prefer fullname/full_name/name) and
     // remove `username` to avoid UI falling back to username accidentally.
-    const normalized = (Array.isArray(rows) ? rows : []).map((r: any) => {
+    const normalized = (Array.isArray(rows) ? rows : []).map((r: AttendanceReportRow) => {
       const fullname = r.fullname || r.full_name || r.name || "";
-      const clone: any = { ...r, fullname };
-      if ('username' in clone) delete clone.username;
+      const clone: AttendanceReportRow = { ...r, fullname };
+      if ('username' in clone) delete (clone as any).username;
       return clone;
     });
     return normalized as AttendanceReportRow[];

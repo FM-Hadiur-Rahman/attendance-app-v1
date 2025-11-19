@@ -56,7 +56,8 @@ export default function ProfileScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  const lang = translations[selectedLanguage];
+  const currentLang = selectedLanguage || "en";
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
 
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string>(""); // no change to UI

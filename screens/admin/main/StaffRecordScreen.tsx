@@ -246,48 +246,8 @@ const StaffRecordScreen: React.FC = (props: any) => {
     };
     init();
   }, []);
-  useEffect(() => {
-    console.log("[DEBUG] users state length:", users.length);
-    if (users.length > 0) {
-      console.log("[DEBUG] users sample (first 5):", users.slice(0, 5).map(u => ({
-        _id: u._id,
-        fullname: u.fullname,
-        role: u.role,
-        branch: (u as any).branch ?? (u as any).branch_id ?? null,
-      })));
-    }
-  }, [users]);
 
-  useEffect(() => {
-    console.log("[DEBUG] employees shown length (after filtering):", employees.length);
-  }, [employees]);
-
-  // --- AUTO REFRESH ON FOCUS ---
-  // whenever the screen receives focus (i.e. when navigating back to it), reload page 1.
-  useFocusEffect(
-    useCallback(() => {
-      let mounted = true;
-      const refreshOnFocus = async () => {
-        try {
-          // reset paging and fetch fresh data
-          if (!mounted) return;
-          setPage(1);
-          setHasMore(true);
-          await loadUsers(activeBranchId ?? null, 1, true);
-          // optionally reset search and bump version to update memoized lists
-          setQuery("");
-          setVersion((v) => v + 1);
-        } catch (e) {
-          console.warn("refresh on focus failed", e);
-        }
-      };
-      refreshOnFocus();
-
-      return () => { mounted = false; };
-    }, [activeBranchId])
-  );
-  // --- end auto refresh ---
-
+  // Declare employees after activeBranchId is declared to avoid TypeScript errors
   const employees = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = Array.isArray(users) ? users : [];
@@ -311,8 +271,23 @@ const StaffRecordScreen: React.FC = (props: any) => {
     const dateB = new Date(b.createdAt || b.updateDate || 0).getTime();
     return dateB - dateA; // DESC => latest first
   });
-
   }, [users, query, version, activeBranchId]);
+
+  useEffect(() => {
+    console.log("[DEBUG] users state length:", users.length);
+    if (users.length > 0) {
+      console.log("[DEBUG] users sample (first 5):", users.slice(0, 5).map(u => ({
+        _id: u._id,
+        fullname: u.fullname,
+        role: u.role,
+        branch: (u as any).branch ?? (u as any).branch_id ?? null,
+      })));
+    }
+  }, [users]);
+
+  useEffect(() => {
+    console.log("[DEBUG] employees shown length (after filtering):", employees.length);
+  }, [employees]);
 
   const navAndLog = (routeName: string, params?: any) => {
     const allParams = { ...(params || {}), userId, langId };
@@ -589,5 +564,3 @@ const styles = StyleSheet.create({
   position: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
   staffLabel: { fontSize: fonts.size.s, color: colors.subtext, fontWeight: fonts.weight.regular as any },
 });
-
-

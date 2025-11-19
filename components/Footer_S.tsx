@@ -15,6 +15,15 @@ import BranchScreen from '../screens/superadmin/main/BranchScreen';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
 import Toast, { toastConfig } from './Toast';
 
+// Define the props interface for screen components
+interface ScreenProps {
+  userId?: string | null;
+  langId?: string;
+  setLangId?: React.Dispatch<React.SetStateAction<string>>;
+  branch?: any;
+  createdUser?: any;
+}
+
 const Footer_S = () => {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
@@ -43,22 +52,27 @@ const Footer_S = () => {
   const ADD_BTN_SIZE = 60;
   const ADD_BTN_HALF_INSIDE = 30;
 
+  // Type the components properly
+  const DashboardScreenTyped = DashboardScreen as React.ComponentType<ScreenProps>;
+  const AddBranchScreenTyped = AddBranchScreen as React.ComponentType<ScreenProps>;
+  const BranchScreenTyped = BranchScreen as React.ComponentType<ScreenProps>;
+  
   const tabConfig = [
     {
       key: 'DashboardScreen',
-      component: DashboardScreen,
+      component: DashboardScreenTyped,
       icon: require('../assets/icons/a_home_g.png'),
       activeIcon: require('../assets/icons/f_home_super_b.png'),
     },
     {
       key: 'AddBranch',
-      component: AddBranchScreen,
+      component: AddBranchScreenTyped,
       icon: require('../assets/icons/button3.png'),
       activeIcon: require('../assets/icons/button3.png'),
     },
     {
       key: 'Branch',
-      component: BranchScreen,
+      component: BranchScreenTyped,
       icon: require('../assets/icons/f_branch_gray.png'),
       activeIcon: require('../assets/icons/f_branch_b.png'),
     },

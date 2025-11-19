@@ -267,7 +267,6 @@ const HelpCenterScreen: React.FC = () => {
           text={sending ? (lang.sending ?? 'Sending...') : (lang.send_button ?? 'Send')}
           width="90%"
           onPress={handleSubmit}
-          disabled={sending || resolvingBranch}
         />
       </View>
 

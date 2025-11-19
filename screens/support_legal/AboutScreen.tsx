@@ -6,7 +6,7 @@ import colors from '../../styles/Colors';
 import { GroupedContactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
 import fonts from '../../styles/Fonts';
-import transilations from "../../assets/translations.json"
+import translations from "../../assets/translations.json"
 import { contents } from "../../api/Content"; // import API
 
 
@@ -25,7 +25,7 @@ const AboutScreen: React.FC<AboutScreenProps> = () => {
 
   const [refreshing, setRefreshing] = useState(false);
   const currentLang = langId || "en";
-  const lang = transilations[currentLang];
+  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
   const aboutUsContent = contents.find((c) => c.id === "1");
 
 
