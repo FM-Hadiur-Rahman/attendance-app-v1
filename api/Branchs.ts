@@ -45,7 +45,7 @@ export const getBranches = async (params: Record<string, any> = {}) : Promise<Ge
 };
 
 /**
- * Create a new branch (requires superadmin token).
+ * Create a new branch (requires super admin token).
  * Returns the created branch object (or backend response).
  */
 export const createBranch = async (data: BranchCreatePayload) : Promise<Branch> => {

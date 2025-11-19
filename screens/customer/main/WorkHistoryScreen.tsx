@@ -673,7 +673,7 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 11,
+    marginTop: 20,
   },
   summaryLabel: {
     fontSize: fonts.size.m,

@@ -542,9 +542,9 @@ const StaffRecordScreen: React.FC = (props: any) => {
 export default StaffRecordScreen;
 const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: colors.secondary },
-  container: { marginTop: 12, marginHorizontal: 20, flex: 1 },
+  container: { marginTop: 20, marginHorizontal: 20, flex: 1 },
   body: { flex: 1 },
-  searchWrap: { marginBottom: 8 },
+  searchWrap: { marginBottom: 0 },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
   detail_cartbox: {
     width: "100%",

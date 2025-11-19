@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Linking,
   Keyboard,
+  Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import InputBox from "../../../../components/InputBox";
@@ -40,6 +41,7 @@ import Toast, {
 // add near other imports
 import { countryList } from "../../../../components/Code";
 import { exportMonthlyAttendanceXLSX } from "../../../../components/AttendanceXLSX";
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // Optional, but recommended for safe areas
 
 export const getUserWorkSummaryLocal = (userId: string) => {
   // Kept for compatibility if you have local mock data — but we now prefer server API.
@@ -59,6 +61,8 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const { id, userId: navUserId, langId } = route.params || {};
   const currentLang = langId || "en";
   const lang = translations[currentLang as keyof typeof translations] || translations["en"];
+
+  const insets = useSafeAreaInsets(); // If using safe-area-context; else use { top: 0 }
 
   console.log("Route Params =>", route.params);
 
@@ -739,7 +743,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => setEmailModalVisible(true)}
-            style={{ marginBottom: 15, paddingHorizontal: 12 }}
+            style={{ marginBottom: 12, paddingHorizontal: 12 }}
           >
             <View
               style={{
@@ -846,14 +850,14 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           containerStyle={{
             alignSelf: "center",
             marginBottom: 12,
-            height: 165,
+            height: 159,
           }}
           alignItems="flex-start"
           justifyContent="flex-start"
         >
           <Text style={styles.sectionTitle}>{lang.loginAccountDetails}</Text>
 
-          <View style={{ marginBottom: 15, paddingHorizontal: 12 }}>
+          <View style={{ marginBottom: 12, paddingHorizontal: 12 }}>
             <View
               style={{
                 flexDirection: "row",
@@ -928,7 +932,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPositionModalVisible(false)}
         />
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{lang.position}</Text>
           <InputBox
@@ -956,7 +960,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setEmailModalVisible(false)}
         />
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{lang.email}</Text>
           <InputBox
@@ -991,7 +995,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPhoneModalVisible(false)}
         />
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{lang.phoneNumber}</Text>
           {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
@@ -1070,7 +1074,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setModalVisible(false)}
         />
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>{lang.profile}</Text>
 
@@ -1156,8 +1160,8 @@ const styles = StyleSheet.create({
   profileContainer: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 20,
-    marginBottom: 20,
+    marginTop: 30,
+    marginBottom: 12,
   },
   profileImageContainer: {
     position: "relative",
@@ -1189,7 +1193,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffffff",
     borderRadius: 5,
     alignItems: "flex-start",
-    width: "40%",
+    width: "43.18%",
     borderColor: colors.border,
     borderWidth: 1,
   },
@@ -1221,14 +1225,15 @@ const styles = StyleSheet.create({
     tintColor: colors.primary,
   },
   infoLabel: {
-    fontSize: fonts.size.s,
-    color: colors.subtext,
+    fontSize: fonts.size.m,
+    color: colors.text,
     maxWidth: "80%",
+    fontWeight: fonts.weight.regular as any
   },
   infoValue: {
-    fontSize: fonts.size.m,
-    fontWeight: fonts.weight.medium as any,
-    color: colors.text,
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.regular as any,
+    color: colors.subtext,
     paddingHorizontal: 25,
     maxWidth: 220,
   },
@@ -1253,24 +1258,30 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: colors.secondary,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 20 : 10, // Extra top padding for Android status bar
+    paddingBottom: 20,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
+    maxHeight: "80%", // Prevent full-screen takeover on small devices
   },
   modalTitle: {
     fontSize: fonts.size.l,
     fontWeight: fonts.weight.medium as any,
-    marginBottom: 15,
+    marginBottom: 20,
     textAlign: "center",
+    color: colors.text, // Ensure high contrast
+    paddingHorizontal: 10, // Prevent edge clipping
   },
   modalHandle: {
-    width: 50,
-    height: 4,
-    backgroundColor: "#ccc",
-    borderRadius: 2,
+    width: 40,
+    height: 4, // Slightly thicker for touch/visibility
+    backgroundColor: colors.subtext3, // Use a visible color from your theme
+    borderRadius: 10,
     alignSelf: "center",
-    marginBottom: 15,
+    marginBottom: 20, // More space below handle
+    elevation: 2, // Android shadow for pop
+    shadowColor: colors.text, // iOS shadow fallback
+    
   },
   modalOption: {
     flexDirection: "row",
@@ -1301,14 +1312,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.background,
   },
-  image: { width: 80, height: 80, borderRadius: 60 },
+  image: { width: 100, height: 100, borderRadius: 60 },
   deleteicon: {
     width: 16,
     height: 16,
     marginRight: 8,
   },
   deleteLabel: {
-    fontSize: fonts.size.s,
+    fontSize: fonts.size.m,
     color: colors.logout_text,
     fontWeight: fonts.weight.regular as any,
   },

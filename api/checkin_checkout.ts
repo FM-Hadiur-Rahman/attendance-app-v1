@@ -1,4 +1,4 @@
-// src/api/checkin_checkout.ts
+// src/api/check in_checkout.ts
 import axiosInstance from "./axiosInstance";
 import { ScheduleItem } from "./schedules";
 
