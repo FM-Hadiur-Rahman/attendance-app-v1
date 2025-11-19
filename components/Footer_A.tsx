@@ -62,7 +62,7 @@ const Footer_A = () => {
   }, [route.params]);
 
   // find active screen component
-  const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab)?.component as React.ComponentType<any>;
+  const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab)?.component;
 
   return (
     <View style={styles.safeArea}>

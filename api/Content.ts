@@ -93,6 +93,8 @@ We may update these Terms from time to time to reflect changes in our services o
 While we aim to provide accurate and reliable services, we do not guarantee the App will always function without errors or interruptions. Attendance is not liable for any direct, indirect, incidental, or consequential damages resulting from your use of the App.
 
 11. Governing Law
-These Terms are governed by and interpreted in accordance with the laws of Germany, without regard to its conflict of law provisions.`,
+These Terms are governed by and interpreted in accordance with the laws of Germany, without regard to its conflict of law provisions.
+
+`,
   },
 ];

@@ -65,7 +65,7 @@ const Footer_S = () => {
   ];
 
   // find component for currently selected tab (do not render 'AddBranch' here)
-  const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab && tab.key !== 'AddBranch')?.component as React.ComponentType<any>;
+  const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab && tab.key !== 'AddBranch')?.component;
 
   useFocusEffect(
     useCallback(() => {

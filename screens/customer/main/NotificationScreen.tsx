@@ -89,7 +89,7 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
           shouldShowAlert: true,
           shouldPlaySound: true,
           shouldSetBadge: false,
-        } as any),
+        }),
       });
     })();
   }, []);

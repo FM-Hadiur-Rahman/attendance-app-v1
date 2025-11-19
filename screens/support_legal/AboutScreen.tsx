@@ -1,13 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Image } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Header from '../../components/Header';
 import colors from '../../styles/Colors';
 import { GroupedContactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
 import fonts from '../../styles/Fonts';
 import transilations from "../../assets/translations.json"
-import { contents } from "../../api/Content";
+import { contents } from "../../api/Content"; // import API
+
 
 type AboutScreenProps = {
   userId?: string;
@@ -15,56 +16,22 @@ type AboutScreenProps = {
   setLangId?: (lang: string) => void;
 };
 
-type RouteParams = {
-  params: {
-    userId?: string;
-    UserId?: string;
-    langId?: string;
-    LangId?: string;
-    branchId?: string;
-    BranchId?: string;
-    [k: string]: any;
-  };
-};
-const translations = require('../../assets/translations.json');
-
 
 const AboutScreen: React.FC<AboutScreenProps> = () => {
+
   const navigation = useNavigation();
-
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
-
-  const incomingUserId =
-    route.params?.userId ??
-    route.params?.UserId ??
-    route.params?.id ??
-    null;
-
-  const incomingLangId =
-    route.params?.langId ??
-    route.params?.LangId ??
-    route.params?.language ??
-    'en';
-
-  const incomingBranchId =
-    route.params?.branchId ??
-    route.params?.BranchId ??
-    route.params?.branch ??
-    null;
-
-  console.log('AboutScreen-> received params:', {
-    userId: incomingUserId,
-    langId: incomingLangId,
-    branchId: incomingBranchId,
-  });
-  const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
+  const route = useRoute<any>();
+  const { userId, langId, setLangId } = route.params || {};
 
   const [refreshing, setRefreshing] = useState(false);
+  const currentLang = langId || "en";
+  const lang = transilations[currentLang];
   const aboutUsContent = contents.find((c) => c.id === "1");
 
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    // simulate reload (e.g., API call, reload terms, etc.)
     setTimeout(() => {
       setRefreshing(false);
     }, 1500);
@@ -91,9 +58,9 @@ const AboutScreen: React.FC<AboutScreenProps> = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[colors.primary]} 
-            progressBackgroundColor={colors.secondary} 
-            tintColor={colors.primary} 
+            colors={[colors.primary]} // 🔹 spinner (Android)
+            progressBackgroundColor={colors.secondary} // 🔹 background behind spinner
+            tintColor={colors.primary} // 🔹 spinner (iOS)
           />
         }
       >
@@ -112,7 +79,7 @@ const AboutScreen: React.FC<AboutScreenProps> = () => {
           {aboutUsContent ? (
             <Text style={styles.termDescription}>{aboutUsContent.body}</Text>
           ) : (
-            <Text style={styles.termDescription}>{lang.No_content_found}</Text>
+            <Text style={styles.termDescription}>No content found</Text>
           )}
         </View>
       </ScrollView>
@@ -141,7 +108,9 @@ const styles = StyleSheet.create({
   },
   termBlock: {
     marginBottom: 12,
+
   },
+
   termDescription: {
     fontFamily: fonts.family.regular,
     fontWeight: fonts.weight.regular as any,

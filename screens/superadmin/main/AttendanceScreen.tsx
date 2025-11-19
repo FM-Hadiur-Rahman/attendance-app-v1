@@ -212,7 +212,7 @@ const AttendanceScreen: React.FC = (props: any) => {
       attendance: AttendanceHistoryItem;
       userProfile: any | null;
       schedule?: ScheduleItem | null;
-      status: "early" | "late" | "noschedule" | "not_checked_in";
+      status: "early" | "late" | "noschedule";
       diffText: string;
       branchNameToShow?: string | null;
     }>
@@ -314,6 +314,48 @@ const AttendanceScreen: React.FC = (props: any) => {
   };
   const [loadingData, setLoadingData] = useState<boolean>(false);
 
+  // REPLACE existing TotalstaffCount with this
+  const TotalstaffCount = useMemo(() => {
+    if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
+
+    const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const toYMDLocal = (d: Date) =>
+      `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
+
+    const uniqueEmpIds = new Set<string>();
+
+    // Determine the target YMD for "day" mode; fall back to selectedDateObj or today
+    let targetYmdForDay = toYMD(new Date());
+    if (selectedRange && selectedRange.type === "day" && rangeStartEnd) {
+      targetYmdForDay = rangeStartEnd.startDate;
+    } else if (selectedDateObj) {
+      targetYmdForDay = `${selectedDateObj.getFullYear()}-${pad2Local(selectedDateObj.getMonth() + 1)}-${pad2Local(selectedDateObj.getDate())}`;
+    }
+
+    schedulesState.forEach((s) => {
+      if (!s?.date) return;
+
+      const sDate = new Date(s.date);
+      const sYMD = toYMDLocal(sDate);
+
+      // branch id can be object or string
+      const branchIdOfSchedule = s.branch_id?._id ?? s.branch_id ?? null;
+
+      if (!branchIdOfSchedule) return;
+      if (String(branchIdOfSchedule) !== String(activeBranchId)) return;
+
+      // Only count schedules for the selected day (when in day mode)
+      if (mode === "day") {
+        if (sYMD !== targetYmdForDay) return;
+      }
+
+      const empId = s.employee_id?._id ?? s.employee_id ?? null;
+      if (empId) uniqueEmpIds.add(String(empId));
+    });
+
+    return uniqueEmpIds.size;
+  }, [schedulesState, activeBranchId, selectedRange, rangeStartEnd, selectedDateObj, mode]);
+
 
   const selectedRange = useMemo(() => {
     const baseDate = selectedDateObj ?? new Date();
@@ -376,48 +418,6 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
     return null;
   }, [selectedRange]);
-
-  // REPLACE existing TotalstaffCount with this
-  const TotalstaffCount = useMemo(() => {
-    if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
-
-    const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const toYMDLocal = (d: Date) =>
-      `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
-
-    const uniqueEmpIds = new Set<string>();
-
-    // Determine the target YMD for "day" mode; fall back to selectedDateObj or today
-    let targetYmdForDay = toYMD(new Date());
-    if (selectedRange && selectedRange.type === "day" && rangeStartEnd) {
-      targetYmdForDay = rangeStartEnd.startDate;
-    } else if (selectedDateObj) {
-      targetYmdForDay = `${selectedDateObj.getFullYear()}-${pad2Local(selectedDateObj.getMonth() + 1)}-${pad2Local(selectedDateObj.getDate())}`;
-    }
-
-    schedulesState.forEach((s) => {
-      if (!s?.date) return;
-
-      const sDate = new Date(s.date);
-      const sYMD = toYMDLocal(sDate);
-
-      // branch id can be object or string
-      const branchIdOfSchedule = s.branch_id?._id ?? s.branch_id ?? null;
-
-      if (!branchIdOfSchedule) return;
-      if (String(branchIdOfSchedule) !== String(activeBranchId)) return;
-
-      // Only count schedules for the selected day (when in day mode)
-      if (mode === "day") {
-        if (sYMD !== targetYmdForDay) return;
-      }
-
-      const empId = s.employee_id?._id ?? s.employee_id ?? null;
-      if (empId) uniqueEmpIds.add(String(empId));
-    });
-
-    return uniqueEmpIds.size;
-  }, [schedulesState, activeBranchId, selectedRange, rangeStartEnd, selectedDateObj, mode]);
 
   // helper to convert a start/end yyyy-mm-dd into an array of ymd strings
   const ymdRangeToArray = (startYmd: string, endYmd: string) => {
@@ -626,6 +626,7 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -642,85 +643,129 @@ const AttendanceScreen: React.FC = (props: any) => {
     return () => { mounted = false; };
   }, [activeBranchId, passedBranchName]);
 
+  // useEffect(() => {
+  //   if (!activeBranchId || !rangeStartEnd) return;
+
+  //   // build array of target ymd strings depending on rangeStartEnd
+  //   let targetDates: string[] = [];
+  //   if (selectedRange?.type === "day") {
+  //     targetDates = [rangeStartEnd.startDate]; // single day
+  //   } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
+  //     targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
+  //   } else {
+  //     const todayYMDLocal = toYMD(new Date());
+  //     targetDates = [todayYMDLocal];
+  //   }
+
+  //   let cancelled = false;
+  //   (async () => {
+  //     try {
+  //       setLoadingData(true);
+  //       setRefreshing(true);
+
+  //       // 1) fetch schedules & users and get them back
+  //       const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
+  //       if (cancelled) return;
+
+  //       // 2) enrich attendance with the freshly fetched schedules & users
+  //       await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
+  //     } catch (err) {
+  //       console.warn("fetch data error", err);
+  //     } finally {
+  //       if (!cancelled) {
+  //         setLoadingData(false);
+  //         setRefreshing(false);
+  //       }
+  //     }
+  //   })();
+
+  //   return () => { cancelled = true; };
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [activeBranchId, rangeStartEnd, version]);
+
   useEffect(() => {
-    if (!activeBranchId || !rangeStartEnd) return;
+  if (!activeBranchId || !rangeStartEnd) return;
 
-    // build array of target ymd strings depending on rangeStartEnd
-    // let targetDates: string[] = [];
-    // if (selectedRange?.type === "day") {
-    //   targetDates = [rangeStartEnd.startDate]; // single day
-    // } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
-    //   targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-    // } else {
-    //   const todayYMDLocal = toYMD(new Date());
-    //   targetDates = [todayYMDLocal];
-    // }
-    // build array of target ymd strings depending on rangeStartEnd
-    let targetDates: string[] = [];
-    if (rangeStartEnd.startDate === rangeStartEnd.endDate) {
-      // single day
-      targetDates = [rangeStartEnd.startDate];
-    } else {
-      // multi-day range (week/month)
-      targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoadingData(true);
+  // build array of target ymd strings depending on rangeStartEnd
+  let targetDates: string[] = [];
+  if (selectedRange?.type === "day") {
+    targetDates = [rangeStartEnd.startDate]; // single day
+  } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
+    targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
+  } else {
+    const todayYMDLocal = toYMD(new Date());
+    targetDates = [todayYMDLocal];
+  }
 
-        // 1) fetch schedules & users and get them back
-        const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
-        if (cancelled) return;
-
-        // 2) enrich attendance with the freshly fetched schedules & users
-        await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
-      } catch (err) {
-        console.warn("fetch data error", err);
-      } finally {
-        if (!cancelled) {
-          setLoadingData(false);
-        }
-      }
-    })();
-
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBranchId, rangeStartEnd, version]);
-
-  const onRefresh = async () => {
-    if (!activeBranchId || !rangeStartEnd) {
-      return;
-    }
-
-    // // build array of target ymd strings depending on rangeStartEnd
-    // let targetDates: string[] = [];
-    // if (selectedRange?.type === "day") {
-    //   targetDates = [rangeStartEnd.startDate];
-    // } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
-    //   targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-    // } else {
-    //   targetDates = [toYMD(new Date())];
-    // }
-    // build array of target ymd strings depending on rangeStartEnd
-    let targetDates: string[] = [];
-    if (rangeStartEnd.startDate === rangeStartEnd.endDate) {
-      targetDates = [rangeStartEnd.startDate];
-    } else {
-      targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-    }
-
+  let cancelled = false;
+  (async () => {
     try {
       setLoadingData(true);
 
+      // 1) fetch schedules & users and get them back
       const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
+      if (cancelled) return;
+
+      // 2) enrich attendance with the freshly fetched schedules & users
       await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
     } catch (err) {
-      console.warn("refresh error", err);
+      console.warn("fetch data error", err);
     } finally {
-      setLoadingData(false);
+      if (!cancelled) {
+        setLoadingData(false);
+      }
     }
-  };
+  })();
+
+  return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeBranchId, rangeStartEnd, version]);
+
+
+  // const onRefresh = async () => {
+  //   setRefreshing(true);
+  //   await new Promise((r) => setTimeout(r, 400));
+  //   setQuery("");
+  //   setDateError("");
+  //   setSelectedDateObj(defaultToday);
+  //   if (mode === "day") {
+  //     setDateInput(defaultDateDisplay);
+  //   } else if (mode === "week") {
+  //     setDateInput(formatWeekDisplayFromDate(defaultToday));
+  //   } else {
+  //     setDateInput(formatMonthDisplayFromDate(defaultToday));
+  //   }
+  //   prevDateRef.current = "";
+  //   setVersion((v) => v + 1);
+  //   setRefreshing(false);
+  // };
+
+  const onRefresh = async () => {
+  if (!activeBranchId || !rangeStartEnd) {
+    return;
+  }
+
+  // build array of target ymd strings depending on rangeStartEnd
+  let targetDates: string[] = [];
+  if (selectedRange?.type === "day") {
+    targetDates = [rangeStartEnd.startDate];
+  } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
+    targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
+  } else {
+    targetDates = [toYMD(new Date())];
+  }
+
+  try {
+    setLoadingData(true);
+
+    const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
+    await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
+  } catch (err) {
+    console.warn("refresh error", err);
+  } finally {
+    setLoadingData(false);
+  }
+};
 
 
   // REPLACE your existing onGenerateCSV with this
@@ -796,11 +841,9 @@ const AttendanceScreen: React.FC = (props: any) => {
       const wboutBase64 = buf.toString("base64");
 
       let filename = "attendance.xlsx";
-      if (rangeStartEnd.startDate === rangeStartEnd.endDate) {
-        filename = `attendance_${rangeStartEnd.startDate}.xlsx`;
-      } else {
-        filename = `attendance_${rangeStartEnd.startDate}_to_${rangeStartEnd.endDate}.xlsx`;
-      }
+      if (selectedRange?.type === "day") filename = `attendance_${selectedRange.ymd}.xlsx`;
+      else if (selectedRange?.type === "week") filename = `attendance_${selectedRange.startYmd}_to_${selectedRange.endYmd}.xlsx`;
+      else filename = `attendance_${selectedRange.year}-${pad2(selectedRange.monthIndex + 1)}.xlsx`;
 
       const fileUri = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + filename;
       const enc: any =

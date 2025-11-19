@@ -167,29 +167,25 @@ export default function BranchProfileScreen(props: any) {
   // tolerance for float equality (very small)
   const COORD_TOLERANCE = 1e-6;
 
-const normalizeBranchCoord = (b: any) => {
-  // branch may store coords in different ways: b.latitude/b.longitude OR b.location.coordinates (lon,lat)
-  let lat: number | undefined = undefined;
-  let lon: number | undefined = undefined;
+  const normalizeBranchCoord = (b: any) => {
+    // branch may store coords in different ways: b.latitude/b.longitude OR b.location.coordinates (lon,lat)
+    let lat: number | undefined = undefined;
+    let lon: number | undefined = undefined;
 
-  if (b == null) return { lat: undefined, lon: undefined };
+    if (b == null) return { lat: undefined, lon: undefined };
 
-  if (b.latitude !== undefined && b.longitude !== undefined) {
-    lat = Number(b.latitude);
-    lon = Number(b.longitude);
-  } else if (b.location && Array.isArray(b.location.coordinates) && b.location.coordinates.length >= 2) {
-    lon = Number(b.location.coordinates[0]);
-    lat = Number(b.location.coordinates[1]);
-  }
+    if (b.latitude !== undefined && b.longitude !== undefined) {
+      lat = Number(b.latitude);
+      lon = Number(b.longitude);
+    } else if (b.location && Array.isArray(b.location.coordinates) && b.location.coordinates.length >= 2) {
+      lon = Number(b.location.coordinates[0]);
+      lat = Number(b.location.coordinates[1]);
+    }
 
-  // Guard so TS knows lat/lon are numbers
-  if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return { lat: undefined, lon: undefined };
-  }
+    if (!isFinite(lat) || !isFinite(lon)) return { lat: undefined, lon: undefined };
+    return { lat, lon };
+  };
 
-  if (!isFinite(lat) || !isFinite(lon)) return { lat: undefined, lon: undefined };
-  return { lat, lon };
-};
   /**
    * returns true if some other branch (not current branchId) already has exactly the same lat+lon
    */

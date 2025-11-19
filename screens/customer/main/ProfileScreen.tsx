@@ -1,4 +1,4 @@
-// screens/customer/main/ProfileScreen.tsx
+// screens/main/ProfileScreen.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -10,7 +10,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { RefreshControl } from "react-native";
@@ -57,7 +56,7 @@ export default function ProfileScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  const lang = translations[selectedLanguage as keyof typeof translations];
+  const lang = translations[selectedLanguage];
 
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string>(""); // no change to UI
@@ -223,6 +222,7 @@ export default function ProfileScreen(props: any) {
     }
   };
 
+
   return (
     <View style={styles.container}>
       <Header
@@ -242,130 +242,122 @@ export default function ProfileScreen(props: any) {
           />
         }
       >
-        {loadingProfile ? (
-          <View style={{ justifyContent: "center", alignItems: "center", marginTop: "60%" }}>
-            <ActivityIndicator size="large" color={colors.primary} />
+        {/* Profile Section */}
+        <CartBox
+          alignItems="center"
+          backgroundColor={colors.secondary}
+          borderRadius={0}
+        >
+          <View style={styles.profileContainer}>
+            <View style={styles.profileImageContainer}>
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.profileImage} />
+              ) : (
+                <Image
+                  source={require("../../../assets/icons/profile_gray.png")}
+                  style={styles.profileImage}
+                />
+              )}
+              <TouchableOpacity
+                style={styles.editIconContainer}
+                onPress={() => setModalVisible(true)}
+              >
+                <Image
+                  source={require("../../../assets/icons/p_edit.png")}
+                  style={styles.editIcon}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
-        ) : (
-          <>
-            {/* Profile Section */}
+        </CartBox>
+
+        <View style={styles.body}>
+          {/* Sections */}
+          {sections.map((section, index) => (
+
             <CartBox
-              alignItems="center"
-              backgroundColor={colors.secondary}
-              borderRadius={0}
+              key={index}
+              borderRadius={16}
+              marginBottom={12}
+              alignItems="flex-start"
+              justifyContent="center"
+              paddingLeft={20}
+              paddingRight={20}
+              paddingTop={13}
+            // paddingBottom={12}
             >
-              <View style={styles.profileContainer}>
-                <View style={styles.profileImageContainer}>
-                  {profileImage ? (
-                    <Image source={{ uri: profileImage }} style={styles.profileImage} />
-                  ) : (
-                    <Image
-                      source={require("../../../assets/icons/profile_gray.png")}
-                      style={styles.profileImage}
-                    />
-                  )}
-                  <TouchableOpacity
-                    style={styles.editIconContainer}
-                    onPress={() => setModalVisible(true)}
-                  >
-                    <Image
-                      source={require("../../../assets/icons/p_edit.png")}
-                      style={styles.editIcon}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </CartBox>
-
-            <View style={styles.body}>
-              {/* Sections */}
-              {sections.map((section, index) => (
-
+              <Text style={styles.sectionTitle}>{section.name}</Text>
+              {section.items.map((item, i) => (
                 <CartBox
-                  key={index}
-                  borderRadius={16}
-                  marginBottom={12}
+                  key={i}
+                  onPress={() => {
+                    if (item.label === "Language") {
+                      setLanguageModalVisible(true);
+                      return;
+                    }
+
+                    const payload = {
+                      id: userId,
+                      langId: selectedLanguage,
+                      branchId: branchId,
+                    };
+
+                    if (item.screen) {
+                      console.log(`ProfileScreen: navigating -> ${item.screen}`, payload);
+                      navigation.navigate(item.screen, payload);
+                      return;
+                    }
+
+                    console.log("ProfileScreen: item pressed (no screen):", item.label, payload);
+                  }}
+
                   alignItems="flex-start"
-                  justifyContent="center"
-                  paddingLeft={20}
-                  paddingRight={20}
-                  paddingTop={13}
-                // paddingBottom={12}
+                  borderRadius={0}
+                  paddingTop={12}
+                  paddingBottom={12}
+
                 >
-                  <Text style={styles.sectionTitle}>{section.name}</Text>
-                  {section.items.map((item, i) => (
-                    <CartBox
-                      key={i}
-                      onPress={() => {
-                        if (item.label === "Language") {
-                          setLanguageModalVisible(true);
-                          return;
-                        }
+                  <View style={styles.itemLeft}>
+                    <Image source={item.icon} style={styles.itemIcon} />
+                    <View style={{ justifyContent: 'flex-start' }}>
+                      <Text style={styles.itemText}>{item.labelname}</Text>
+                      {/* --- Show the value only for the Personal Information section --- */}
+                      {section.name === lang.personal_information && (
+                        <Text style={styles.labelValue}>
+                          {item.label === "Fullname" && fullName}
+                          {item.label === "Position" && user?.position}
+                          {item.label === "Email" && user?.email}
+                          {item.label === "Phone number" && user?.phone}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
 
-                        const payload = {
-                          id: userId,
-                          langId: selectedLanguage,
-                          branchId: branchId,
-                        };
-
-                        if (item.screen) {
-                          console.log(`ProfileScreen: navigating -> ${item.screen}`, payload);
-                          navigation.navigate(item.screen, payload);
-                          return;
-                        }
-
-                        console.log("ProfileScreen: item pressed (no screen):", item.label, payload);
-                      }}
-
-                      alignItems="flex-start"
-                      borderRadius={0}
-                      paddingTop={12}
-                      paddingBottom={12}
-
-                    >
-                      <View style={styles.itemLeft}>
-                        <Image source={item.icon} style={styles.itemIcon} />
-                        <View style={{ justifyContent: 'flex-start' }}>
-                          <Text style={styles.itemText}>{item.labelname}</Text>
-                          {/* --- Show the value only for the Personal Information section --- */}
-                          {section.name === lang.personal_information && (
-                            <Text style={styles.labelValue}>
-                              {item.label === "Fullname" && fullName}
-                              {item.label === "Position" && user?.position}
-                              {item.label === "Email" && user?.email}
-                              {item.label === "Phone number" && user?.phone}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-
-                    </CartBox>
-                  ))}
                 </CartBox>
               ))}
+            </CartBox>
+          ))}
 
-              {/* Logout */}
-              <CartBox
-                onPress={() => setLogoutPopupVisible(true)} // show popup
-                paddingLeft={20}
-                paddingTop={12}
-                paddingBottom={12}
-                marginTop={0}
-                marginBottom={30}
-                alignItems="flex-start"
-              >
-                <View style={styles.logout}>
-                  <Image
-                    source={require("../../../assets/icons/p_logout.png")}
-                    style={styles.logoutIcon}
-                  />
-                  <Text style={styles.logoutText}>{lang.logout}</Text>
-                </View>
-              </CartBox>
-
+          {/* Logout */}
+          <CartBox
+            onPress={() => setLogoutPopupVisible(true)} // show popup
+            paddingLeft={20}
+            paddingTop={12}
+            paddingBottom={12}
+            marginTop={0}
+            marginBottom={30}
+            alignItems="flex-start"
+          >
+            <View style={styles.logout}>
+              <Image
+                source={require("../../../assets/icons/p_logout.png")}
+                style={styles.logoutIcon}
+              />
+              <Text style={styles.logoutText}>{lang.logout}</Text>
             </View>
-          </>
-        )}
+          </CartBox>
+
+        </View>
       </ScrollView>
 
       {/* Bottom Sheet Modal */}
@@ -591,6 +583,5 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     alignSelf: 'center'
   },
-
 
 });
