@@ -1152,7 +1152,7 @@ export default function EditScheduleScreen(props: any) {
                                         // Full validation
                                         const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
                                         if (isValid) setTimeFromError("");
-                                        else setTimeFromError("Invalid time");
+                                        else setTimeFromError("Invalid time format (00 00)");
                                     }}
                                     keyboardType="numeric"          // regular keyboard
                                     maxLength={5}                   // HH:MM
