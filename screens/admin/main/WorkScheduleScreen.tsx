@@ -527,101 +527,101 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
 
 schedulesForDate.map(({ schedule, user }, index) => {
-  if (!user) return null;
+              if (!user) return null;
+            
+              // Generate a truly unique key by combining schedule ID, date, time, and index
+              const uniqueKey = 
+                schedule._id ? `${schedule._id}-${index}` : 
+                schedule.id ? `${schedule.id}-${index}` : 
+                `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
+            
+              // Time String
+              const startTime = schedule.start_time || "";
+              const endTime = schedule.end_time || "";
+              const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+            
+              // 🔹 Branch Logic: compare schedule branch vs employee's default branch
+              const employeeBranchId =
+                typeof user === 'object' && user !== null
+                  ? typeof (user as any).branch === "object" && (user as any).branch !== null
+                    ? (user as any).branch?._id 
+                    : typeof (user as any).branch === "string" ? (user as any).branch : undefined
+                  : undefined;
+            
+              const scheduleBranchId =
+                typeof schedule.branch_id === "object" && schedule.branch_id !== null 
+                  ? (schedule.branch_id as any)?._id 
+                  : typeof schedule.branch_id === "string" ? schedule.branch_id : undefined;
+            
+              const scheduleBranchName =
+                typeof schedule.branch_id === "object" && schedule.branch_id !== null
+                  ? (schedule.branch_id as any)?.name
+                  : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
+            
+              // Show branch name only if schedule branch is different from employee's branch
+              const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
+                          return (
+                            <TouchableOpacity
+                              key={uniqueKey}
+                              onPress={() => openEditScreen(schedule._id)}
+            
+                            >
+                              <CartBox containerStyle={styles.detail_cartbox}>
+                                {/* 🔹 Branch Info */}
+                                {showBranch && (
+                                  <View style={styles.branchHeader}>
+                                    <Image
+                                      source={require("../../../assets/icons/branch.png")}
+                                      style={styles.branchIcon}
+                                      resizeMode="contain"
+                                    />
+                                    <Text style={styles.branchName}>{scheduleBranchName}</Text>
+                                  </View>
+                                )}
 
-  // Unique Key
-  const uniqueKey =
-    schedule._id ||
-    schedule.id ||
-    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any).user_id : user}-${index}`;
+                                {/* 🔹 User Info & Time */}
+                                <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                                  {/* Profile + Name + Position */}
+                                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                                    <Image
+                                      source={require("../../../assets/images/profile2.png")}
+                                      style={styles.profileImage}
+                                    />
+                                    <View style={styles.name_position}>
+                                      {/* fullname */}
+                                      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                                        {(() => {
+                                          const employeeId =
+                                            typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
+                                              ? (schedule?.employee_id as any)?._id
+                                              : schedule?.employee_id;
 
-  // Time String
-  const startTime = schedule.start_time || "";
-  const endTime = schedule.end_time || "";
-  const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+                                          const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
 
-  // 🔹 Branch Logic: compare schedule branch vs employee's default branch
-  const employeeBranchId =
-    typeof user === 'object' && user !== null
-      ? typeof (user as any).branch === "object" && (user as any).branch !== null
-        ? (user as any).branch?._id 
-        : typeof (user as any).branch === "string" ? (user as any).branch : undefined
-      : undefined;
+                                          return fullname || "Unknown User"; // ONLY fullname
+                                        })()}
+                                      </Text>
 
-  const scheduleBranchId =
-    typeof schedule.branch_id === "object" && schedule.branch_id !== null 
-      ? (schedule.branch_id as any)?._id 
-      : typeof schedule.branch_id === "string" ? schedule.branch_id : undefined;
+                                      {/* Position */}
+                                      <Text style={styles.position}>
+                                        {typeof user === 'object' && user !== null
+                                          ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
+                                          : 'No Position'}
+                                      </Text>
+                                    </View>
+                                  </View>
 
-  const scheduleBranchName =
-    typeof schedule.branch_id === "object" && schedule.branch_id !== null
-      ? (schedule.branch_id as any)?.name
-      : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
-
-  // Show branch name only if schedule branch is different from employee's branch
-  const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
-              return (
-                <TouchableOpacity
-                  key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}`}
-                  onPress={() => openEditScreen(schedule._id)}
-
-                >
-                  <CartBox containerStyle={styles.detail_cartbox}>
-                    {/* 🔹 Branch Info */}
-                    {showBranch && (
-                      <View style={styles.branchHeader}>
-                        <Image
-                          source={require("../../../assets/icons/branch.png")}
-                          style={styles.branchIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.branchName}>{scheduleBranchName}</Text>
-                      </View>
-                    )}
-
-                    {/* 🔹 User Info & Time */}
-                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                      {/* Profile + Name + Position */}
-                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                        <Image
-                          source={require("../../../assets/images/profile2.png")}
-                          style={styles.profileImage}
-                        />
-                        <View style={styles.name_position}>
-                          {/* fullname */}
-                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                            {(() => {
-                              const employeeId =
-                                typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
-                                  ? (schedule?.employee_id as any)?._id
-                                  : schedule?.employee_id;
-
-                              const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
-
-                              return fullname || "Unknown User"; // ONLY fullname
-                            })()}
-                          </Text>
-
-                          {/* Position */}
-                          <Text style={styles.position}>
-                            {typeof user === 'object' && user !== null
-                              ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
-                              : 'No Position'}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Time */}
-                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                        <Text style={styles.time}>
-                          {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
-                        </Text>
-                      </View>
-                    </View>
-                  </CartBox>
-                </TouchableOpacity>
-              );
-            })
+                                  {/* Time */}
+                                  <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+                                    <Text style={styles.time}>
+                                      {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </CartBox>
+                            </TouchableOpacity>
+                          );
+                        })
           )}
         </ScrollView>
       </View>
