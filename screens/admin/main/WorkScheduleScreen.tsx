@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import Header from "../../../components/Header";
+
 import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
@@ -22,16 +23,20 @@ import { getAllBranches, getBranchById } from "../../../api/Branchs";
 import { getSchedulesForDate } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
 import { ScheduleItem } from "../../../api/schedules";
+
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const dateToYMD = (d: Date) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const formatDisplayDate = (date: Date) =>
   date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+
 const formatTime12 = (hhmmss: string) => {
   if (!hhmmss) return "";
   const parts = hhmmss.split(":");
@@ -43,25 +48,32 @@ const formatTime12 = (hhmmss: string) => {
   if (hh === 0) hh = 12;
   return `${hh}:${mm} ${ampm}`;
 };
+
 const WorkScheduleScreen: React.FC = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+
   // support prop-based or route-based injection (Footer passes props)
   const propUserId = props?.userId;
   const propLangId = props?.langId;
+
   // param resolution (support props or route)
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
+
   // accept branch if caller passed it (keep names unchanged for compatibility)
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
   const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
+
   // local state for the active branch (computed like HomeScreen_A)
   const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
   const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
+
   // translation dictionary for this screen (translations imported at the top)
   const lang = (translations as any)[langId] || (translations as any)["en"];
+
   const [displayDate, setDisplayDate] = useState<Date>(new Date());
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -73,6 +85,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   const [skipNextLoad, setSkipNextLoad] = useState(false);
   const [version, setVersion] = useState<number>(0);
   const [branchMap, setBranchMap] = useState<Record<string, string>>({});
+
   useEffect(() => {
     const loadBranches = async () => {
       try {
@@ -88,6 +101,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     };
     loadBranches();
   }, []);
+
   useEffect(() => {
     const loadUserProfile = async () => {
       try {
@@ -100,6 +114,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     };
     loadUserProfile();
   }, []);
+
   // If branch not passed, try to resolve it from the userId (same pattern as HomeScreen_A)
   useEffect(() => {
     if (!userId) {
@@ -116,6 +131,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         console.log("🔍 WorkScheduleScreen fetching user by ID:", userId);
         const u = await getUserById(userId);
         if (!mounted || !u) return;
+
         const branchField = u.branch;
         const branchId =
           typeof branchField === "string"
@@ -136,8 +152,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         console.warn("WorkScheduleScreen: failed to resolve branch from userId", err);
       }
     })();
+
     return () => { mounted = false; };
   }, [userId, activeBranchId]);
+
   const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
   const loadSchedules = useCallback(async (date: Date) => {
     if (!user) return;
@@ -145,15 +163,17 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       setLoading(true);
       const dateYMD = date.toISOString().split("T")[0];
       let data = await getSchedulesForDate(dateYMD);
+
       const loggedUserBranchId =
-        typeof user?.branch === "object" && user?.branch !== null
-          ? (user.branch as any)?._id
+        typeof user?.branch === "object" && user?.branch !== null 
+          ? (user.branch as any)?._id 
           : user?.branch;
+
       // Strict branch match filter
       data = data.filter((s) => {
         // First check if employee_id exists
         if (!s.employee_id) return false;
-       
+        
         let employeeBranchId;
         if (typeof s.employee_id === 'string') {
           // If employee_id is a string, we need to get the user first to determine their branch
@@ -167,6 +187,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           return false;
         }
       });
+
       setSchedules(data);
     } catch (err) {
       console.error("❌ Error loading schedules:", err);
@@ -174,26 +195,36 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       setLoading(false);
     }
   }, [user]);
+
+
+
+
+
+
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1); // move one day back
     return dateToYMD(prev);
   };
+
   const findNextScheduledYMD = () => {
     const next = new Date(displayDate);
     next.setDate(displayDate.getDate() + 1); // move one day forward
     return dateToYMD(next);
   };
+
   const prevYMD = findPrevScheduledYMD();
   const nextYMD = findNextScheduledYMD();
   const prevHas = !!prevYMD;
   const nextHas = !!nextYMD;
+
   const ymdToDate = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
     const dt = new Date(y, m - 1, d);
     dt.setHours(0, 0, 0, 0);
     return dt;
   };
+
   const goToPrevScheduled = () => {
     if (!prevYMD) return;
     setDisplayDate(ymdToDate(prevYMD));
@@ -202,12 +233,16 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     if (!nextYMD) return;
     setDisplayDate(ymdToDate(nextYMD));
   };
+
   const schedulesForDate = useMemo(() => {
     if (!schedules || schedules.length === 0) return [];
+
     const displayYMD = dateToYMD(displayDate);
+
     return schedules
       .filter((s) => {
         if (!s?.date) return false;
+
         const schedDate = new Date(s.date).toISOString().split("T")[0];
         return schedDate === displayYMD;
       })
@@ -217,6 +252,8 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       }))
       .filter((x) => x.user && typeof x.user === 'object' && x.user !== null && (x.user as any).role === "user");
   }, [schedules, displayDate]);
+
+
   // If user presses the floating add button
   const openAddScreen = () => {
     // Derive branchId safely
@@ -228,12 +265,14 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           ? (user.branch as any)?._id
           : null) ||
       null;
+
     console.log("Navigate -> AddScheduleScreen", {
       userId,
       langId,
       branchId: branchToUse,
       mode: "create",
     });
+
     navigation.navigate("AddScheduleScreen" as any, {
       userId,
       langId,
@@ -253,25 +292,30 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       },
     });
   };
+
   // Refresh -> clear inputs
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadSchedules(displayDate);
     setRefreshing(false);
   }, [displayDate, loadSchedules]);
+
   const goToPrevDay = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1);
     setDisplayDate(prev);
   };
+
   const goToNextDay = () => {
     const next = new Date(displayDate);
     next.setDate(displayDate.getDate() + 1);
     setDisplayDate(next);
   };
+
   useEffect(() => {
     loadSchedules(displayDate);
   }, [displayDate, loadSchedules]);
+
   // When tapping an existing schedule to edit
   const openEditScreen = (scheduleId: string) => {
     navigation.navigate("EditScheduleScreen" as any, {
@@ -292,18 +336,22 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       },
     });
   };
+
   useEffect(() => {
     if (activeBranchId) {
       loadSchedules(displayDate);
     }
   }, [activeBranchId]);
+
   // --- Fetch full profiles for employee IDs found in schedulesForDate ---
   useEffect(() => {
     if (!schedulesForDate || schedulesForDate.length === 0) {
       setUserProfiles({});
       return;
     }
+
     let mounted = true;
+
     (async () => {
       try {
         // collect unique employee IDs
@@ -317,7 +365,9 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             ).filter(Boolean)
           )
         ) as string[];
+
         const profiles: Record<string, ProfileUser> = {};
+
         await Promise.all(
           ids.map(async (id) => {
             try {
@@ -330,20 +380,24 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             }
           })
         );
+
         if (!mounted) return;
         setUserProfiles(profiles);
       } catch (err) {
         console.warn("Failed to load user profiles for schedules", err);
       }
     })();
+
     return () => { mounted = false; };
   }, [schedulesForDate]);
+
   useEffect(() => {
     const fetchPositions = async () => {
       const positions: Record<string, string> = {};
+
       for (const s of schedulesForDate) {
-        const userId = typeof s.user === 'object' && s.user !== null
-          ? (s.user as any)._id || (s.user as any).user_id
+        const userId = typeof s.user === 'object' && s.user !== null 
+          ? (s.user as any)._id || (s.user as any).user_id 
           : s.user;
         if (userId && !positions[userId]) {
           try {
@@ -357,10 +411,12 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       }
       setUserPositions(positions);
     };
+
     if (schedulesForDate.length > 0) {
       fetchPositions();
     }
   }, [schedulesForDate]);
+
   useEffect(() => {
     if (skipNextLoad) {
       setSkipNextLoad(false);
@@ -368,6 +424,8 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     }
     loadSchedules(displayDate);
   }, [displayDate, loadSchedules]);
+
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -394,6 +452,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           },
         }}
       />
+
       {/* Body */}
       <View style={styles.body}>
         {/* 🔹 Day-wise Date Navigation */}
@@ -412,6 +471,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
               style={styles.date_Control}
             />
           </TouchableOpacity>
+
           <CartBox containerStyle={styles.date_cartbox}>
             <Image
               source={require("../../../assets/icons/calenderdate_b.png")}
@@ -419,6 +479,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             />
             <Text style={styles.dateText}>{formatDisplayDate(displayDate)}</Text>
           </CartBox>
+
           <TouchableOpacity
             activeOpacity={nextHas ? 0.7 : 1}
             onPress={goToNextDay}
@@ -434,6 +495,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             />
           </TouchableOpacity>
         </View>
+
         {/* 🔹 Scroll list */}
         <ScrollView
           style={{ marginTop: 20, marginBottom: "15%" }}
@@ -457,93 +519,108 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             >
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
+
           ) : schedulesForDate.length === 0 ? (
             <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text>
           ) : (
-            schedulesForDate.map(({ schedule, user }, index) => {
-              if (!user) return null;
-              // Unique Key
-              const uniqueKey =
-                schedule._id ||
-                schedule.id ||
-                `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any).user_id : user}-${index}`;
-              // Time String
-              const startTime = schedule.start_time || "";
-              const endTime = schedule.end_time || "";
-              const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
-              // 🔹 Branch Logic: compare schedule branch vs employee's default branch
-              const employeeBranchId =
-                typeof user === 'object' && user !== null
-                  ? typeof (user as any).branch === "object" && (user as any).branch !== null
-                    ? (user as any).branch?._id
-                    : typeof (user as any).branch === "string" ? (user as any).branch : undefined
-                  : undefined;
-              const scheduleBranchId =
-                typeof schedule.branch_id === "object" && schedule.branch_id !== null
-                  ? (schedule.branch_id as any)?._id
-                  : typeof schedule.branch_id === "string" ? schedule.branch_id : undefined;
-              const scheduleBranchName =
-                typeof schedule.branch_id === "object" && schedule.branch_id !== null
-                  ? (schedule.branch_id as any)?.name
-                  : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
-              // Show branch name only if schedule branch is different from employee's branch
-              const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
-                        return (
-                          <TouchableOpacity
-                            key={uniqueKey}
-                            onPress={() => openEditScreen(schedule._id)}
-                          >
-                            <CartBox containerStyle={styles.detail_cartbox}>
-                              {/* 🔹 Branch Info */}
-                              {showBranch && (
-                                <View style={styles.branchHeader}>
-                                  <Image
-                                    source={require("../../../assets/icons/branch.png")}
-                                    style={styles.branchIcon}
-                                    resizeMode="contain"
-                                  />
-                                  <Text style={styles.branchName}>{scheduleBranchName}</Text>
-                                </View>
-                              )}
-                              {/* 🔹 User Info & Time */}
-                              <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                                {/* Profile + Name + Position */}
-                                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                                  <Image
-                                    source={require("../../../assets/images/profile2.png")}
-                                    style={styles.profileImage}
-                                  />
-                                  <View style={styles.name_position}>
-                                    {/* fullname */}
-                                    <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                                      {(() => {
-                                        const employeeId =
-                                          typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
-                                            ? (schedule?.employee_id as any)?._id
-                                            : schedule?.employee_id;
-                                        const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
-                                        return fullname || "Unknown User"; // ONLY fullname
-                                      })()}
-                                    </Text>
-                                    {/* Position */}
-                                    <Text style={styles.position}>
-                                      {typeof user === 'object' && user !== null
-                                        ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
-                                        : 'No Position'}
-                                    </Text>
-                                  </View>
-                                </View>
-                                {/* Time */}
-                                <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                                  <Text style={styles.time}>
-                                    {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
-                                  </Text>
-                                </View>
-                              </View>
-                            </CartBox>
-                          </TouchableOpacity>
-                        );
-                      })
+
+
+schedulesForDate.map(({ schedule, user }, index) => {
+  if (!user) return null;
+
+  // Generate a truly unique key by combining schedule ID, date, time, and index
+  const uniqueKey = 
+    schedule._id ? `${schedule._id}-${index}` : 
+    schedule.id ? `${schedule.id}-${index}` : 
+    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
+
+  // Time String
+  const startTime = schedule.start_time || "";
+  const endTime = schedule.end_time || "";
+  const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+
+  // 🔹 Branch Logic: compare schedule branch vs employee's default branch
+  const employeeBranchId =
+    typeof user === 'object' && user !== null
+      ? typeof (user as any).branch === "object" && (user as any).branch !== null
+        ? (user as any).branch?._id 
+        : typeof (user as any).branch === "string" ? (user as any).branch : undefined
+      : undefined;
+
+  const scheduleBranchId =
+    typeof schedule.branch_id === "object" && schedule.branch_id !== null 
+      ? (schedule.branch_id as any)?._id 
+      : typeof schedule.branch_id === "string" ? schedule.branch_id : undefined;
+
+  const scheduleBranchName =
+    typeof schedule.branch_id === "object" && schedule.branch_id !== null
+      ? (schedule.branch_id as any)?.name
+      : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
+
+  // Show branch name only if schedule branch is different from employee's branch
+  const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
+              return (
+                <TouchableOpacity
+                  key={uniqueKey}
+                  onPress={() => openEditScreen(schedule._id)}
+
+                >
+                  <CartBox containerStyle={styles.detail_cartbox}>
+                    {/* 🔹 Branch Info */}
+                    {showBranch && (
+                      <View style={styles.branchHeader}>
+                        <Image
+                          source={require("../../../assets/icons/branch.png")}
+                          style={styles.branchIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.branchName}>{scheduleBranchName}</Text>
+                      </View>
+                    )}
+
+                    {/* 🔹 User Info & Time */}
+                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                      {/* Profile + Name + Position */}
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image
+                          source={require("../../../assets/images/profile2.png")}
+                          style={styles.profileImage}
+                        />
+                        <View style={styles.name_position}>
+                          {/* fullname */}
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                            {(() => {
+                              const employeeId =
+                                typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
+                                  ? (schedule?.employee_id as any)?._id
+                                  : schedule?.employee_id;
+
+                              const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
+
+                              return fullname || "Unknown User"; // ONLY fullname
+                            })()}
+                          </Text>
+
+                          {/* Position */}
+                          <Text style={styles.position}>
+                            {typeof user === 'object' && user !== null
+                              ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
+                              : 'No Position'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Time */}
+                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+                        <Text style={styles.time}>
+                          {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
+                        </Text>
+                      </View>
+                    </View>
+                  </CartBox>
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       </View>
@@ -554,6 +631,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     </View>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -611,6 +689,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 12,
+
     justifyContent: "flex-start"
   },
   profileImage: {
@@ -627,6 +706,7 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular as any,
     color: colors.text,
+
   },
   position: {
     fontSize: fonts.size.s,
@@ -642,15 +722,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: 10,
     alignSelf: 'flex-start'
+
   },
+
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 6,
+
   },
+
   branchName: {
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular as any,
   },
 });
+
 export default WorkScheduleScreen;
