@@ -19,15 +19,17 @@ import fonts from '../../styles/Fonts';
 import { getBranchById, getAllBranches } from '../../api/Branchs';
 import { toastConfig, showSuccessToast, showErrorToast } from '../../components/Toast';
 
-type RouteParams = {
-  params: {
+type RootStackParamList = {
+  HelpCenterScreen: {
     userId?: string;
     UserId?: string;
     langId?: string;
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [key: string]: any;
+    id?: string;
+    language?: string;
+    branch?: string;
   };
 };
 
@@ -36,7 +38,7 @@ const translations = require('../../assets/translations.json');
 const HelpCenterScreen: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
+  const route = useRoute<RouteProp<RootStackParamList, 'HelpCenterScreen'>>();
 
   const incomingUserId =
     route.params?.userId ??

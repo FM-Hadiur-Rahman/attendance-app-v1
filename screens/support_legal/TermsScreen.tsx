@@ -19,8 +19,8 @@ import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
 const translations = require('../../assets/translations.json');
 
-type RouteParams = {
-  params: {
+type RootStackParamList = {
+  TermsScreen: {
     orderId?: string;
     userId?: string;
     UserId?: string;
@@ -28,14 +28,16 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [key: string]: any;
+    id?: string;
+    language?: string;
+    branch?: string;
   };
 };
 
 const TermsScreen = () => {
   const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
+  const route = useRoute<RouteProp<RootStackParamList, 'TermsScreen'>>();
 
   //  accept multiple param name variants and provide fallbacks
   const incomingUserId =

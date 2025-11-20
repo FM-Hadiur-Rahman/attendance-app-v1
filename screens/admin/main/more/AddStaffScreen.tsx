@@ -43,6 +43,15 @@ import {
   getLoggedInUserBranch,
 } from "../../../../api/profile";
 
+// Define the interface for schedule data that matches what postSchedulesBulk expects
+interface ScheduleData {
+  date: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+  duration?: number; // Optional duration property for display purposes
+}
+
 const PHONE_RULES: Record<
   string,
   { min: number; max: number; example?: string }
@@ -235,11 +244,11 @@ const AddStaffScreen: React.FC = (props: any) => {
     setTimeFrom(`${hh}:${mm}:${ss}`);
     setTimeFromError("");
   };
-  const [finalSchedule, setFinalSchedule] = useState<ScheduleItem[]>([]);
+  const [finalSchedule, setFinalSchedule] = useState<ScheduleData[]>([]);
 
 
-  const buildScheduleArray = (): ScheduleItem[] => {
-    const result: ScheduleItem[] = [];
+  const buildScheduleArray = (): ScheduleData[] => {
+    const result: ScheduleData[] = [];
 
     const normalizeHHMMSS = (t: string) => {
       if (!t) return "";

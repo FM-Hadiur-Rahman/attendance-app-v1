@@ -18,8 +18,8 @@ import { Content, contents } from '../../api/Content';
 import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
 
-type RouteParams = {
-  params: {
+type RootStackParamList = {
+  PrivacyScreen: {
     orderId?: string;
     userId?: string;
     UserId?: string;
@@ -27,7 +27,9 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [key: string]: any;
+    id?: string;
+    language?: string;
+    branch?: string;
   };
 };
 const translations = require('../../assets/translations.json');
@@ -35,7 +37,7 @@ const translations = require('../../assets/translations.json');
 const PrivacyScreen = () => {
   const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
+  const route = useRoute<RouteProp<RootStackParamList, 'PrivacyScreen'>>();
 
   // accept multiple param name variants and provide fallbacks
   const incomingUserId =

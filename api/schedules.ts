@@ -13,7 +13,6 @@ export interface ScheduleItem {
   createdAt?: string;
   updatedAt?: string;
   __v?: number;
-  // Removed [key: string]: any; for better type safety
 }
 
 /**
