@@ -1199,7 +1199,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: fonts.size.xxl,
-    fontWeight: fonts.weight.bold as any,
+    fontWeight: fonts.weight.bold ,
     color: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1212,7 +1212,7 @@ const styles = StyleSheet.create({
 
   sectionTitle: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     marginBottom: 8,
     color: colors.text,
     paddingHorizontal: 12,
@@ -1228,11 +1228,11 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.m,
     color: colors.text,
     maxWidth: "80%",
-    fontWeight: fonts.weight.regular as any
+    fontWeight: fonts.weight.regular
   },
   infoValue: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.subtext,
     paddingHorizontal: 25,
     maxWidth: 220,
@@ -1248,7 +1248,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: colors.secondary,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
   },
   // Modal
   modalOverlay: {
@@ -1266,7 +1266,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     marginBottom: 20,
     textAlign: "center",
     color: colors.text, // Ensure high contrast
@@ -1300,7 +1300,7 @@ const styles = StyleSheet.create({
   },
   modalOptionText: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     color: colors.text,
   },
   profileImageContainer1: {
@@ -1321,12 +1321,12 @@ const styles = StyleSheet.create({
   deleteLabel: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.medium ,
   },
   popupsubtext: {
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     marginBottom: 30,
     alignSelf: "center",
   },

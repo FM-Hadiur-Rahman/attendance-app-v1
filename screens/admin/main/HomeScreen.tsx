@@ -619,11 +619,11 @@ const styles = StyleSheet.create({
   },
   profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "55%", },
-  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
-  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any, },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text },
+  time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular, },
 
   status_early: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.status_early,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
 
   },
   status_late: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.status_late,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -644,7 +644,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_noschedule: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -656,7 +656,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
     marginBottom: 12,
     marginTop: 20,
@@ -678,19 +678,19 @@ const styles = StyleSheet.create({
   },
   total_staff: {
     color: colors.search,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: 14,
     marginLeft: 8,
     width: "75%"
   },
   total_count: {
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.xxl,
     color: colors.primary,
     marginTop: 8,
   },
   shift_count: {
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.xxl,
     color: colors.text,
     marginTop: 8,
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   },
   branchName: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
   },
 
@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
   },
   duration: {
     color: colors.primary,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.m,
     marginLeft: 8,
     width: 50 * base,

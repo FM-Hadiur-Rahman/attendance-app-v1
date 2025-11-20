@@ -1941,7 +1941,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontFamily: fonts.family.regular,
     color: colors.text,
     minHeight: 16,
@@ -1949,7 +1949,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     fontFamily: fonts.family.regular,
     color: colors.search,
     minHeight: 14,
@@ -1964,7 +1964,7 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
   },
   modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalContainer: {
@@ -1990,7 +1990,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     textAlign: "center",
     marginBottom: 19,
     lineHeight: 22,
@@ -2002,7 +2002,7 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
     textAlign: "center",
     fontFamily: fonts.family.regular,
@@ -2038,7 +2038,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.family.regular,
     color: colors.primary,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     textAlign: "center",
   },
 
@@ -2102,7 +2102,7 @@ const styles = StyleSheet.create({
   day_text: {
     color: colors.primary,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
   },
   time: {
     borderColor: colors.primary,
@@ -2116,12 +2116,12 @@ const styles = StyleSheet.create({
   plus: { width: 16, height: 16 },
   branch_name: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.primary,
   },
   time_text: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.primary,
   },
   branch: {

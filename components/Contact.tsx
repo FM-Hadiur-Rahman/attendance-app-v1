@@ -13,17 +13,6 @@ import colors from '../styles/Colors';
 import fonts from '../styles/Fonts';
 import CartBox from './CartBox';
 import { getBranchById, getAllBranches } from '../api/Branchs';
-import { RouteProp, useRoute } from '@react-navigation/native';
-
-type RouteParams = {
-  params: {
-    langId?: string;
-    LangId?: string;
-    branchId?: string;
-    BranchId?: string;
-    [k: string]: any;
-  };
-};
 
 export interface ContactCardProps {
   icon: ImageSourcePropType;

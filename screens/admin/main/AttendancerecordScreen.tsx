@@ -1021,7 +1021,7 @@ const styles = StyleSheet.create({
   name_position: { marginLeft: 10, width: "65%" },
   name: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
   },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
@@ -1033,7 +1033,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   status_early: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.status_early,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -1044,7 +1044,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_late: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.status_late,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -1055,7 +1055,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_on_time: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.status_early,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -1066,7 +1066,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_noschedule: {
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.subtext,
     fontSize: fonts.size.xs,
     paddingVertical: 2,

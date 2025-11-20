@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
   editIcon: { width: 20, height: 20, resizeMode: "contain" },
   sectionTitle: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
     marginBottom: 14,
   },
@@ -655,7 +655,7 @@ const styles = StyleSheet.create({
   itemText: {
     fontSize: fonts.size.m,
     color: colors.text,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontFamily: fonts.family.regular,
   },
   logout: { flexDirection: "row" },
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
   },
   modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalContainer: {
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     textAlign: "center",
     marginBottom: 19,
   },
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
     textAlign: "center",
     fontFamily: fonts.family.regular,
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   languageSubtitle: {
     fontSize: fonts.size.s,
     color: colors.subtext,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     marginTop: 4,
     fontFamily: fonts.family.regular,
     lineHeight: 17,
@@ -719,14 +719,14 @@ const styles = StyleSheet.create({
     marginTop: 5,
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     fontFamily: fonts.family.regular,
     lineHeight: 16,
   },
   popupsubtext: {
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     marginBottom: 30,
     alignSelf: "center",
   },
