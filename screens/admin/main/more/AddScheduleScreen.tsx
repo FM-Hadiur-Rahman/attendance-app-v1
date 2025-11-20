@@ -94,7 +94,7 @@ export default function AddScheduleScreen(props: any) {
 
   const branchref = useRef<TextInput | null>(null);
   const starttime = useRef<TextInput | null>(null);
-  const duration= useRef<TextInput | null>(null);
+  const duration = useRef<TextInput | null>(null);
 
   const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
     return users.map((u) => {
@@ -975,7 +975,7 @@ export default function AddScheduleScreen(props: any) {
                 if (hh === 0) hh = 12;
                 return `${hh}:${mm} ${ampm}`;
               };
-              
+
               const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
                 if (!startHHMMSS) return "";
                 // Accept formats like "HH:MM", "HH:MM:SS", "HH:MM:SS.sss"
@@ -989,7 +989,7 @@ export default function AddScheduleScreen(props: any) {
                 const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
                 return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
               };
-              
+
               const displayTime = hasScheduleForStaff
                 ? `${formatTime12(staffSchedule.start_time)} – ${formatTime12(staffSchedule.end_time || computeEndTime(staffSchedule.start_time, staffSchedule.duration))}`
                 : null;
@@ -1407,7 +1407,7 @@ export default function AddScheduleScreen(props: any) {
                 // Declare variables at the top to avoid 'used before declaration' errors
                 const employeeIdToUse = selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
                 const defaultBranchIdToUse = selectedBranchId || effectiveBranchId || (schedulesToSave[0]?.branch_id ?? "");
-                
+
                 const formatTime12 = (hhmmss: string) => {
                   if (!hhmmss) return "";
                   const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
@@ -1418,7 +1418,7 @@ export default function AddScheduleScreen(props: any) {
                   if (hh === 0) hh = 12;
                   return `${hh}:${String(mm).padStart(2, "0")} ${ampm}`;
                 };
-                
+
                 const formatDateReadable = (ymd: string) => {
                   if (!ymd) return "";
                   const [y, m, d] = String(ymd).split("-").map((v) => parseInt(v, 10));
@@ -1426,7 +1426,7 @@ export default function AddScheduleScreen(props: any) {
                   const dt = new Date(y, m - 1, d);
                   return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
                 };
-                
+
                 // Helper to resolve employee object and original branch id (source)
                 const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
                 const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch._id : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch.id : null)) ?? null;
@@ -1514,6 +1514,122 @@ export default function AddScheduleScreen(props: any) {
                 // optional: inspect perRowResponses for debugging
                 console.log("[sched] per-row responses count:", perRowResponses.length);
                 // --- END per-row save ---
+                // for (const s of schedulesToSave) {
+                //   try {
+                //     const targetBranchId = s.branch_id ?? s.branch ?? defaultBranchIdToUse ?? "";
+                //     const start = timeToHHMM(s.start_time ?? s.start ?? s.from_time ?? "");
+                //     const end = timeToHHMM(s.end_time ?? s.end ?? "");
+                //     const date = s.date;
+                //     const startFmt = formatTime12(start);
+                //     const endFmt = formatTime12(end);
+                //     const dateReadable = formatDateReadable(date);
+                //     const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : (startFmt || endFmt || "");
+                //     try {
+                //       const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
+                //       const empBody =
+                //         targetBranchId && employeeBranchId && String(targetBranchId) !== String(employeeBranchId)
+                //           ? `New Shift assigned at Branch: ${assignedBranchName} for Date: ${dateReadable}, Time: ${timePart},`
+                //           : `New Shift assigned for Date: ${dateReadable}, Time: ${timePart},`;
+                //       await sendNotificationToUser(employeeIdToUse, {
+                //         title: "Shift Assigned",
+                //         body: empBody,
+                //         type: "shift_assigned",
+                //         meta: {
+                //           branchId: targetBranchId || null,
+                //           date,
+                //           start_time: start,
+                //           end_time: end,
+                //         },
+                //       });
+                //       console.log("[sched] notified employee for date", date, employeeIdToUse);
+                //     } catch (e) {
+                //       console.warn("[sched] sendNotificationToUser (employee) failed for date", date, e);
+                //     }
+                //     if (targetBranchId && String(targetBranchId) !== String(employeeBranchId)) {
+                //       let branchAdmins: any[] = [];
+                //       try {
+                //         const fetched = await fetchUsers({ branchId: targetBranchId, role: 'admin', limit: 1000 });
+                //         const fetchedList = fetched?.users ?? (fetched as any)?.data ?? [];
+                //         const normalized = normalizeUsers(Array.isArray(fetchedList) ? fetchedList : []);
+                //         branchAdmins = normalized.filter((u: any) => {
+                //           const role = (u.role || "").toString().toLowerCase();
+                //           return role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
+                //         });
+                //         console.log("[sched] fetched branch admins via API:", branchAdmins.map((a: any) => a.id));
+                //       } catch (e) {
+                //         console.warn("[sched] fetchUsers(role=admin) failed for branch", targetBranchId, e);
+                //       }
+                //       if ((!branchAdmins || branchAdmins.length === 0) && Array.isArray(localUsers) && localUsers.length > 0) {
+                //         branchAdmins = localUsers.filter((u: any) => {
+                //           const uBranch = u.branch_id ?? (u.raw?.branch && typeof u.raw.branch === 'object' && '_id' in u.raw.branch ? u.raw.branch._id : (u.raw?.branch && typeof u.raw.branch === 'object' && 'id' in u.raw.branch ? u.raw.branch.id : "")) ?? "";
+                //           const role = (u.role ?? u.raw?.role ?? "").toString().toLowerCase();
+                //           const isAdmin = role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
+                //           return String(uBranch) === String(targetBranchId) && isAdmin;
+                //         });
+                //         console.log("[sched] fallback branchAdmins from localUsers:", branchAdmins.map((a: any) => a.id));
+                //       }
+                //       const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
+                //       const fromBranchName = (localBranches.find(b => String(b.id) === String(employeeBranchId))?.name) || "";
+                //       const adminBody = `Branch '${fromBranchName || "Unknown"}' has assigned ${employeeName} to work at your branch '${assignedBranchName}'.\n Date: ${dateReadable}${timePart ? `, Time: ${timePart}` : ""}`;
+                //       try {
+                //         const adminIds = Array.from(new Set((branchAdmins || []).map((a: any) => String(a.id))))
+                //           .filter(id =>
+                //             id &&
+                //             String(id) !== String(employeeIdToUse) &&
+                //             String(id) !== String(userId) // <-- exclude the sender
+                //           );
+                //         await Promise.all(adminIds.map((adminId: string) =>
+                //           sendNotificationToUser(adminId, {
+                //             title: "Staff Assigned to Your Branch",
+                //             body: adminBody,
+                //             type: "branch_staff_assigned",
+                //             meta: {
+                //               fromBranchId: employeeBranchId,
+                //               toBranchId: targetBranchId,
+                //               employeeId: employeeIdToUse,
+                //               date,
+                //               start_time: start,
+                //               end_time: end,
+                //             },
+                //           })
+                //         ));
+                //         console.log("[sched] notified branch admins individually for branch", targetBranchId, "date", date, adminIds);
+                //       } catch (e) {
+                //         console.warn("[sched] notify branch admins individually failed for branch", targetBranchId, e);
+                //       }
+                //       try {
+                //         const adminBranchDoc = {
+                //           title: "Staff Assigned to Your Branch",
+                //           body: adminBody,
+                //           type: "branch_staff_assigned",
+                //           meta: {
+                //             fromBranchId: employeeBranchId ?? null,
+                //             fromUserId: userId ?? null,
+                //             fromUserName: employeeName ?? null,
+                //             toBranchId: targetBranchId ?? null,
+                //             toBranchName: assignedBranchName ?? null, // <-- add this
+                //             assignedBranchName: assignedBranchName ?? null, // keep this (backwards compatibility)
+                //             employeeId: employeeIdToUse,
+                //             date,
+                //             start_time: start,
+                //             end_time: end,
+                //           },
+                //           read: false,
+                //           createdAt: serverTimestamp(),
+                //         };
+                //         await addDoc(collection(db, "notifications_branch", String(targetBranchId), "inbox"), adminBranchDoc);
+                //         console.log("[sched] wrote branch-level notification (single-day) for branch", targetBranchId, "date", date);
+                //       } catch (e) {
+                //         console.warn("[sched] write branch-level notification failed for branch", targetBranchId, e);
+                //       }
+                //     } else {
+                //       console.log("[sched] skipping admin notification for date", s.date, "because targetBranch equals employeeBranch or missing");
+                //     }
+                //   } catch (e) {
+                //     console.warn("[sched] notify loop error for schedule row", s, e);
+                //   }
+                // }
+                // --- REPLACED BLOCK: send admin / branch notifications only (no duplicate employee notification) ---
                 for (const s of schedulesToSave) {
                   try {
                     const targetBranchId = s.branch_id ?? s.branch ?? defaultBranchIdToUse ?? "";
@@ -1524,27 +1640,8 @@ export default function AddScheduleScreen(props: any) {
                     const endFmt = formatTime12(end);
                     const dateReadable = formatDateReadable(date);
                     const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : (startFmt || endFmt || "");
-                    try {
-                      const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
-                      const empBody =
-                        targetBranchId && employeeBranchId && String(targetBranchId) !== String(employeeBranchId)
-                          ? `New Shift assigned at Branch: ${assignedBranchName} for Date: ${dateReadable}, Time: ${timePart},`
-                          : `New Shift assigned for Date: ${dateReadable}, Time: ${timePart},`;
-                      await sendNotificationToUser(employeeIdToUse, {
-                        title: "Shift Assigned",
-                        body: empBody,
-                        type: "shift_assigned",
-                        meta: {
-                          branchId: targetBranchId || null,
-                          date,
-                          start_time: start,
-                          end_time: end,
-                        },
-                      });
-                      console.log("[sched] notified employee for date", date, employeeIdToUse);
-                    } catch (e) {
-                      console.warn("[sched] sendNotificationToUser (employee) failed for date", date, e);
-                    }
+
+                    // Only send admin/branch notifications if the schedule was assigned to a different branch
                     if (targetBranchId && String(targetBranchId) !== String(employeeBranchId)) {
                       let branchAdmins: any[] = [];
                       try {
@@ -1559,6 +1656,8 @@ export default function AddScheduleScreen(props: any) {
                       } catch (e) {
                         console.warn("[sched] fetchUsers(role=admin) failed for branch", targetBranchId, e);
                       }
+
+                      // fallback to localUsers if API returned none
                       if ((!branchAdmins || branchAdmins.length === 0) && Array.isArray(localUsers) && localUsers.length > 0) {
                         branchAdmins = localUsers.filter((u: any) => {
                           const uBranch = u.branch_id ?? (u.raw?.branch && typeof u.raw.branch === 'object' && '_id' in u.raw.branch ? u.raw.branch._id : (u.raw?.branch && typeof u.raw.branch === 'object' && 'id' in u.raw.branch ? u.raw.branch.id : "")) ?? "";
@@ -1568,16 +1667,20 @@ export default function AddScheduleScreen(props: any) {
                         });
                         console.log("[sched] fallback branchAdmins from localUsers:", branchAdmins.map((a: any) => a.id));
                       }
+
                       const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
                       const fromBranchName = (localBranches.find(b => String(b.id) === String(employeeBranchId))?.name) || "";
                       const adminBody = `Branch '${fromBranchName || "Unknown"}' has assigned ${employeeName} to work at your branch '${assignedBranchName}'.\n Date: ${dateReadable}${timePart ? `, Time: ${timePart}` : ""}`;
+
                       try {
                         const adminIds = Array.from(new Set((branchAdmins || []).map((a: any) => String(a.id))))
                           .filter(id =>
                             id &&
                             String(id) !== String(employeeIdToUse) &&
-                            String(id) !== String(userId) // <-- exclude the sender
+                            String(id) !== String(userId) // exclude the sender
                           );
+
+                        // notify branch admins individually
                         await Promise.all(adminIds.map((adminId: string) =>
                           sendNotificationToUser(adminId, {
                             title: "Staff Assigned to Your Branch",
@@ -1597,9 +1700,10 @@ export default function AddScheduleScreen(props: any) {
                       } catch (e) {
                         console.warn("[sched] notify branch admins individually failed for branch", targetBranchId, e);
                       }
+
                       try {
                         const adminBranchDoc = {
-                          title: lang.staffAssignedToBranch || "Staff Assigned to Your Branch",
+                          title: "Staff Assigned to Your Branch",
                           body: adminBody,
                           type: "branch_staff_assigned",
                           meta: {
@@ -1607,8 +1711,8 @@ export default function AddScheduleScreen(props: any) {
                             fromUserId: userId ?? null,
                             fromUserName: employeeName ?? null,
                             toBranchId: targetBranchId ?? null,
-                            toBranchName: assignedBranchName ?? null, // <-- add this
-                            assignedBranchName: assignedBranchName ?? null, // keep this (backwards compatibility)
+                            toBranchName: assignedBranchName ?? null,
+                            assignedBranchName: assignedBranchName ?? null,
                             employeeId: employeeIdToUse,
                             date,
                             start_time: start,
@@ -1629,6 +1733,8 @@ export default function AddScheduleScreen(props: any) {
                     console.warn("[sched] notify loop error for schedule row", s, e);
                   }
                 }
+                // --- END REPLACED BLOCK ---
+
                 showSuccessToast(lang.schedule_added || "Schedules created");
                 navigation.navigate("Footer_A", {
                   selectedTab: "WorkSchedule",
@@ -1714,14 +1820,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular,
-    textAlign: "center",  
+    textAlign: "center",
   },
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
   modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium, textAlign: "center", marginBottom: 8 },
   footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 0, paddingTop: 10, paddingBottom: 30, backgroundColor: colors.secondary },
   each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center", },
   day: { borderColor: colors.primary, borderWidth: 1, borderRadius: 12, backgroundColor: colors.secondary, marginRight: 10, paddingTop: 11, paddingBottom: 11, width: 52, alignItems: "center" },
-  day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular},
+  day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular },
   time: {
     borderColor: colors.primary,
     borderWidth: 1, borderRadius: 12,
