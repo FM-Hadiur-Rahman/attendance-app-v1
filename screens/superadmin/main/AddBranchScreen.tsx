@@ -980,13 +980,13 @@ const styles = StyleSheet.create({
   },
   detail_first: {
     color: colors.text,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.m
   },
   detail_second: {
     marginTop: 6,
     color: colors.search,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.s
   },
   inputfields: {

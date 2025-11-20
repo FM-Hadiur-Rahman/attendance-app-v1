@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
   },
   branchname: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
   },
   details: {
@@ -428,6 +428,6 @@ const styles = StyleSheet.create({
   addresstext: {
     color: colors.subtext2,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
   },
 });

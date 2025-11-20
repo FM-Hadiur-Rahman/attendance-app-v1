@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
   },
   profileImage: { width: 40, height: 40, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "65%" },
-  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text },
-  position: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular as any },
-  staffLabel: { fontSize: fonts.size.s, color: colors.subtext, fontWeight: fonts.weight.regular as any },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular , color: colors.text },
+  position: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular },
+  staffLabel: { fontSize: fonts.size.s, color: colors.subtext, fontWeight: fonts.weight.regular },
 });

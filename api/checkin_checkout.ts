@@ -36,6 +36,8 @@ export interface AttendanceRecord {
   branchName: string;
   startStatus: string;
   endStatus: string;
+  In : string;
+  Out:string;
 }
 
 export interface AttendanceReportItem {
@@ -253,6 +255,72 @@ export const getMonthlySchedules = async (opts: { userId?: string; timezone?: st
   }
 };
 
+
+export const getMonthlySchedules1 = async (
+  opts: { 
+    userId?: string; 
+    userBranchId?: string; 
+    timezone?: string 
+  } = {}
+) => {
+  const { userId, userBranchId, timezone = "Asia/Colombo" } = opts;
+
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  try {
+    // Fetch attendance history
+    const resp = await axiosInstance.get("/attendance/my-history", { 
+      params: { page: 1, limit: 500 } 
+    });
+
+    const allSchedules = resp.data?.attendance ?? resp.data?.data ?? [];
+
+    // Filter by month + user + branch
+    const monthSchedules = allSchedules.filter((s: any) => {
+      if (!s.In) return false;
+
+      const schedDate = new Date(s.In);
+
+      const matchUser =
+        !userId || s.employeeId === userId;
+
+      const matchBranch =
+        !userBranchId || s.branchId === userBranchId || s.branch?._id === userBranchId;
+
+      return (
+        schedDate >= firstDay &&
+        schedDate <= lastDay &&
+        matchUser &&
+        matchBranch
+      );
+    });
+
+    console.log("\n🗓️ MONTHLY SCHEDULES ===========================");
+    if (monthSchedules.length > 0) {
+      monthSchedules.forEach((s: any) => {
+        const inTime = s.In?.split(" ")[1] ?? "--:--";
+        const outTime = s.Out?.split(" ")[1] ?? "--:--";
+        console.log(
+          `➡️ (${new Date(s.In!).toLocaleDateString("en-CA", { timeZone: timezone })})`,
+          `| Branch: ${s.branch?.name || "Unknown"}`,
+          `| ${inTime} - ${outTime}`
+        );
+      });
+    } else {
+      console.log("⚠️ No monthly schedules found.");
+    }
+
+    return monthSchedules;
+
+  } catch (err: any) {
+    console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
+    return [];
+  }
+};
+
+
 // Combine weekly and monthly schedules
 export const showWeeklyAndMonthlySchedules = async (userId?: string) => {
   console.log("===============================================");
@@ -379,6 +447,28 @@ export const getMyAttendanceHistory = async (): Promise<AttendanceRecord[]> => {
     return [];
   } catch (err) {
     console.error('❌ Error fetching attendance history:', err);
+    return [];
+  }
+};
+
+export const getMyAttendanceHistory1 = async (): Promise<any[]> => {
+  try {
+    const res = await axiosInstance.get('/attendance/my-history');
+
+    if (!res?.data?.data) return [];
+
+    const allRecords = res.data.data;
+
+    const fixDate = (str: string) => str?.replace(" ", "T"); // YYYY-MM-DD HH:mm:ss → ISO
+
+    return allRecords.map((r: any) => ({
+      ...r,
+      In: fixDate(r.In),
+      Out: fixDate(r.Out),
+      created_at: fixDate(r.created_at),
+    }));
+  } catch (err) {
+    console.error('Error fetching attendance history:', err);
     return [];
   }
 };

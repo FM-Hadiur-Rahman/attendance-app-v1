@@ -12,7 +12,7 @@ const fonts = {
   weight: {
     light: "300",
     regular: "400",
-    medium: "500",
+    medium: "500" ,
     semibold: "600",
     bold: "700",
     extrabold: "800",
@@ -22,6 +22,6 @@ const fonts = {
     medium: "Roboto-Medium",
     bold: "Roboto-Bold",
   },
-};
+} as const;
 
 export default fonts;
