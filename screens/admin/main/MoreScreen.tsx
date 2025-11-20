@@ -168,7 +168,7 @@ export default function MoreScreen(props: any) {
           const profileBranchId =
       typeof profile.branch === "string"
         ? profile.branch
-        : profile.branch?._id ?? null;
+        : profile.branch ?? null;
 
     if (profileBranchId) {
       setBranchId(String(profileBranchId));

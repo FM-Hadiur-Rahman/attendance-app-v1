@@ -84,11 +84,11 @@ const StaffRecordScreen: React.FC = (props: any) => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+            : branchField ?? null;
 
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
+            ? branchField
             : null;
 
         if (branchId) {
@@ -126,7 +126,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
       if (!branchToUse) {
         try {
           const profile = await getProfile();
-          const branchFromProfile = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? null;
+          const branchFromProfile = typeof profile.branch === "string" ? profile.branch : profile.branch ?? null;
           if (branchFromProfile) { branchToUse = branchFromProfile; setActiveBranchId(branchFromProfile); }
         } catch { }
       }
@@ -261,7 +261,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
   })
   .filter((u) => {
     if (!q) return true;
-    const name = u.fullname ?? `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
+    const name = u.fullname || "";
     const full = `${name} ${u.position ?? ""}`.toLowerCase();
     return full.includes(q);
   })
@@ -306,7 +306,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
           const branchFromProfile =
             typeof profile?.branch === "string"
               ? profile.branch
-              : profile?.branch?._id ?? null;
+              : profile?.branch ?? null;
           if (branchFromProfile) {
             branchIdToPass = branchFromProfile;
             setActiveBranchId(branchFromProfile);
@@ -353,7 +353,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
 
   const openStaffProfile = (staffId: string) => {
     const staff = safeFind(users, (u) => (u as any).id === staffId || (u as any)._id === staffId);
-    const fullname = staff?.fullname || `${(staff as any)?.firstname ?? ""} ${(staff as any)?.lastname ?? ""}`.trim() || "Unknown";
+    const fullname = staff?.fullname || "Unknown";
     console.log("CartBox pressed -> StaffProfileScreen", {
       id: staffId,
       UserId: loggedInUserId, // logged-in admin id
@@ -439,7 +439,7 @@ const StaffRecordScreen: React.FC = (props: any) => {
 
   const renderItem = ({ item, index }: ListRenderItemInfo<ProfileUser>) => {
     const u = item;
-    const displayName = u.fullname || `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim();
+    const displayName = u.fullname || "";
     const position = u.position ?? "";
     const staffLabel = `Staff${(index + 1).toString().padStart(2, "0")}`;
     const userIdKey = (u as any)._id ?? (u as any).id ?? `u-${index}`;

@@ -136,11 +136,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+            : null;
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
-            : null;
+            ? branchField : null;
 
         if (branchId) {
           setActiveBranchId(String(branchId));
@@ -529,11 +528,11 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 schedulesForDate.map(({ schedule, user }, index) => {
   if (!user) return null;
 
-  // Unique Key
-  const uniqueKey =
-    schedule._id ||
-    schedule.id ||
-    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any).user_id : user}-${index}`;
+  // Generate a truly unique key by combining schedule ID, date, time, and index
+  const uniqueKey = 
+    schedule._id ? `${schedule._id}-${index}` : 
+    schedule.id ? `${schedule.id}-${index}` : 
+    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
 
   // Time String
   const startTime = schedule.start_time || "";
@@ -562,7 +561,7 @@ schedulesForDate.map(({ schedule, user }, index) => {
   const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
               return (
                 <TouchableOpacity
-                  key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}`}
+                  key={uniqueKey}
                   onPress={() => openEditScreen(schedule._id)}
 
                 >

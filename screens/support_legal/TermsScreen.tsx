@@ -1,25 +1,26 @@
-// screens/main/TermsScreen.tsx
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Image,
   Dimensions,
+  Image,
 } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import Header from '../../components/Header';
-import colors from '../../styles/Colors';
-import { GroupedContactList, contactList } from '../../components/Contact';
-import CartBox from '../../components/CartBox';
-import fonts from '../../styles/Fonts';
-import translations from '../../assets/translations.json';
-import { contents, Content } from '../../api/Content';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
-type RouteParams = {
-  params: {
+import Header from '../../components/Header';
+import CartBox from '../../components/CartBox';
+import { GroupedContactList, contactList } from '../../components/Contact';
+import { Content, contents } from '../../api/Content';
+
+import colors from '../../styles/Colors';
+import fonts from '../../styles/Fonts';
+const translations = require('../../assets/translations.json');
+
+type RootStackParamList = {
+  TermsScreen: {
     orderId?: string;
     userId?: string;
     UserId?: string;
@@ -27,14 +28,16 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [k: string]: any;
+    id?: string;
+    language?: string;
+    branch?: string;
   };
 };
 
 const TermsScreen = () => {
   const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
+  const route = useRoute<RouteProp<RootStackParamList, 'TermsScreen'>>();
 
   //  accept multiple param name variants and provide fallbacks
   const incomingUserId =

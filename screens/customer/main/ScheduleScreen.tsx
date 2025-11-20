@@ -87,7 +87,7 @@ export default function ScheduleScreen(props: any) {
       
       // Fix the branch access by checking the type properly
       const branchObj = typeof user.branch === 'object' && user.branch !== null 
-        ? { _id: user.branch._id, name: user.branch.name } 
+        ? { _id: user.branch, name: user.branch } 
         : typeof user.branch === 'string' 
           ? { _id: user.branch, name: '' } 
           : null;

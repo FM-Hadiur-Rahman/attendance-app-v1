@@ -14,6 +14,7 @@ import fonts from '../styles/Fonts';
 import CartBox from './CartBox';
 import { getBranchById, getAllBranches } from '../api/Branchs';
 
+
 export interface ContactCardProps {
   icon: ImageSourcePropType;
   label: string;

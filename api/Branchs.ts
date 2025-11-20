@@ -3,10 +3,10 @@ import axiosInstance from './axiosInstance';
 
 export interface BranchCreatePayload {
   name: string;
-  latitude?: string;
-  longitude?: string;
-  phone?: string;
-  email?: string;
+  latitude: string;
+  longitude: string;
+  phone: string;
+  email: string;
 }
 
 export interface Branch {
@@ -19,7 +19,9 @@ export interface Branch {
     type: 'Point';
     coordinates: [number, number];
   };
-  [k: string]: any;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
 }
 
 export interface GetBranchesResponse {
@@ -121,4 +123,3 @@ export const getAllBranches = async (): Promise<Branch[]> => {
     return [];
   }
 };
-
