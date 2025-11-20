@@ -103,10 +103,12 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
       let branch_id = "";
       if (typeof u.branch === "string") {
         branch_id = u.branch;
-      } else if (u.branch && typeof u.branch === "object") {
-        branch_id = (u.branch as any)._id ?? (u.branch as any).id ?? (u as any).branch_id ?? "";
-      } else {
-        branch_id = (u as any).branch_id ?? "";
+      } else if (u.branch && typeof u.branch === 'object') {
+        if ('_id' in u.branch) {
+          branch_id = u.branch;
+        } else if ('id' in u.branch && (u.branch as any).id !== undefined) {
+          branch_id = (u.branch as any).id;
+        }
       }
 
       return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
@@ -172,7 +174,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
       let branchToUse: string | undefined = screenBranchId || undefined;
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?._id ?? undefined;
+        const profBranch = typeof profile.branch === 'string' ? profile.branch  : undefined;
         if (!branchToUse && profBranch) branchToUse = profBranch;
         console.log("getProfile() returned branch:", profBranch);
       } catch (err) {
@@ -1378,29 +1380,8 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
 
                 // --- compute employee object & branch id ONCE (defensive) ---
                 const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
-
-                // safe extraction: raw.branch might be string or object
-                let employeeBranchId: string | null = null;
-                if (employeeObj) {
-                  // prefer normalized branch_id from LocalUser
-                  if (employeeObj.branch_id && String(employeeObj.branch_id).trim() !== "") {
-                    employeeBranchId = String(employeeObj.branch_id);
-                  } else if (employeeObj.raw && employeeObj.raw.branch) {
-                    const rb = employeeObj.raw.branch;
-                    if (typeof rb === "string") {
-                      employeeBranchId = rb;
-                    } else if (
-                      rb &&
-                      typeof rb === "object" &&
-                      (rb._id ?? (("id" in rb) ? rb["id"] : undefined))
-                    ) {
-                      employeeBranchId = String(rb._id ?? (("id" in rb) ? rb["id"] : ""));
-                    }
-                  }
-                }
-                const employeeName = employeeObj?.fullname ?? (employeeObj?.raw?.fullname ?? employeeIdToUse);
-                console.log("[sched] employeeBranchId resolved:", employeeBranchId, "employeeName:", employeeName);
-
+                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
+                const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
                 const schedulesPayload = schedulesToSave.map((s) => {
                   const dateYmd = s.date;
                   const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";

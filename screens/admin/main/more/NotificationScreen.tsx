@@ -165,7 +165,7 @@ const AdminNotificationScreen: React.FC = () => {
     (async () => {
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch?._id ?? null;
+        const profBranch = typeof profile.branch === "string" ? profile.branch : profile.branch ?? null;
         if (profBranch && String(profBranch) !== String(effectiveBranchId)) {
           setEffectiveBranchId(String(profBranch));
         }

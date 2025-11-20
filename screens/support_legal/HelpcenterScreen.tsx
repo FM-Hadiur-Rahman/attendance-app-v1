@@ -1,21 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  StyleSheet,
-  Text,
   View,
-  KeyboardAvoidingView,
-  Platform,
+  Text,
+  StyleSheet,
   ScrollView,
-  Linking,
   RefreshControl,
+  Platform,
+  KeyboardAvoidingView,
+  Dimensions,
+  Image,
+  Linking,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import Toast from 'react-native-toast-message';
-
-import { contactList, GroupedContactList } from '../../components/Contact';
-import { Button1 } from '../../components/Button';
-import InputBox from '../../components/InputBox';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Header from '../../components/Header';
 import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
@@ -30,7 +27,7 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [k: string]: any;
+    [key: string]: any;
   };
 };
 
@@ -221,69 +218,36 @@ const HelpCenterScreen: React.FC = () => {
       >
         <View style={styles.entire_group}>
           <Text style={styles.title}>{lang.lets_talk ?? "Let's talk"}</Text>
-
-          <View style={styles.inputsContainer}>
-            <InputBox
-              label={lang.name_label ?? 'Name'}
-              placeholder={lang.name_placeholder ?? 'eg; John'}
-              value={formData.name}
-              style={{ width: '100%' }}
-              setValue={text => handleChange('name', text)}
-              borderColor={errors.name ? colors.error_text : colors.primary}
-            />
-            {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-
-            <InputBox
-              label={lang.email_label ?? 'Email'}
-              placeholder={lang.example_gmail ?? 'example@gmail.com'}
-              value={formData.email}
-              setValue={text => handleChange('email', text)}
-              borderColor={errors.email ? colors.error_text : colors.primary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-
-            <InputBox
-              label={lang.message_label ?? 'How can we help?'}
-              placeholder={lang.message_placeholder ?? 'Type here'}
-              multiline
-              inputStyle={{ height: 120 }}
-              value={formData.message}
-              setValue={text => handleChange('message', text)}
-              borderColor={errors.message ? colors.error_text : colors.primary}
-            />
-            {errors.message && <Text style={styles.errorText}>{errors.message}</Text>}
-          </View>
-
-          <View style={styles.contactListWrap}>
-            <GroupedContactList data={contactList} lang={lang} branchId={incomingBranchId} />
-          </View>
         </View>
       </ScrollView>
-
-      <View style={[styles.buttonWrap, { paddingBottom: insets.bottom || 0 }]}>
-        <Button1
-          text={sending ? (lang.sending ?? 'Sending...') : (lang.send_button ?? 'Send')}
-          width="90%"
-          onPress={handleSubmit}
-        />
-      </View>
-
-      <Toast config={toastConfig} />
     </KeyboardAvoidingView>
   );
 };
 
-const styles = StyleSheet.create({
-  headerWrapper: { backgroundColor: colors.secondary },
-  scrollContent: { paddingTop: 0, flex: 1, backgroundColor: colors.secondary },
-  entire_group: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, alignItems: 'center' },
-  title: { fontSize: fonts.size.l, fontWeight: fonts.weight.semibold as never, color: colors.text, marginTop: 20, marginBottom: 12, fontFamily: fonts.family.regular, alignSelf: 'flex-start' },
-  errorText: { color: colors.error_text, fontSize: 12, alignSelf: 'flex-start', marginBottom: 6 },
-  contactListWrap: { width: '100%', marginTop: 0 },
-  buttonWrap: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary, paddingTop: 20 },
-  inputsContainer: { width: '100%', paddingHorizontal: 0 },
-});
-
 export default HelpCenterScreen;
+
+const styles = StyleSheet.create({
+  headerWrapper: {
+    width: '100%',
+    backgroundColor: colors.secondary,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+    backgroundColor: colors.secondary,
+  },
+  entire_group: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  title: {
+    width: '100%',
+    fontFamily: 'Montserrat',
+    fontWeight: '600',
+    fontSize: 16,
+    lineHeight: 16,
+    color: colors.text,
+    marginBottom: 20,
+    marginTop: 20,
+  },
+});

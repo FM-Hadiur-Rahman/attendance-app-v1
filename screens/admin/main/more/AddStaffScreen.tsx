@@ -33,16 +33,16 @@ import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
-import { register as authRegister } from "../../../../api/auth/authService";
-import { getBranchId, getBranchById, getUsers, getUserById, postSchedulesBulk, getLoggedInUserBranch, } from "../../../../api/profile";
+import { register as authRegister, RegisterPayload } from "../../../../api/auth/authService";
+import {
+  getBranchId,
+  getBranchById,
+  getUsers,
+  getUserById,
+  postSchedulesBulk,
+  getLoggedInUserBranch,
+} from "../../../../api/profile";
 
-type ScheduleItem = {
-  date: string;
-  day_of_week: string;
-  start_time: string;
-  end_time: string;
-  duration?: number;
-};
 const PHONE_RULES: Record<
   string,
   { min: number; max: number; example?: string }
@@ -981,7 +981,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       branchIdToUse = null;
     }
 
-    const payload: any = {
+    const payload: RegisterPayload = {
       fullname: fullName,
       branch: branchIdToUse ?? "",
       username: username,
@@ -989,7 +989,6 @@ const AddStaffScreen: React.FC = (props: any) => {
       password: password,
       position: position,
       phone: finalPhone,
-      role: "",
     };
     let prevToken: string | null = null;
     let prevUserId: string | null = null;
@@ -1003,10 +1002,9 @@ const AddStaffScreen: React.FC = (props: any) => {
     try {
       const result = await authRegister(payload);
       const createdUser = result?.user ?? null;
-      let createdId: string | null = null;
-      if (createdUser && typeof createdUser === "object") {
-        createdId = String(createdUser.id);
-      }
+      const createdId = (createdUser && typeof createdUser === 'object' && '_id' in createdUser) ? createdUser._id : null;
+
+      // call onSave callback without password
       if (onSave) {
         try {
           const sanitized = { ...(createdUser || {}), password: undefined };

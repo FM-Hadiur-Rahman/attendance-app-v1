@@ -279,7 +279,10 @@ const loadTodaySchedule = async () => {
   try {
     setLoading(true);
 
-    const branchId = currentUser?.branch_id;
+    // Extract branch ID properly from the branch object or string
+    const branchId = typeof currentUser?.branch === 'string' 
+      ? currentUser.branch 
+      :  undefined;
 
     const resp = await getTodaySchedule({
       userId,
@@ -391,7 +394,7 @@ const loadTodaySchedule = async () => {
     const interval = setInterval(loadTodaySchedule, 1000 * 60 * 5);
 
     return () => clearInterval(interval);
-  }, [userId, currentUser?.branch_id]);
+  }, [userId, currentUser?.branch]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -629,7 +632,7 @@ useEffect(() => {
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branch: todaySchedule.branchname || "Unknown Branch",
+        branchId: todaySchedule.branch?._id,
       };
       await startAttendance(payload);
       const nowDate = new Date();
@@ -690,7 +693,7 @@ useEffect(() => {
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branch: todaySchedule.branch?.name || "Unknown Branch",
+        branchId: todaySchedule.branch?._id,
       };
       await endAttendance(payload);
 
@@ -1015,7 +1018,7 @@ const formatTo12Hour = (time?: string): string => {
       mounted = false;
       clearInterval(interval);
     };
-  }, [userId, currentUser?.branch_id, todaySchedule]);
+  }, [userId, currentUser?.branch, todaySchedule]);
 
 
 

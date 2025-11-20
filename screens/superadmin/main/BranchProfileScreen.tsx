@@ -177,9 +177,9 @@ export default function BranchProfileScreen(props: any) {
     if (b.latitude !== undefined && b.longitude !== undefined) {
       lat = Number(b.latitude);
       lon = Number(b.longitude);
-    } else if (b.location && Array.isArray(b.location.coordinates) && b.location.coordinates.length >= 2) {
-      lon = Number(b.location.coordinates[0]);
-      lat = Number(b.location.coordinates[1]);
+    } else if (b.location?.coordinates && b.location.coordinates.length >= 2) {
+      lat = Number(b.location.coordinates[1]);  // latitude is second coordinate
+      lon = Number(b.location.coordinates[0]);  // longitude is first coordinate
     }
 
     if (lat === undefined || lon === undefined || !isFinite(lat) || !isFinite(lon)) return { lat: undefined, lon: undefined };
@@ -263,9 +263,6 @@ export default function BranchProfileScreen(props: any) {
       if (Array.isArray(b?.location?.coordinates) && b.location.coordinates.length >= 2) {
         lon = Number(b.location.coordinates[0]);
         lat = Number(b.location.coordinates[1]);
-      } else if (b?.latitude && b?.longitude) {
-        lat = Number(b.latitude);
-        lon = Number(b.longitude);
       }
       if (lat != null && lon != null) {
         setLatitude(String(lat));
@@ -273,7 +270,7 @@ export default function BranchProfileScreen(props: any) {
         const addr = await geocodeOnce(lat, lon);
         setBranchAddress(addr);
       } else {
-        setBranchAddress(b?.address ?? '');
+        setBranchAddress('');
       }
 
       // ---- NEW: prefer branch.phone (from /branch/:id) as the phone source ----
@@ -305,7 +302,7 @@ export default function BranchProfileScreen(props: any) {
         }) ?? null;
 
         if (admin) {
-          setAdminUserId(admin._id ?? admin.id ?? null);
+          setAdminUserId(admin._id ?? null);
           setManagerName(admin.fullname ?? admin.username ?? '');
           setUsername(admin.username ?? '');
           // do NOT set phoneNumber from admin (we now read branch.phone)
@@ -727,10 +724,10 @@ export default function BranchProfileScreen(props: any) {
       const updated = await updateBranch(branchId, payload);
 
       // prefer returned updated values if backend returns them
-      setLatitude(updated.latitude ?? payload.latitude ?? latitude);
-      setLongitude(updated.longitude ?? payload.longitude ?? longitude);
+      setLatitude(updated.location ?? payload.latitude ?? latitude);
+      setLongitude(updated.location ?? payload.longitude ?? longitude);
 
-      const addr = await geocodeOnce(Number(updated.latitude ?? payload.latitude), Number(updated.longitude ?? payload.longitude));
+      const addr = await geocodeOnce(Number(updated.location ?? payload.latitude), Number(updated.location ?? payload.longitude));
       setBranchAddress(addr);
 
       // invalidate local geo cache for this branch so BranchScreen will re-geocode next time

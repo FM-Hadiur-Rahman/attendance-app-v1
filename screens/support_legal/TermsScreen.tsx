@@ -1,22 +1,23 @@
-// screens/main/TermsScreen.tsx
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Image,
   Dimensions,
+  Image,
 } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+
 import Header from '../../components/Header';
-import colors from '../../styles/Colors';
-import { GroupedContactList, contactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
+import { GroupedContactList, contactList } from '../../components/Contact';
+import { Content, contents } from '../../api/Content';
+
+import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
-import translations from '../../assets/translations.json';
-import { contents, Content } from '../../api/Content';
+const translations = require('../../assets/translations.json');
 
 type RouteParams = {
   params: {
@@ -27,7 +28,7 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [k: string]: any;
+    [key: string]: any;
   };
 };
 

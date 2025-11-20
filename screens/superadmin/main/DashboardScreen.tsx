@@ -208,8 +208,8 @@ const DashboardScreen = (props: any) => {
         if (u.role !== 'user') return false;
         const b = u.branch;
         if (!b) return false;
-        if (typeof b === 'string') return b === branchId || b === branch.name;
-        return (b._id ?? b) === branchId;
+        if (typeof b === 'string') return b === branchId;
+        return (b as any)._id === branchId;
       }).length;
 
       // unique users scheduled today for this branch (only role === 'user')

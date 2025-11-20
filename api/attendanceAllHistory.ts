@@ -3,10 +3,10 @@ import axiosInstance from './axiosInstance';
 
 export interface AttendanceHistoryItem {
   id: string;
-  _id?: string;
+  _id: string;
   user: {
     id: string;
-    _id?: string;
+    _id: string;
     username?: string;
     email?: string;
   };
@@ -16,7 +16,6 @@ export interface AttendanceHistoryItem {
   branch?: { id?: string; _id?: string; name?: string };
   created_at?: string;
   updated_at?: string;
-  [k: string]: any;
 }
 
 /**

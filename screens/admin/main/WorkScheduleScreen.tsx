@@ -120,11 +120,11 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+            : null;
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
-            : null;
+            ? branchField : null;
+
         if (branchId) {
           setActiveBranchId(String(branchId));
           if (branchName) setActiveBranchName(branchName);
