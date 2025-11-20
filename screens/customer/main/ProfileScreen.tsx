@@ -123,8 +123,7 @@ export default function ProfileScreen(props: any) {
       setFullName(profile.fullname ?? "");
       const profileBranchId =
         typeof profile.branch === "string"
-          ? profile.branch
-          : profile.branch?._id ?? null;
+          ? profile.branch : null;
 
       if (profileBranchId) {
         setBranchId(String(profileBranchId));

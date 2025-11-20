@@ -589,10 +589,7 @@ useEffect(() => {
               normalizeBranchIdValue(item?.branch);
 
             const loggedBranchId = normalizeBranchIdValue(
-              currentUser?.branch_id ??
-              currentUser?.default_branch_id ??
-              (currentUser as any)?.defaultBranchId ??
-              (currentUser as any)?.branch
+              currentUser?.branch
             );
 
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);

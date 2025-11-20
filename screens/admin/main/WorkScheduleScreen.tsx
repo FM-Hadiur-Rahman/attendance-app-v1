@@ -136,11 +136,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+            : null;
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
-            : null;
+            ? branchField : null;
 
         if (branchId) {
           setActiveBranchId(String(branchId));
@@ -579,22 +578,11 @@ schedulesForDate.map(({ schedule, user }, index) => {
                                   </View>
                                 )}
 
-                                {/* 🔹 User Info & Time */}
-                                <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                                  {/* Profile + Name + Position */}
-                                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                                    <Image
-                                      source={require("../../../assets/images/profile2.png")}
-                                      style={styles.profileImage}
-                                    />
-                                    <View style={styles.name_position}>
-                                      {/* fullname */}
-                                      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                                        {(() => {
-                                          const employeeId =
-                                            typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
-                                              ? (schedule?.employee_id as any)?._id
-                                              : schedule?.employee_id;
+  // Generate a truly unique key by combining schedule ID, date, time, and index
+  const uniqueKey = 
+    schedule._id ? `${schedule._id}-${index}` : 
+    schedule.id ? `${schedule.id}-${index}` : 
+    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
 
                                           const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
 
@@ -611,17 +599,75 @@ schedulesForDate.map(({ schedule, user }, index) => {
                                     </View>
                                   </View>
 
-                                  {/* Time */}
-                                  <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
-                                    <Text style={styles.time}>
-                                      {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
-                                    </Text>
-                                  </View>
-                                </View>
-                              </CartBox>
-                            </TouchableOpacity>
-                          );
-                        })
+  const scheduleBranchName =
+    typeof schedule.branch_id === "object" && schedule.branch_id !== null
+      ? (schedule.branch_id as any)?.name
+      : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
+
+  // Show branch name only if schedule branch is different from employee's branch
+  const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
+              return (
+                <TouchableOpacity
+                  key={uniqueKey}
+                  onPress={() => openEditScreen(schedule._id)}
+
+                >
+                  <CartBox containerStyle={styles.detail_cartbox}>
+                    {/* 🔹 Branch Info */}
+                    {showBranch && (
+                      <View style={styles.branchHeader}>
+                        <Image
+                          source={require("../../../assets/icons/branch.png")}
+                          style={styles.branchIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.branchName}>{scheduleBranchName}</Text>
+                      </View>
+                    )}
+
+                    {/* 🔹 User Info & Time */}
+                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                      {/* Profile + Name + Position */}
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image
+                          source={require("../../../assets/images/profile2.png")}
+                          style={styles.profileImage}
+                        />
+                        <View style={styles.name_position}>
+                          {/* fullname */}
+                          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+                            {(() => {
+                              const employeeId =
+                                typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
+                                  ? (schedule?.employee_id as any)?._id
+                                  : schedule?.employee_id;
+
+                              const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
+
+                              return fullname || "Unknown User"; // ONLY fullname
+                            })()}
+                          </Text>
+
+                          {/* Position */}
+                          <Text style={styles.position}>
+                            {typeof user === 'object' && user !== null
+                              ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
+                              : 'No Position'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Time */}
+                      <View style={{ justifyContent: "center", alignItems: "flex-end" }}>
+                        <Text style={styles.time}>
+                          {`${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
+                        </Text>
+                      </View>
+                    </View>
+                  </CartBox>
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       </View>

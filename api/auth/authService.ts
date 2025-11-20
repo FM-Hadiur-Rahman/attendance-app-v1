@@ -19,11 +19,12 @@ export interface LoginPayload {
 
 export interface RegisterPayload {
   fullname: string;
-  position?: string;
-  phone?: string;
+  position: string;
+  phone: string;
   email: string;
   password: string;
-  username?: string;
+  username: string;
+  branch: string;
 }
 
 export interface AuthResponse {
@@ -33,10 +34,6 @@ export interface AuthResponse {
     email: string;
     username: string;
     role: string;
-    fullname?: string;
-    position?: string;
-    phone?: string;
-    branch?: string;
   };
 }
 

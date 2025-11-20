@@ -519,7 +519,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         const aBranchId = a.branch?.id ?? a.branch_id ?? null;
         if (!aBranchId) return false;
         if (String(aBranchId) !== String(branchIdToUse)) return false;
-        const inVal = a.In || a.in || a.InTime || a.check_in || a.checkIn;
+        const inVal = a.In || a.In || a.In || a.In || a.In;
         if (!inVal) return false;
         const inDt = new Date(String(inVal).replace(' ', 'T'));
         if (isNaN(inDt.getTime())) return false;
@@ -929,7 +929,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         const uidStr = String(uid);
         if (empIdStr !== uidStr) return false;
         // match date
-        const inVal = att?.In || att?.in || att?.InTime || att?.check_in || att?.checkIn;
+        const inVal = att?.In || att?.In || att?.In || att?.In || att?.In;
         if (!inVal) return false;
         const inYmd = String(inVal).split(' ')[0];
         return inYmd === ymd;
