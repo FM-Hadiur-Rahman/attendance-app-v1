@@ -168,7 +168,7 @@ const onRefresh = useCallback(() => {
       if (prof?._id) {
         const monthSchedules = await getMonthlySchedules1({
           userId: prof._id,
-          userBranchId: prof.branch,
+          userBranchId: prof.branch_id ?? prof.default_branch_id,
         });
 
         const safeData = Array.isArray(monthSchedules) ? monthSchedules : [];
@@ -224,7 +224,7 @@ const onRefresh = useCallback(() => {
         setLoading(true);
         const monthSchedules = await getMonthlySchedules1({
           userId: currentUser._id,
-          userBranchId: currentUser.branch ?? null,
+          userBranchId: currentUser.branch_id ?? currentUser.default_branch_id ?? null,
         });
 
         if (!isMounted) return;
@@ -246,7 +246,7 @@ const onRefresh = useCallback(() => {
     return () => {
       isMounted = false;
     };
-  }, [currentUser?._id, currentUser?.branch]);
+  }, [currentUser?._id, currentUser?.branch_id, currentUser?.default_branch_id]);
 
   // fetch branches metadata once
 useEffect(() => {

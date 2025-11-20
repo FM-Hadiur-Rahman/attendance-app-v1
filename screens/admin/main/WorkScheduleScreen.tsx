@@ -198,6 +198,9 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
 
 
+
+
+
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1); // move one day back
@@ -520,7 +523,9 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           ) : schedulesForDate.length === 0 ? (
             <Text style={styles.noSchedulesText}>{lang.no_schedules_for_date}</Text>
           ) : (
-            schedulesForDate.map(({ schedule, user }, index) => {
+
+
+schedulesForDate.map(({ schedule, user }, index) => {
               if (!user) return null;
             
               // Generate a truly unique key by combining schedule ID, date, time, and index
@@ -554,11 +559,58 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             
               // Show branch name only if schedule branch is different from employee's branch
               const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
-              
+                          return (
+                            <TouchableOpacity
+                              key={uniqueKey}
+                              onPress={() => openEditScreen(schedule._id)}
+            
+                            >
+                              <CartBox containerStyle={styles.detail_cartbox}>
+                                {/* 🔹 Branch Info */}
+                                {showBranch && (
+                                  <View style={styles.branchHeader}>
+                                    <Image
+                                      source={require("../../../assets/icons/branch.png")}
+                                      style={styles.branchIcon}
+                                      resizeMode="contain"
+                                    />
+                                    <Text style={styles.branchName}>{scheduleBranchName}</Text>
+                                  </View>
+                                )}
+
+  // Generate a truly unique key by combining schedule ID, date, time, and index
+  const uniqueKey = 
+    schedule._id ? `${schedule._id}-${index}` : 
+    schedule.id ? `${schedule.id}-${index}` : 
+    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
+
+                                          const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
+
+                                          return fullname || "Unknown User"; // ONLY fullname
+                                        })()}
+                                      </Text>
+
+                                      {/* Position */}
+                                      <Text style={styles.position}>
+                                        {typeof user === 'object' && user !== null
+                                          ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
+                                          : 'No Position'}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+  const scheduleBranchName =
+    typeof schedule.branch_id === "object" && schedule.branch_id !== null
+      ? (schedule.branch_id as any)?.name
+      : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
+
+  // Show branch name only if schedule branch is different from employee's branch
+  const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
               return (
                 <TouchableOpacity
                   key={uniqueKey}
                   onPress={() => openEditScreen(schedule._id)}
+
                 >
                   <CartBox containerStyle={styles.detail_cartbox}>
                     {/* 🔹 Branch Info */}
