@@ -326,9 +326,20 @@
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
     "schedulesCreatedSuccessfully": "Schedules created successfully",
     "noScheduleToday1": "No assignment or shift scheduled for today.",
-     "editProfile": "Edit Profile",
-      "editPhoneNumber": "Edit Phone Number",
-       "editEmail": "Edit Email"
+    "editProfile": "Edit Profile",
+    "editPhoneNumber": "Edit Phone Number",
+    "editEmail": "Edit Email",
+    "tooFarFromShop": "You are too far from the shop. Cannot check in.",
+    "checkInWindow": "You can only check in 15 minutes before ",
+    "cannotCheckOutYet": "You can’t check out yet. Please wait until your shift ends.",
+    "offDuty": "Off Duty",
+    "onDuty": "On Duty",
+    "checkedInAt": "Checked in At",
+    "checkedOutAt": "Checked Out At",
+    "duration": "Duration",
+      "scheduleNotAdded": "Schedule Not Added",
+      "enterAtLeast": "Enter at least"
+    
   },
   "de": {
     "profile": "Profil",
@@ -657,7 +668,17 @@
     "noScheduleToday1": "Heute sind keine Aufgaben oder Schichten geplant.",
      "editProfile": "Profil bearbeiten",
        "editPhoneNumber": "Telefonnummer bearbeiten",
-        "editEmail": "E-Mail bearbeiten"
+        "editEmail": "E-Mail bearbeiten",
+            "tooFarFromShop": "Sie sind zu weit vom Geschäft entfernt. Ein Check-in ist nicht möglich.",
+    "checkInWindow": "Sie können sich nur 15 Minuten vor einchecken",
+    "cannotCheckOutYet": "Sie können noch nicht auschecken. Bitte warten Sie, bis Ihre Schicht beendet ist.",
+    "offDuty": "Außer Dienst",
+    "onDuty": "Im Dienst",
+    "checkedInAt": "Eingecheckt um",
+    "checkedOutAt": "Ausgecheckt um",
+    "duration": "Dauer",
+     "scheduleNotAdded": "Dienstplan nicht hinzugefügt",
+       "enterAtLeast": "Geben Sie mindestens ein"
        
 
   }

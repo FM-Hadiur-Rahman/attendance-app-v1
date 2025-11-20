@@ -1069,12 +1069,12 @@ const styles = StyleSheet.create({
   editIconContainer: { position: "absolute", bottom: 8, right: 0, },
   editIcon: { width: 20, height: 20, resizeMode: "contain" },
   sectionTitle: {
-    fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any, color: colors.subtext,
+    fontSize: fonts.size.s, fontWeight: fonts.weight.regular , color: colors.subtext,
     marginBottom: 14,
   },
   itemLeft: { flexDirection: "row" },
   itemIcon: { width: 16, height: 16, resizeMode: "contain", marginRight: 8, marginTop: 2 },
-  itemText: { fontSize: fonts.size.m, color: colors.text, fontWeight: fonts.weight.medium as any, fontFamily: fonts.family.regular, },
+  itemText: { fontSize: fonts.size.m, color: colors.text, fontWeight: fonts.weight.medium , fontFamily: fonts.family.regular, },
   modalOverlay: { flex: 1, justifyContent: "flex-end", },
 
   modalContainer: {
@@ -1090,15 +1090,15 @@ const styles = StyleSheet.create({
   },
 
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 20 },
-  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium as any, textAlign: "center", marginBottom: 19 },
+  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium , textAlign: "center", marginBottom: 19 },
   modalButton: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-  modalButtonText: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular as any, color: colors.text, textAlign: "center", fontFamily: fonts.family.regular, },
+  modalButtonText: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular , color: colors.text, textAlign: "center", fontFamily: fonts.family.regular, },
   languageBox: { flexDirection: "row", alignItems: 'center' },
   lang: { alignItems: "flex-start" },
   languageSubtitle: {
     fontSize: fonts.size.s,
     color: colors.subtext,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     marginTop: 4,
     fontFamily: fonts.family.regular,
     lineHeight: 17
@@ -1107,7 +1107,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     fontFamily: fonts.family.regular,
     lineHeight: 16,
 
@@ -1115,7 +1115,7 @@ const styles = StyleSheet.create({
   callText: {
     color: colors.secondary,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     paddingVertical: 5,
     paddingHorizontal: 15
   },

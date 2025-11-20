@@ -208,13 +208,13 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.xl,
     textAlign: "center",
   },
   subtitle: {
     color: colors.subtext2,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.l,
     marginTop: 8,
     marginBottom: 20,
@@ -248,13 +248,13 @@ const styles = StyleSheet.create({
   },
   langTitle: {
     color: colors.text,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.m,
     marginBottom: 4,
   },
   langSubtitle: {
     color: colors.subtext,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.s,
   },
   buttonWrap: {

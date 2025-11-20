@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
 
   termDescription: {
     fontFamily: fonts.family.regular,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.s,
     lineHeight: 18,
     color: colors.subtext2,

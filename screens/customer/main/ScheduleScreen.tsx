@@ -265,7 +265,7 @@ export default function ScheduleScreen(props: any) {
                               { color: colors.subtext },
                             ]}
                           >
-                            Schedule not added
+                           {lang.scheduleNotAdded}
                           </Text>
                         )}
                       </View>
@@ -289,8 +289,8 @@ const styles = StyleSheet.create({
   scrollContainer: { paddingBottom: 0 },
   scrollBody: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, paddingBottom: "25%" },
   group1: { marginBottom: 20 },
-  groupTitle: { color: colors.text, fontWeight: fonts.weight.regular as any, fontSize: fonts.size.m },
-  groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular as any, fontSize: fonts.size.s, marginTop: 6 },
+  groupTitle: { color: colors.text, fontWeight: fonts.weight.regular , fontSize: fonts.size.m },
+  groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular , fontSize: fonts.size.s, marginTop: 6 },
 
   /* modal styles reused from your other screens */
   modalOverlay: { flex: 1, justifyContent: "flex-end" },
@@ -309,12 +309,12 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
-  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium as any, textAlign: "center", marginBottom: 8 },
+  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium, textAlign: "center", marginBottom: 8 },
 
   footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 0, paddingTop: 10, paddingBottom: 30, backgroundColor: colors.secondary },
   each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center", },
   day: { borderColor: colors.primary, borderWidth: 1, borderRadius: 12, backgroundColor: colors.secondary, marginRight: 10, paddingTop: 11, paddingBottom: 11, width: 52, alignItems: "center" },
-  day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular as any },
+  day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular  },
   time: {
     borderColor: colors.primary,
     borderWidth: 1, borderRadius: 12,
@@ -350,13 +350,13 @@ const styles = StyleSheet.create({
   },
   branch_name: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.primary,
 
   },
   time_text: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.primary,
   },
   clock: { width: 14, height: 14, marginRight: 4 },

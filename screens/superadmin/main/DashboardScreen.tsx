@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   popupsubtext: {
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     marginBottom: 30,
     alignSelf: 'center'
   },
@@ -435,19 +435,19 @@ const styles = StyleSheet.create({
   },
   total_staff: {
     color: colors.search,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     fontSize: 14,
     marginLeft: 8,
     width: "75%"
   },
   total_count: {
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.xxl,
     color: colors.primary,
     marginTop: 8,
   },
   shift_count: {
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium ,
     fontSize: fonts.size.xxl,
     color: colors.text,
     marginTop: 8,
@@ -476,11 +476,11 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     color: colors.subtext2,
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
   },
   count: {
     color: colors.primary,
     fontSize: fonts.size.xxl,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
   },
 });

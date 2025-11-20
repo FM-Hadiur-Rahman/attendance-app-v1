@@ -705,7 +705,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.text,
 
   },
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular ,
     color: colors.subtext,
   },
   branchHeader: {
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
 
   branchName: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
   },
 });
 

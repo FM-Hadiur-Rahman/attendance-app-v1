@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   },
   headline: {
     color: colors.text,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.xl,
     textAlign: "center",
     marginBottom: 20,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   },
   subhead: {
     color: colors.subtext2,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.m,
   },
   infoBox: {
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   },
   infoTitle: {
     color: colors.text,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontSize: fonts.size.s,
     marginBottom: 4,
   },
