@@ -9,15 +9,17 @@ import { getUserId } from './auth/authToken'; // only userId from authToken
 
 export interface ProfileUser {
   _id: string;
-  id?: string;
   username: string;
   fullname: string;
-  position?: string;
+  position: string;
   phone: string;
   email: string;
   role: string;
-  branch: string | { _id: string; name: string };
-  [key: string]: any;
+  branch: string;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
+  // Removed [key: string]: any; for better type safety
 }
 
 // ============================================================
@@ -68,7 +70,7 @@ export const getProfile = async (): Promise<ProfileUser> => {
     const branchId =
       typeof user.branch === 'string'
         ? user.branch
-        : user.branch?._id ?? null;
+        : null;
 
     if (branchId) {
       await saveBranchId(branchId);
@@ -240,7 +242,7 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
         if (typeof u.branch === 'string') {
           branchId = u.branch;
         } else if (u.branch && typeof u.branch === 'object' && '_id' in u.branch) {
-          branchId = u.branch._id;
+          branchId = u.branch;
         }
         
         if (branchId && !map[branchId]) {

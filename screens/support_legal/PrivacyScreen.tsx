@@ -1,20 +1,22 @@
-// PrivacyPolicy.tsx
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Image,
   ScrollView,
-  Dimensions,
   RefreshControl,
+  Dimensions,
+  Image,
 } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+
 import Header from '../../components/Header';
 import CartBox from '../../components/CartBox';
-import { contactList, GroupedContactList } from '../../components/Contact';
+import { GroupedContactList, contactList } from '../../components/Contact';
+import { Content, contents } from '../../api/Content';
+
 import colors from '../../styles/Colors';
-import { contents, Content } from '../../api/Content';
+import fonts from '../../styles/Fonts';
 
 type RouteParams = {
   params: {
@@ -25,7 +27,7 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [k: string]: any;
+    [key: string]: any;
   };
 };
 const translations = require('../../assets/translations.json');

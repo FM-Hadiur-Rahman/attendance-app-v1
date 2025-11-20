@@ -162,11 +162,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         try {
           const u = await getUserById(userId);
           const branchObj = u?.branch;
-          const branchIdFromUser = typeof branchObj === "string" ? branchObj : branchObj?._id ?? null;
+          const branchIdFromUser = typeof branchObj === "string" ? branchObj : branchObj ?? null;
           if (branchIdFromUser) {
             branchIdToUse = branchIdFromUser;
             setActiveBranchId(branchIdFromUser);
-            const branchNameMaybe = typeof branchObj === "object" ? branchObj?.name ?? null : null;
+            const branchNameMaybe = typeof branchObj === "object" ? branchObj : null;
             if (branchNameMaybe) setActiveBranchName(branchNameMaybe);
           }
         } catch (e) {
@@ -428,12 +428,11 @@ const TotalstaffCount = useMemo(() => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+           : null;
 
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
-            : null;
+            ? branchField: null;
         console.log("User branch data:", branchField);
         console.log("Extracted branchId:", branchId);
         console.log("Extracted branchName:", branchName);

@@ -14,7 +14,6 @@ export interface AttendanceReportRow {
   actualOut?: string; // ISO string or empty
   startStatus?: string;
   endStatus?: string;
-  [k: string]: any;
 }
 
 export interface AttendanceReportResponse {
@@ -52,7 +51,7 @@ export const getAttendanceReport = async (params: {
     // Normalize rows so we always expose `fullname` (prefer fullname/full_name/name) and
     // remove `username` to avoid UI falling back to username accidentally.
     const normalized = (Array.isArray(rows) ? rows : []).map((r: AttendanceReportRow) => {
-      const fullname = r.fullname || r.full_name || r.name || "";
+      const fullname = r.fullname || "";
       const clone: AttendanceReportRow = { ...r, fullname };
       if ('username' in clone) delete (clone as any).username;
       return clone;
@@ -104,5 +103,3 @@ export const getUsersForBranch = async (branchId?: string) => {
     return [];
   }
 };
-
-

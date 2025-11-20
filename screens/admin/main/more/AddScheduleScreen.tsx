@@ -105,7 +105,7 @@ export default function AddScheduleScreen(props: any) {
         branch_id = u.branch;
       } else if (u.branch && typeof u.branch === 'object') {
         if ('_id' in u.branch) {
-          branch_id = u.branch._id;
+          branch_id = u.branch;
         } else if ('id' in u.branch && (u.branch as any).id !== undefined) {
           branch_id = (u.branch as any).id;
         }
@@ -172,7 +172,7 @@ export default function AddScheduleScreen(props: any) {
       let branchToUse: string | undefined = screenBranchId || undefined;
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?._id ?? undefined;
+        const profBranch = typeof profile.branch === 'string' ? profile.branch  : undefined;
         if (!branchToUse && profBranch) branchToUse = profBranch;
         console.log("getProfile() returned branch:", profBranch);
       } catch (err) {
@@ -1429,7 +1429,7 @@ export default function AddScheduleScreen(props: any) {
                 
                 // Helper to resolve employee object and original branch id (source)
                 const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
-                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch._id : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch.id : null)) ?? null;
+                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
                 const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
                 const schedulesPayload = schedulesToSave.map((s) => {
                   const dateYmd = s.date;

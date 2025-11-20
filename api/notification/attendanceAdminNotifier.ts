@@ -84,7 +84,7 @@ export const sendCheckedInNotificationsToBranchAdmin = async (opts?: {
     const employeeBranchIdsSet = new Set<string>();
     for (const uid of uniqueUserIds) {
       const p = userProfilesById[uid];
-      const branchId = p?.branch ? (typeof p.branch === 'object' && p.branch !== null ? p.branch._id : p.branch) : null;
+      const branchId = p?.branch ? (typeof p.branch === 'object' && p.branch !== null && '_id' in p.branch ? (p.branch as any)._id : p.branch) : null;
       if (branchId) employeeBranchIdsSet.add(String(branchId));
     }
     const employeeBranchIds = Array.from(employeeBranchIdsSet);
@@ -145,7 +145,7 @@ export const sendCheckedInNotificationsToBranchAdmin = async (opts?: {
       }
 
       const employeeProfile = userProfilesById[userId] ?? null;
-      const employeeBranchId = employeeProfile?.branch ? (typeof employeeProfile.branch === 'object' && employeeProfile.branch !== null ? employeeProfile.branch._id : employeeProfile.branch) : null;
+      const employeeBranchId = employeeProfile?.branch ? (typeof employeeProfile.branch === 'object' && employeeProfile.branch !== null && '_id' in employeeProfile.branch ? (employeeProfile.branch as any)._id : employeeProfile.branch) : null;
       if (!employeeBranchId) {
         skippedNoAdmin++;
         continue;

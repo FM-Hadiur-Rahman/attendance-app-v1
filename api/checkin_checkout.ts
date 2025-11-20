@@ -5,6 +5,7 @@ import { ScheduleItem } from "./schedules";
 interface LocationPayload {
   latitude: string;
   longitude: string;
+  branchId: string;
 }
 
 type GetTodayOpts = {
@@ -50,7 +51,6 @@ export interface AttendanceReportItem {
   branchName?: string;
   startStatus?: string | null;
   endStatus?: string | null;
-  [key: string]: any;
 }
 
 // Helper function to calculate duration between two times (HH:MM format)
@@ -338,7 +338,7 @@ export const getSchedulesForDate = async (
 export const getAttendanceReport = async (
   startDate: string,
   endDate: string,
-  branchId?: string
+  branchId: string
 ): Promise<AttendanceReportItem[]> => {
   try {
     const res = await axiosInstance.get("/admin/attendance/report", {

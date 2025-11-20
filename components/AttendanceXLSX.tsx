@@ -37,7 +37,7 @@ export const exportMonthlyAttendanceXLSX = async (employeeId: string) => {
       Object.keys(item).forEach((key) => {
         if (["employeeId", "username", "branchId"].includes(key)) return;
 
-        let value = item[key] ?? "";
+        let value = (item as Record<string, any>)[key] ?? "";
 
         // If key is actualIn or actualOut, extract only time
         if ((key === "actualIn" || key === "actualOut") && value) {

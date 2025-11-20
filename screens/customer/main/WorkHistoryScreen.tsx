@@ -519,9 +519,6 @@ const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
               normalizeBranchIdValue(item?.branch);
 
             const loggedBranchId = normalizeBranchIdValue(
-              currentUser?.branch_id ??
-              currentUser?.default_branch_id ??
-              currentUser?.defaultBranchId ??
               currentUser?.branch
             );
 

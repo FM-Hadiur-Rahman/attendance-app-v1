@@ -4,13 +4,16 @@ import axiosInstance from './axiosInstance';
 export interface ScheduleItem {
   _id: string;
   id?: string;
-  employee_id: string | { _id: string; username: string; role: string };
+  employee_id: string | { _id: string; username: string; role: string; branch: string };
   branch_id: string | { _id: string; name: string };
   date: string;
   day_of_week: string;
   start_time: string;
   end_time: string;
-  [k: string]: any;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
+  // Removed [key: string]: any; for better type safety
 }
 
 /**
@@ -56,6 +59,7 @@ export const getSchedulesForDate = async (dateYMD: string): Promise<ScheduleItem
     return [];
   }
 };
+
 export interface EmployeeSchedule {
   _id: string;
   employee_id: {
@@ -68,8 +72,12 @@ export interface EmployeeSchedule {
   date: string;
   start_time: string;
   end_time: string;
-  day_of_week: string;
+  day_of_week: string;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
 }
+
 export const getEmployeeSchedules = async (employee_id: string, startDate: string, endDate: string) => {
   const res = await axiosInstance.get("/schedule/employee", {
     params: { employee_id, startDate, endDate },
@@ -115,10 +123,14 @@ export const updateSchedule = async (id: string, payload: Partial<ScheduleItem>)
  */
 export const createSchedule = async (payload: Partial<ScheduleItem>) => {
   try {
-    const requiredFields = ["employee_id", "branch_id", "date", "start_time", "end_time", "day_of_week"];
-    for (const field of requiredFields) {
-      if (!payload[field]) throw new Error(`Missing required field: ${field}`);
-    }
+    // Check required fields without using string indexing
+    if (!payload.employee_id) throw new Error("Missing required field: employee_id");
+    if (!payload.branch_id) throw new Error("Missing required field: branch_id");
+    if (!payload.date) throw new Error("Missing required field: date");
+    if (!payload.start_time) throw new Error("Missing required field: start_time");
+    if (!payload.end_time) throw new Error("Missing required field: end_time");
+    if (!payload.day_of_week) throw new Error("Missing required field: day_of_week");
+    
     const res = await axiosInstance.post("/schedule", payload);
     return res.data;
   } catch (err: any) {

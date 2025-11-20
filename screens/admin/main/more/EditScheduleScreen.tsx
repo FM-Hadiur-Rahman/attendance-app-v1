@@ -110,9 +110,9 @@ export default function EditScheduleScreen(props: any) {
         if (typeof u.branch === "string") {
             branch_id = u.branch;
         } else if (u.branch) {
-            branch_id = (u.branch._id ?? (u.branch as any).id) ?? ""; // safe fallback for API that might include id
-        } else if (u.branch_id) {
-            branch_id = u.branch_id;
+            branch_id = (u.branch ?? (u.branch as any).id) ?? ""; // safe fallback for API that might include id
+        } else if (u._id) {
+            branch_id = u._id;
         }
             return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
         });
@@ -173,7 +173,7 @@ export default function EditScheduleScreen(props: any) {
             let branchToUse: string | undefined = screenBranchId || undefined;
             try {
                 const profile = await getProfile();
-                const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?._id ?? undefined;
+                const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch ?? undefined;
                 if (!branchToUse && profBranch) branchToUse = profBranch;
                 console.log("getProfile() returned branch:", profBranch);
             } catch (err) {

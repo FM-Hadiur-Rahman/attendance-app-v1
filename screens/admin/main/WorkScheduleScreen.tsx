@@ -136,11 +136,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         const branchId =
           typeof branchField === "string"
             ? branchField
-            : branchField?._id ?? null;
+            : null;
         const branchName =
           typeof branchField === "object"
-            ? branchField?.name ?? null
-            : null;
+            ? branchField : null;
 
         if (branchId) {
           setActiveBranchId(String(branchId));
@@ -562,7 +561,7 @@ schedulesForDate.map(({ schedule, user }, index) => {
   const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
               return (
                 <TouchableOpacity
-                  key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}`}
+                  key={`${schedule._id || schedule.id || index}-${schedule.date}-${schedule.start_time}-${index}`}
                   onPress={() => openEditScreen(schedule._id)}
 
                 >

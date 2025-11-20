@@ -562,8 +562,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       const uri = result.assets[0].uri;
       setProfileImage(uri);
       // Optionally upload this image to server if you have endpoint.
-      // For now, just save the profileImage field to user record (string URI) via API:
-      await saveField({ profileImage: uri as any });
+      // For now, just save the profileImage field to local state (not part of ProfileUser)
       setModalVisible(false);
     }
   };
@@ -585,7 +584,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       setProfileImage(uri);
-      await saveField({ profileImage: uri as any });
+      // Save the profile image URI to local state only (not part of ProfileUser)
       setModalVisible(false);
     }
   };

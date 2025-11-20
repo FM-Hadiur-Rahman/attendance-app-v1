@@ -35,7 +35,7 @@ import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 // API helpers (changed per your request)
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
-import { register as authRegister } from "../../../../api/auth/authService";
+import { register as authRegister, RegisterPayload } from "../../../../api/auth/authService";
 import {
   getBranchId,
   getBranchById,
@@ -1024,7 +1024,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       branchIdToUse = null;
     }
 
-    const payload: any = {
+    const payload: RegisterPayload = {
       fullname: fullName,
       branch: branchIdToUse ?? "",
       username: username,
@@ -1032,7 +1032,6 @@ const AddStaffScreen: React.FC = (props: any) => {
       password: password,
       position: position,
       phone: finalPhone,
-      role: "",
     };
 
 
@@ -1051,7 +1050,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       const result = await authRegister(payload);
       // result contains { token, user } per interface
       const createdUser = result?.user ?? null;
-      const createdId = (createdUser && typeof createdUser === 'object' && '_id' in createdUser) ? createdUser._id : createdUser?.id ?? null;
+      const createdId = (createdUser && typeof createdUser === 'object' && '_id' in createdUser) ? createdUser._id : null;
 
       // call onSave callback without password
       if (onSave) {
