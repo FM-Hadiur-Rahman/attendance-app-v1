@@ -158,7 +158,7 @@
     "confirm_password_required": "Confirm password is required",
     "passwords_no_match": "Passwords do not match",
     "username_exists": "Username already exists",
-    "username_exists_use":"This username already exists in another branch.",
+    "username_exists_use": "This username already exists in another branch.",
     "basic_details": "Basic details",
     "basic_details_desc": "Add the staff member’s basic details to identify them within the system.",
     "add_profile": "Add profile",
@@ -326,9 +326,10 @@
     "staffAssignedToBranch": "Staff Assigned to Your Branch",
     "schedulesCreatedSuccessfully": "Schedules created successfully",
     "noScheduleToday1": "No assignment or shift scheduled for today.",
-     "editProfile": "Edit Profile",
-      "editPhoneNumber": "Edit Phone Number",
-       "editEmail": "Edit Email"
+    "editProfile": "Edit Profile",
+    "editPhoneNumber": "Edit Phone Number",
+    "editEmail": "Edit Email",
+    "enterAtLeast": "Enter at least"
   },
   "de": {
     "profile": "Profil",
@@ -487,7 +488,7 @@
     "confirm_password_required": "Bestätigung des Passworts ist erforderlich",
     "passwords_no_match": "Passwörter stimmen nicht überein",
     "username_exists": "Benutzername existiert bereits",
-    "username_exists_use":"Dieser Benutzername existiert bereits in einem anderen Zweig.",
+    "username_exists_use": "Dieser Benutzername existiert bereits in einem anderen Zweig.",
     "basic_details": "Grundlegende Details",
     "basic_details_desc": "Fügen Sie die Basisdaten des Mitarbeiters hinzu, um ihn im System zu identifizieren.",
     "add_profile": "Profil hinzufügen",
@@ -655,10 +656,9 @@
     "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
     "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt",
     "noScheduleToday1": "Heute sind keine Aufgaben oder Schichten geplant.",
-     "editProfile": "Profil bearbeiten",
-       "editPhoneNumber": "Telefonnummer bearbeiten",
-        "editEmail": "E-Mail bearbeiten"
-       
-
+    "editProfile": "Profil bearbeiten",
+    "editPhoneNumber": "Telefonnummer bearbeiten",
+    "editEmail": "E-Mail bearbeiten",
+    "enterAtLeast": "Geben Sie mindestens ein"
   }
 }
