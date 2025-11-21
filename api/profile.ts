@@ -230,32 +230,42 @@ export const getUsers = async (params: Record<string, any> = {}): Promise<Profil
   }
 };
 
+//To get "role":"admin" by branchid
 export const getManagersByBranch = async (params: { limit?: number } = {}): Promise<Record<string, string | undefined>> => {
   try {
     const users = await getUsers({ limit: params.limit ?? 1000 });
     const map: Record<string, string | undefined> = {};
 
-    users.forEach((u: ProfileUser) => {
-      if (u?.role === 'admin') {
-        let branchId: string | undefined;
-        if (typeof u.branch === 'string') {
-          branchId = u.branch;
-        } else if (u.branch && typeof u.branch === 'object' && '_id' in u.branch) {
-          branchId = u.branch;
-        }
-        
-        if (branchId && !map[branchId]) {
-          map[branchId] = u.fullname ?? u.username ?? undefined;
+    users.forEach((u) => {
+      if (!u || u.role !== 'admin') return;
+
+      // determine branch id string safely
+      let branchIdStr: string | undefined;
+      const branchField = (u as unknown as { branch?: unknown }).branch;
+
+      if (typeof branchField === 'string') {
+        branchIdStr = branchField;
+      } else if (branchField && typeof branchField === 'object') {
+        // common keys that may contain id
+        if ('_id' in branchField && typeof (branchField as any)._id === 'string') {
+          branchIdStr = (branchField as { _id?: string })._id;
+        } else if ('id' in branchField && typeof (branchField as any).id === 'string') {
+          branchIdStr = (branchField as { id?: string }).id;
         }
       }
+      if (!branchIdStr) return;
+      // only set first seen admin for that branch; prefer fullname then username
+      if (!map[branchIdStr]) {
+        map[branchIdStr] = u.fullname ?? u.username ?? undefined;
+      }
     });
-
     return map;
   } catch (e) {
     console.warn('getManagersByBranch failed', e);
     return {};
   }
 };
+
 
 export const deleteUser = async (staffId: string): Promise<any> => {
   try {

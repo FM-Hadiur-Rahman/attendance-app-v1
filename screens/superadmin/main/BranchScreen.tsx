@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Text,
   Image,
-  ScrollView,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
@@ -15,12 +14,11 @@ import colors from '../../../styles/Colors';
 import Header from '../../../components/Header';
 import translations from '../../../assets/translations.json';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { Button1 } from '../../../components/Button';
 import CartBox from '../../../components/CartBox';
 import fonts from '../../../styles/Fonts';
 import { getBranches, Branch } from '../../../api/Branchs'
 import { getManagersByBranch } from '../../../api/profile';
-import Toast, { showSuccessToast, toastConfig } from '../../../components/Toast'; // adjust path if needed
+import Toast, { showSuccessToast, toastConfig } from '../../../components/Toast';
 import { TouchableOpacity } from 'react-native';
 // --- constants for caching & batching ---
 const GEO_CACHE_KEY = 'branch_geo_cache_v1'; // AsyncStorage key (simple JSON map)
@@ -31,14 +29,13 @@ const BranchScreen: React.FC = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  const propUserId = props?.userId;
-  const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
+  const propUserId = props.userId;
+  const propLangId = props.langId;
+  const routeUserId = route.params.userId;
+  const routeLangId = route.params.langId;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || 'en';
   const lang = (translations as any)[langId] || (translations as any)['en'];
-
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [managersByBranch, setManagersByBranch] = useState<Record<string, string | undefined>>({});
@@ -64,7 +61,6 @@ const BranchScreen: React.FC = (props: any) => {
       // swallow
     }
   };
-
 
   // REPLACE the existing geocodeOnce with this version
   const geocodeOnce = async (lat: number, lon: number): Promise<string> => {
@@ -117,8 +113,6 @@ const BranchScreen: React.FC = (props: any) => {
       return `${lat}, ${lon}`;
     }
   };
-
-
   // --- geocode with local AsyncStorage cache + TTL ---
   // (replace your existing geocodeWithCache with this)
   const geocodeWithCache = async (branchId: string, lat?: number, lon?: number) => {
@@ -148,8 +142,6 @@ const BranchScreen: React.FC = (props: any) => {
         }
         // if coords don't match or cache stale -> fallthrough to re-geocode
       }
-
-
       // Not cached, coords changed, or cache stale -> perform geocode
       const addr = await geocodeOnce(lat, lon);
 
@@ -183,12 +175,6 @@ const BranchScreen: React.FC = (props: any) => {
           const lon = Number(coords[0]);
           const lat = Number(coords[1]);
           toGeocode.push({ idx: i, branchId: b._id ?? b.id ?? String(i), lat, lon });
-          //           console.log('Branch coords queued for geocode:', {
-          //   branchId: b._id ?? b.id ?? String(i),
-          //   rawCoords: b?.location?.coordinates,
-          //   interpretedLon: Number(coords[0]),
-          //   interpretedLat: Number(coords[1]),
-          // });
         }
       });
 
@@ -200,8 +186,6 @@ const BranchScreen: React.FC = (props: any) => {
           const cached = await geocodeWithCache(item.branchId, item.lat, item.lon);
           const addrVal = cached ?? `${item.lat}, ${item.lon}`;
           resultsAddr[item.branchId] = addrVal;
-          //console.log('Reverse-geocode result', { branchId: item.branchId, requested: [item.lat, item.lon], addr: addrVal });
-
         });
         // await this batch then continue
         await Promise.all(promises);
@@ -252,7 +236,7 @@ const BranchScreen: React.FC = (props: any) => {
     setRefreshing(true);
     fetchData();
   }, [fetchData]);
-    // inside BranchScreen component (after userId/langId declarations)
+  // inside BranchScreen component (after userId/langId declarations)
   useFocusEffect(
     useCallback(() => {
       // If AddBranchScreen passed toastMessage through navigation params, show it
