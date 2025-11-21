@@ -39,6 +39,7 @@ import {
 import { fetchUsers, ProfileUser } from "../../../../api/profile";
 
 const REFRESH_INTERVAL_MS = 30 * 1000; // 30 seconds; change as needed
+const PLAYED_EXPIRY_MS = 60 * 1000; // don't replay same notif within 60s
 
 // --------------------- types ---------------------
 interface NotificationItem {
@@ -109,8 +110,11 @@ const AdminNotificationScreen: React.FC = () => {
 
   // notifier running indicator
   const [notifierRunning, setNotifierRunning] = useState(false);
-  const notifierIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const notifierIntervalRef = useRef<any | null>(null);
   const mountedRef = useRef(true);
+
+  // played notifications timestamps to debounce sounds
+  const playedNotifTimestampsRef = useRef<Record<string, number>>({});
 
   // Request permissions and set notification handler for foreground
   useEffect(() => {
@@ -231,7 +235,7 @@ const AdminNotificationScreen: React.FC = () => {
               if (added.length > 0) {
                 const addedItems = personalItems.filter(it => added.includes(it.docId));
                 const firstUnread = addedItems.find(it => !it.read);
-                if (firstUnread) playLocalNotification(firstUnread.title, firstUnread.subtitle);
+                if (firstUnread) playLocalNotification(firstUnread.title, firstUnread.subtitle, firstUnread.n_id);
               }
             }
 
@@ -360,7 +364,7 @@ const AdminNotificationScreen: React.FC = () => {
               if (added.length > 0) {
                 const addedItems = branchItems.filter(it => added.includes(it.docId));
                 const firstUnread = addedItems.find(it => !it.read);
-                if (firstUnread) playLocalNotification(firstUnread.title, firstUnread.subtitle);
+                if (firstUnread) playLocalNotification(firstUnread.title, firstUnread.subtitle, firstUnread.n_id);
               }
             }
 
@@ -415,8 +419,32 @@ const AdminNotificationScreen: React.FC = () => {
     }
   };
 
-  const playLocalNotification = async (title?: string, body?: string) => {
+  // play a local alert when an unread arrives while app is foreground
+  // notifId is used to debounce/reject repeated plays for same notif id
+  const playLocalNotification = async (title?: string, body?: string, notifId?: string) => {
     try {
+      if (notifId) {
+        const last = playedNotifTimestampsRef.current[notifId];
+        if (last && Date.now() - last < PLAYED_EXPIRY_MS) {
+          // recently played -> skip
+          return;
+        }
+        // mark as played now
+        playedNotifTimestampsRef.current[notifId] = Date.now();
+
+        // schedule cleanup for old entries (non-blocking)
+        setTimeout(() => {
+          try {
+            const now = Date.now();
+            Object.keys(playedNotifTimestampsRef.current).forEach((k) => {
+              if (now - (playedNotifTimestampsRef.current[k] || 0) > PLAYED_EXPIRY_MS) {
+                delete playedNotifTimestampsRef.current[k];
+              }
+            });
+          } catch (_) { /* ignore */ }
+        }, PLAYED_EXPIRY_MS + 1000);
+      }
+
       await Notifications.scheduleNotificationAsync({
         content: { title: title || "New Notification", body: body || "You have a new notification", sound: "default" },
         trigger: null,
@@ -524,12 +552,12 @@ const AdminNotificationScreen: React.FC = () => {
       />
 
       <View style={styles.body}>
-        {/* notifier running toast */}
+        {/* notifier running toast (uncomment if you want visual indicator) */}
         {/* {notifierRunning ? (
-          // <View style={styles.notifierBanner}>
-            <ActivityIndicator size="large" color={colors.primary}  />
-            // <Text style={styles.notifierText}>Checking attendance for new check-ins...</Text>
-          // </View>
+          <View style={styles.notifierBanner}>
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={styles.notifierText}>Checking attendance for new check-ins...</Text>
+          </View>
         ) : null} */}
 
         {loading ? (
@@ -597,11 +625,11 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
   dateIcon: { width: 16, height: 16, marginRight: 4, resizeMode: "contain" },
   sectionTitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16 },
-  title: { fontSize: fonts.size.m, fontWeight: fonts.weight.medium , fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 5 },
-  subtitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular , fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 10 },
+  title: { fontSize: fonts.size.m, fontWeight: fonts.weight.medium, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 5 },
+  subtitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 10 },
   timeRow: { flexDirection: "row", alignItems: "center" },
   icon: { width: 15, height: 15, marginRight: 4 },
-  timeText: { fontSize: fonts.size.s, fontWeight: fonts.weight.regular , fontFamily: fonts.family.regular, color: colors.subtext, minHeight: 14 },
+  timeText: { fontSize: fonts.size.s, fontWeight: fonts.weight.regular, fontFamily: fonts.family.regular, color: colors.subtext, minHeight: 14 },
   unreadDotContainer: { position: "absolute", right: 12, top: 12, zIndex: 1000 },
   unreadDot: { width: 10, height: 10, borderRadius: 10, backgroundColor: colors.primary },
 

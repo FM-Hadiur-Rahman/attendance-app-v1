@@ -227,46 +227,46 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     return false;
   };
 
-// Replaced: compute unique employee count for today's schedules in the active branch
-const TotalstaffCount = useMemo(() => {
-  if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
+  // Replaced: compute unique employee count for today's schedules in the active branch
+  const TotalstaffCount = useMemo(() => {
+    if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
 
-  const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  const toYMDLocal = (d: Date) =>
-    `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
+    const pad2Local = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const toYMDLocal = (d: Date) =>
+      `${d.getFullYear()}-${pad2Local(d.getMonth() + 1)}-${pad2Local(d.getDate())}`;
 
-  const uniqueEmpIds = new Set<string>();
+    const uniqueEmpIds = new Set<string>();
 
-  schedulesState.forEach((s) => {
-    if (!s?.date) return;
+    schedulesState.forEach((s) => {
+      if (!s?.date) return;
 
-    const sDate = new Date(s.date);
-    const sYMD = toYMDLocal(sDate);
+      const sDate = new Date(s.date);
+      const sYMD = toYMDLocal(sDate);
 
-    // branch id can be object or string
-    let branchIdOfSchedule = null;
-    if (s.branch_id && typeof s.branch_id === 'object' && '_id' in s.branch_id) {
-      branchIdOfSchedule = (s.branch_id as any)._id;
-    } else if (typeof s.branch_id === 'string') {
-      branchIdOfSchedule = s.branch_id;
-    }
-
-    if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
-      // employee_id may be object or string
-      let empId = null;
-      if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
-        empId = (s.employee_id as any)._id;
-      } else if (typeof s.employee_id === 'string') {
-        empId = s.employee_id;
+      // branch id can be object or string
+      let branchIdOfSchedule = null;
+      if (s.branch_id && typeof s.branch_id === 'object' && '_id' in s.branch_id) {
+        branchIdOfSchedule = (s.branch_id as any)._id;
+      } else if (typeof s.branch_id === 'string') {
+        branchIdOfSchedule = s.branch_id;
       }
-      if (empId) uniqueEmpIds.add(String(empId));
-    }
-  });
 
-  const count = uniqueEmpIds.size;
-  console.log('TotalstaffCount for branch', activeBranchId, 'on', todayYMD, '=', count);
-  return count;
-}, [schedulesState, todayYMD, activeBranchId]);
+      if (sYMD === todayYMD && branchIdOfSchedule && String(branchIdOfSchedule) === String(activeBranchId)) {
+        // employee_id may be object or string
+        let empId = null;
+        if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
+          empId = (s.employee_id as any)._id;
+        } else if (typeof s.employee_id === 'string') {
+          empId = s.employee_id;
+        }
+        if (empId) uniqueEmpIds.add(String(empId));
+      }
+    });
+
+    const count = uniqueEmpIds.size;
+    console.log('TotalstaffCount for branch', activeBranchId, 'on', todayYMD, '=', count);
+    return count;
+  }, [schedulesState, todayYMD, activeBranchId]);
 
 
   // fetch attendance and enrich (with branch-name logic)
@@ -385,7 +385,7 @@ const TotalstaffCount = useMemo(() => {
             console.warn("branchNameToShow lookup failed", err);
             branchNameToShow = null;
           }
-          
+
           return {
             attendance: att,
             userProfile,
@@ -614,15 +614,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     alignItems: "flex-start",
     justifyContent: "flex-start",
-
   },
   profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "55%", },
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular, },
-
   status_early: {
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.status_early,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -630,7 +628,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
     textAlign: "center",
-
   },
   status_late: {
     fontWeight: fonts.weight.regular,
@@ -669,7 +666,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingLeft: 12,
     alignItems: "flex-start",
-
   },
   icon: {
     width: 30 * base,
@@ -683,7 +679,7 @@ const styles = StyleSheet.create({
     width: "75%"
   },
   total_count: {
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.xxl,
     color: colors.primary,
     marginTop: 8,
@@ -706,32 +702,26 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     width: '90%'
   },
-
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 6,
-
   },
   branchName: {
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular,
     color: colors.text,
   },
-
   profileRow: {
     flexDirection: "row",
     alignItems: "flex-start",
   },
-
   middleRightContainer: {
     flexDirection: "row",
-    // justifyContent: "space-between",
     alignItems: "flex-start",
     flex: 1,
     marginLeft: 10,
   },
-
   statusInline: {
     flexDirection: "row",
     alignItems: "center",
@@ -742,10 +732,10 @@ const styles = StyleSheet.create({
   },
   duration: {
     color: colors.primary,
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
     marginLeft: 8,
-    width: 50 * base,
+    width: 64 * base,
   },
 });
 

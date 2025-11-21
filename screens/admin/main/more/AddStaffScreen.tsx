@@ -1528,7 +1528,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                   ref={passwordRef}
                   label={lang.password_label}
                   placeholder="********"
-                  secureTextEntry={!showPassword ? false : false}
+                  secureTextEntry={!showPassword ? true : false}
                   value={password}
                   setValue={(text) => {
                     setPassword(text);
@@ -1564,7 +1564,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                   ref={confirmPasswordRef}
                   label={lang.confirmPassword}
                   placeholder="********"
-                  secureTextEntry={!showConfirmPassword ? false : false}
+                  secureTextEntry={!showConfirmPassword ? true : false}
                   value={confirmPassword}
                   setValue={(text) => {
                     setConfirmPassword(text);
@@ -1874,7 +1874,7 @@ const styles = StyleSheet.create({
   },
   addPhoto: {
     fontSize: fonts.size.xs,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     fontFamily: fonts.family.regular,
     color: colors.primary,
     minHeight: 12,
