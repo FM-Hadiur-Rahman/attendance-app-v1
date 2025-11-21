@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Dimensions,
   Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -16,54 +15,29 @@ import { GroupedContactList, contactList } from '../../components/Contact';
 import { Content, contents } from '../../api/Content';
 
 import colors from '../../styles/Colors';
-import fonts from '../../styles/Fonts';
 
 type RootStackParamList = {
   PrivacyScreen: {
-    orderId?: string;
-    userId?: string;
-    UserId?: string;
-    langId?: 'en' | 'de' | string;
-    LangId?: string;
-    branchId?: string;
-    BranchId?: string;
-    id?: string;
-    language?: string;
-    branch?: string;
+    userId: string;
+    langId: string;
+    branchId: string;
   };
 };
 const translations = require('../../assets/translations.json');
 
 const PrivacyScreen = () => {
-  const { width } = Dimensions.get('window');
   const navigation = useNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'PrivacyScreen'>>();
 
-  // accept multiple param name variants and provide fallbacks
-  const incomingUserId =
-    route.params?.userId ??
-    route.params?.UserId ??
-    route.params?.id ??
-    null;
-
-  const incomingLangId =
-    route.params?.langId ??
-    route.params?.LangId ??
-    route.params?.language ??
-    'en';
-
-  const incomingBranchId =
-    route.params?.branchId ??
-    route.params?.BranchId ??
-    route.params?.branch ??
-    null;
+  const incomingUserId = route.params.userId ?? undefined;
+  const incomingLangId = route.params.langId ?? 'en';
+  const incomingBranchId = route.params.branchId ?? undefined;
 
   console.log('PrivacyScreen -> received params:', {
     userId: incomingUserId,
     langId: incomingLangId,
     branchId: incomingBranchId,
   });
-
 
   const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
 
@@ -81,12 +55,11 @@ const PrivacyScreen = () => {
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
 
-  // Split the body into sections using regex to detect numbering like "1. ", "2. ", etc.
   const parseBody = (body: string) => {
     // Split by double newlines (assuming each section separated by 2 line breaks)
     const sections = body.trim().split(/\n\n+/);
     return sections.map(section => {
-      const [subheading, ...rest] = section.split('\n'); // first line = subheading
+      const [subheading, ...rest] = section.split('\n'); 
       return {
         subheading: subheading.trim(),
         description: rest.join('\n').trim(),

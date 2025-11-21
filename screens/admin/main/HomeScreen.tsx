@@ -162,11 +162,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         try {
           const u = await getUserById(userId);
           const branchObj = u?.branch;
-          const branchIdFromUser = typeof branchObj === "string" ? branchObj : branchObj ?? null;
+          const branchIdFromUser = typeof branchObj === "string" ? branchObj : (branchObj && typeof branchObj === "object" ? (branchObj as { _id?: string })._id ?? null : null);
           if (branchIdFromUser) {
             branchIdToUse = branchIdFromUser;
             setActiveBranchId(branchIdFromUser);
-            const branchNameMaybe = typeof branchObj === "object" ? branchObj : null;
+            const branchNameMaybe = branchObj && typeof branchObj === "object" ? (branchObj as { name?: string }).name ?? null : null;
             if (branchNameMaybe) setActiveBranchName(branchNameMaybe);
           }
         } catch (e) {
@@ -280,7 +280,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       const all = await getAttendanceAllHistory();
       const now = new Date();
       const filtered = (all || []).filter((a) => {
-        const aBranchId = (a.branch as any)?.id ?? a.branch_id ?? null;
+        const aBranchId = a.branch && typeof a.branch === 'object' && 'id' in a.branch ? (a.branch as { id?: string }).id : (typeof a.branch === 'string' ? a.branch : a.branch_id ?? null);
+
         if (!aBranchId) return false;
         if (String(aBranchId) !== String(branchIdToUse)) return false;
         if (!a.In) return false;
@@ -359,12 +360,10 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
               if (typeof userProfile.branch === "string") {
                 userBranchId = userProfile.branch;
               } else if (userProfile.branch && typeof userProfile.branch === "object" && '_id' in userProfile.branch) {
-                userBranchId = (userProfile.branch as any)._id;
+                userBranchId = (userProfile.branch as { _id?: string })._id ?? null;
               }
-              const userBranchName =
-                typeof userProfile.branch === "object"
-                  ? userProfile.branch?.name ?? null
-                  : null;
+              const userBranchName = userProfile.branch && typeof userProfile.branch === "object" ? (userProfile.branch as { name?: string }).name ?? null : null;
+
 
               // Compare with current active branch
               if (
@@ -425,14 +424,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           return;
         }
         const branchField = u.branch;
-        const branchId =
-          typeof branchField === "string"
-            ? branchField
-           : null;
+        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? (branchField as { _id?: string })._id ?? null : null);
 
-        const branchName =
-          typeof branchField === "object"
-            ? branchField: null;
+
+        const branchName = branchField && typeof branchField === "object" ? (branchField as { name?: string }).name ?? null : null;
+
         console.log("User branch data:", branchField);
         console.log("Extracted branchId:", branchId);
         console.log("Extracted branchName:", branchName);

@@ -3,19 +3,16 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, Image } from 'react
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Header from '../../components/Header';
 import colors from '../../styles/Colors';
-import { GroupedContactList } from '../../components/Contact';
 import CartBox from '../../components/CartBox';
 import fonts from '../../styles/Fonts';
 import translations from "../../assets/translations.json"
-import { contents } from "../../api/Content"; // import API
-
+import { contents } from "../../api/Content";
 
 type AboutScreenProps = {
-  userId?: string;
-  langId?: string;           // received from ProfileScreen
+  userId: string;
+  langId: string;
   setLangId?: (lang: string) => void;
 };
-
 
 const AboutScreen: React.FC<AboutScreenProps> = () => {
 
@@ -28,10 +25,8 @@ const AboutScreen: React.FC<AboutScreenProps> = () => {
   const lang = translations[currentLang as keyof typeof translations] || translations["en"];
   const aboutUsContent = contents.find((c) => c.id === "1");
 
-
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // simulate reload (e.g., API call, reload terms, etc.)
     setTimeout(() => {
       setRefreshing(false);
     }, 1500);
@@ -58,9 +53,9 @@ const AboutScreen: React.FC<AboutScreenProps> = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[colors.primary]} // 🔹 spinner (Android)
-            progressBackgroundColor={colors.secondary} // 🔹 background behind spinner
-            tintColor={colors.primary} // 🔹 spinner (iOS)
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.secondary}
+            tintColor={colors.primary}
           />
         }
       >
@@ -106,11 +101,6 @@ const styles = StyleSheet.create({
   termsContainer: {
     width: '100%',
   },
-  termBlock: {
-    marginBottom: 12,
-
-  },
-
   termDescription: {
     fontFamily: fonts.family.regular,
     fontWeight: fonts.weight.regular,

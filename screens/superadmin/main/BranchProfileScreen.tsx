@@ -9,7 +9,6 @@ import {
   Pressable,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Linking,
   ActivityIndicator,
   Dimensions,
@@ -26,10 +25,8 @@ import fonts from "../../../styles/Fonts";
 import Toast, { showSuccessToast, showErrorToast, toastConfig } from "../../../components/Toast";
 import { TextInput } from "react-native-gesture-handler";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// API helpers
 import { fetchUsers, updateUser } from "../../../api/profile";
 import { getBranchById, listBranchNames, updateBranch, getAllBranches } from "../../../api/Branchs";
-//import { getBranchById, listBranchNames } from "../../../api/Branchs";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -44,8 +41,8 @@ export default function BranchProfileScreen(props: any) {
 
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
+  const routeUserId = route.params?.userId;
+  const routeLangId = route.params?.langId;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || 'en';
   const lang = (translations as any)[langId] || (translations as any)['en'];
@@ -303,7 +300,7 @@ export default function BranchProfileScreen(props: any) {
 
         if (admin) {
           setAdminUserId(admin._id ?? null);
-          setManagerName(admin.fullname ?? admin.username ?? '');
+          setManagerName(admin.fullname ?? 'undefined');
           setUsername(admin.username ?? '');
           // do NOT set phoneNumber from admin (we now read branch.phone)
           setPassword('******');
@@ -324,7 +321,6 @@ export default function BranchProfileScreen(props: any) {
       setRefreshing(false);
     }
   };
-
 
   useEffect(() => {
     loadData();
@@ -496,84 +492,6 @@ export default function BranchProfileScreen(props: any) {
       }
     }
   };
-  //save phone
-  // const savePhone = async () => {
-  //   if (!adminUserId) {
-  //     showErrorToast(lang?.No_manager || 'No manager to update');
-  //     return;
-  //   }
-
-  //   // empty validation
-  //   if (!phoneInput || phoneInput.trim() === '') {
-  //     setPhoneError('Input can not be empty');
-  //     return;
-  //   }
-
-  //   try {
-  //     // clear previous error
-  //     setPhoneError('');
-
-  //     // normalize phone: remove non digits, drop leading 0, prefix country code
-  //     let digits = (phoneInput || '').replace(/\D/g, '');
-  //     if (digits.startsWith('0')) digits = digits.slice(1);
-  //     const e164 = `${selectedCountry?.code || ''}${digits}`;
-
-  //     await updateUser(adminUserId, { phone: e164 });
-
-  //     // update displayed phone
-  //     setPhoneNumber(phoneInput);
-  //     setPhoneModalVisible(false);
-  //     showSuccessToast('Number Updated successfully');
-  //   } catch (e: any) {
-  //     console.warn('savePhone failed', e?.response?.data ?? e);
-  //     // optional: parse duplicate / backend errors here if needed
-  //     showErrorToast(lang?.Failed_to_save || 'Failed to save');
-  //   }
-  // };
-
-
-  // const savePhone = async () => {
-  //   if (!branchId) {
-  //     showErrorToast(lang.Failed_to_save);
-  //     return;
-  //   }
-
-  //   // empty validation
-  //   if (!phoneInput || phoneInput.trim() === '') {
-  //     setPhoneError('Input can not be empty');
-  //     return;
-  //   }
-
-  //   try {
-  //     // clear previous error
-  //     setPhoneError('');
-
-  //     // normalize phone: remove non digits, drop leading 0, prefix country code
-  //     let digits = (phoneInput || '').replace(/\D/g, '');
-  //     if (digits.startsWith('0')) digits = digits.slice(1);
-  //     const e164 = `${selectedCountry?.code || ''}${digits}`;
-
-  //     // <-- update branch phone (not user) -->
-  //     const updated = await updateBranch(branchId, { phone: e164 });
-
-  //     // update displayed phone using same detect logic (use branch's returned phone if present)
-  //     const branchPhoneRaw = updated?.phone ?? e164;
-  //     const detected = detectCountryFromE164(branchPhoneRaw);
-  //     if (detected) {
-  //       setSelectedCountry(detected.matched);
-  //       setPhoneNumber(detected.displayLocal);
-  //     } else {
-  //       setPhoneNumber(branchPhoneRaw.replace(/\D/g, ''));
-  //     }
-
-  //     setPhoneModalVisible(false);
-  //     showSuccessToast(lang.phoneUpdated);
-  //   } catch (e: any) {
-  //     console.warn('savePhone failed', e?.response?.data ?? e);
-  //     setPhoneError('');
-  //     showErrorToast(lang.Failed_to_save);
-  //   }
-  // };
 
     const savePhone = async () => {
     if (!branchId) {
@@ -642,61 +560,6 @@ export default function BranchProfileScreen(props: any) {
     }
   };
 
-  // const saveAddress = async () => {
-  //   if (!branchId) return;
-
-  //   const lat = (addressLatInput ?? '').toString().trim();
-  //   const lon = (addressLonInput ?? '').toString().trim();
-
-  //   setLatError('');
-  //   setLonError('');
-
-  //   let hasError = false;
-  //   if (!lat) { setLatError('Input can not be empty'); hasError = true; }
-  //   if (!lon) { setLonError('Input can not be empty'); hasError = true; }
-  //   if (hasError) return;
-
-  //   try {
-  //     const payload: any = { latitude: String(lat), longitude: String(lon) };
-  //     const updated = await updateBranch(branchId, payload);
-
-  //     // prefer returned updated values if backend returns them
-  //     setLatitude(updated.latitude ?? payload.latitude ?? latitude);
-  //     setLongitude(updated.longitude ?? payload.longitude ?? longitude);
-
-  //     const addr = await geocodeOnce(Number(updated.latitude ?? payload.latitude), Number(updated.longitude ?? payload.longitude));
-  //     setBranchAddress(addr);
-
-  //     setAddressModalVisible(false);
-  //     showSuccessToast('Address updated successfully');
-  //     // In BranchProfileScreen.tsx - at top add:
-
-
-  // // and keep same GEO_CACHE_KEY as BranchScreen:
-  // const GEO_CACHE_KEY = 'branch_geo_cache_v1';
-
-  // // Then, in saveAddress() after successful update (before/after showSuccessToast):
-  // try {
-  //   // invalidate geo cache for this branch so BranchScreen will re-geocode next fetch
-  //   const raw = await AsyncStorage.getItem(GEO_CACHE_KEY);
-  //   if (raw) {
-  //     const map = JSON.parse(raw) as Record<string, any>;
-  //     if (map && map[branchId]) {
-  //       delete map[branchId];
-  //       await AsyncStorage.setItem(GEO_CACHE_KEY, JSON.stringify(map));
-  //     }
-  //   }
-  // } catch (cacheErr) {
-  //   // ignore cache errors - this is best-effort
-  //   console.warn('Failed to clear geo cache for branch', cacheErr);
-  // }
-
-  //   } catch (e: any) {
-  //     console.warn('saveAddress failed', e?.response?.data ?? e);
-  //     showErrorToast(lang?.Failed_to_save || 'Failed to save');
-  //   }
-  // };
-
   const saveAddress = async () => {
     if (!branchId) return;
 
@@ -761,7 +624,6 @@ export default function BranchProfileScreen(props: any) {
         { id: 'email', label: "Email", labelname: "Email", icon: require("../../../assets/icons/p_email_blue.png") },
         { id: 'phoneNumber', label: "Phone number", labelname: lang.phoneNumber, icon: require("../../../assets/icons/p_phone_b.png") },
         { id: 'branchAddress', label: "Branch address", labelname: lang.Branch_address_latitude, icon: require("../../../assets/icons/p_location_b.png") },
-
       ],
     },
     {
@@ -1044,8 +906,6 @@ export default function BranchProfileScreen(props: any) {
     </View>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.secondary },

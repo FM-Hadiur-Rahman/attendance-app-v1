@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Dimensions,
   Image,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -21,42 +20,19 @@ const translations = require('../../assets/translations.json');
 
 type RootStackParamList = {
   TermsScreen: {
-    orderId?: string;
-    userId?: string;
-    UserId?: string;
-    langId?: 'en' | 'de' | string;
-    LangId?: string;
-    branchId?: string;
-    BranchId?: string;
-    id?: string;
-    language?: string;
-    branch?: string;
+    userId: string;
+    langId: string;
+    branchId: string;
   };
 };
 
 const TermsScreen = () => {
-  const { width } = Dimensions.get('window');
   const navigation = useNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'TermsScreen'>>();
 
-  //  accept multiple param name variants and provide fallbacks
-  const incomingUserId =
-    route.params?.userId ??
-    route.params?.UserId ??
-    route.params?.id ??
-    null;
-
-  const incomingLangId =
-    route.params?.langId ??
-    route.params?.LangId ??
-    route.params?.language ??
-    'en';
-
-  const incomingBranchId =
-    route.params?.branchId ??
-    route.params?.BranchId ??
-    route.params?.branch ??
-    null;
+  const incomingUserId = route.params.userId ?? undefined;
+  const incomingLangId = route.params.langId ?? 'en';
+  const incomingBranchId = route.params.branchId ?? undefined;
 
   console.log('TermsScreen -> received params:', {
     userId: incomingUserId,
@@ -76,7 +52,7 @@ const TermsScreen = () => {
     setTermsContent(terms);
   }, []);
 
-  // 🔹 Refresh function
+  // Refresh function
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1500);
@@ -130,7 +106,7 @@ const TermsScreen = () => {
           </View>
         </View>
 
-        {/*  Pass branchId and language to GroupedContactList (same as PrivacyScreen) */}
+        {/*  Pass branchId and language to GroupedContactList*/}
         <GroupedContactList
           data={contactList}
           lang={lang}
@@ -151,7 +127,6 @@ const styles = StyleSheet.create({
   scrollContainer: {
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 20,
   },
   logoImage: {
     width: 143,
@@ -167,14 +142,5 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.s,
     lineHeight: 18,
     color: colors.subtext2,
-  },
-  heading: {
-    width: '100%',
-    fontFamily: fonts.family.regular,
-    fontWeight: fonts.weight.semibold ,
-    fontSize: fonts.size.l,
-    lineHeight: 16,
-    color: colors.text,
-    marginBottom: 20,
   },
 });

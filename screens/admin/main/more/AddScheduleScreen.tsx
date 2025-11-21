@@ -18,7 +18,7 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; // fetchUsers returns { users, page, ... }
+import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; 
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
 import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk } from "../../../../api/schedules";
 import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
@@ -45,7 +45,7 @@ type LocalBranch = {
   name: string;
   raw?: ApiBranch;
 };
-export default function AddScheduleScreen(props: { userId?: string; langId?: string; }) {
+export default function AddScheduleScreen(props: any) {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const propUserId = props?.userId;
@@ -87,11 +87,11 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
   const [durationError, setDurationError] = useState<string>("");
   const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
   const [currentWeekErrorPopup, setCurrentWeekErrorPopup] = useState(false);
-  type ChangeLogItem = { type: "add" | "update" | "delete"; schedule: any; };
-  const [changeLog, setChangeLog] = useState<ChangeLogItem[]>([]);
+  const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update" | "delete"; schedule: any }>>([]);
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const [weekOffset, setWeekOffset] = useState<number>(0);
+
   const branchref = useRef<TextInput | null>(null);
   const starttime = useRef<TextInput | null>(null);
   const duration = useRef<TextInput | null>(null);
@@ -101,22 +101,19 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
       const id = (u as any)._id ?? (u as any).id ?? "";
       const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
       let branch_id = "";
-      if (typeof u.branch === "string") {
+      if (typeof u.branch === 'string') {
         branch_id = u.branch;
       } else if (u.branch && typeof u.branch === 'object') {
-        if ('_id' in u.branch) {
-          branch_id = u.branch;
-        } else if ('id' in u.branch && (u.branch as any).id !== undefined) {
-          branch_id = (u.branch as any).id;
-        }
-      }
+        if (u.branch && typeof u.branch === 'object' && ('_id' in u.branch)) branch_id = (u.branch as { _id?: string })._id ?? "";
+else if (u.branch && typeof u.branch === 'object' && ('id' in u.branch)) branch_id = (u.branch as { id?: string }).id ?? "";
 
+      }
       return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
     });
   };
-
   const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
-    return branches.map((b) => ({ id: (b as any)._id ?? (b as any).id ?? "", name: (b as any).name ?? (b as any).branch_name ?? "", raw: b }));
+return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? (b as { _id?: string; id?: string }).id) ?? ""), name: (((b as { name?: string; branch_name?: string }).name ?? (b as { name?: string; branch_name?: string }).branch_name) ?? ""), raw: b }));
+
   };
   const normalizeSchedules = (schedules: ScheduleItem[] = []): any[] => {
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
@@ -174,7 +171,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
       let branchToUse: string | undefined = screenBranchId || undefined;
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === 'string' ? profile.branch  : undefined;
+        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?? undefined;
         if (!branchToUse && profBranch) branchToUse = profBranch;
         console.log("getProfile() returned branch:", profBranch);
       } catch (err) {
@@ -403,7 +400,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
         console.info("[AddSchedule] cleared schedules for", selectedStaffId, normalizedDate, "removed:", beforeCount - afterCount);
         return filtered;
       });
-      setChangeLog((c) => [...c, { type: "update", schedule: { user_id: String(selectedStaffId ?? ""), date: normalizedDate } },]);
+      setChangeLog((c) => [...c, { type: "delete" as const, schedule: { user_id: selectedStaffId, date: normalizedDate } }]);
       setAddScheduleModalVisible(false);
       setModalEditingId(null);
       showSuccessToast(lang.scheduleCleared || "Schedule cleared");
@@ -683,7 +680,8 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
         // debug list: id, iso, localYmd
         const debugList = rawArr.map((r: any) => {
           const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
-          return { id: r?._id ?? r?.id, iso, localYmd: toLocalYmdFromIso(iso) };
+          return { id: (r && (('_id' in r ? (r as { _id?: string })._id : ('id' in r ? (r as { id?: string }).id : undefined)))) ?? undefined, iso, localYmd: toLocalYmdFromIso(iso) };
+
         });
         console.log(`[DEBUG] raw items (id, iso, localYmd) for offset=${offsetWeeks}`, debugList);
         const filtered = rawArr.filter((r: any) => {
@@ -1002,7 +1000,6 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
               return (
                 <View key={`${ymd}_${displayYmd}`} style={styles.each_day}>
                   <CartBox
-                    width="auto"
                     containerStyle={[styles.day, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}
                   >
                     <Text style={styles.day_text}>{`${dateNum}`}</Text>
@@ -1035,11 +1032,17 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                       // day-level check: if this particular day already has a schedule for this staff (local OR initial), block this day
                       const daySchedulesArr = localSchedulesByDate[ymd] || [];
                       const staffScheduleForDay = selectedStaffId ? daySchedulesArr.find((s) => String(s.user_id) === String(selectedStaffId)) : null;
+                      if (staffScheduleForDay) {
+                        // different message for day-level duplicate
+                        showErrorToast(lang.scheduleAlreadyAdded || "Schedule already added for this day");
+                        return;
+                      }
+                      // allow opening modal only for non-expired days (expired checked at top)
                       openAddModalForDate(ymd, displayYmd);
                     }}
 
                   >
-                    <CartBox width="auto" containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
+                    <CartBox containerStyle={[styles.time, expired ? { backgroundColor: colors.background, borderColor: colors.background } : {}]}>
                       {hasScheduleForStaff ? (
                         <View style={{ alignItems: 'center' }}>
                           {branchNameForSchedule ?
@@ -1146,7 +1149,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                     // Full validation
                     const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
                     if (isValid) setTimeFromError("");
-                    else setTimeFromError("Invalid time format (00 00)");
+                    else setTimeFromError("Invalid time");
                   }}
                   keyboardType="numeric"          // regular keyboard
                   maxLength={5}                   // HH:MM
@@ -1401,7 +1404,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                   setLoading(false);
                   return;
                 }
-                // Decide which employee and default branch we are working with
+                // Declare variables at the top to avoid 'used before declaration' errors
                 const employeeIdToUse = selectedStaffId || userId || (schedulesToSave[0]?.user_id ?? "");
                 const defaultBranchIdToUse = selectedBranchId || effectiveBranchId || (schedulesToSave[0]?.branch_id ?? "");
 
@@ -1426,7 +1429,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
 
                 // Helper to resolve employee object and original branch id (source)
                 const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
-                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
+                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch: (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
                 const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
                 const schedulesPayload = schedulesToSave.map((s) => {
                   const dateYmd = s.date;
@@ -1466,23 +1469,6 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                     console.log("[sched] postSchedulesBulk per-row resp for", s.date, targetBranchId, r);
 
                     // --- notification logic for this saved row (keep as before) ---
-                    const formatTime12 = (hhmmss: string) => {
-                      if (!hhmmss) return "";
-                      const parts = String(hhmmss).split(":").map((p) => parseInt(p, 10) || 0);
-                      let hh = parts[0] ?? 0;
-                      const mm = parts[1] ?? 0;
-                      const ampm = hh >= 12 ? "PM" : "AM";
-                      hh = hh % 12;
-                      if (hh === 0) hh = 12;
-                      return `${hh}:${String(mm).padStart(2, "0")} ${ampm}`;
-                    };
-                    const formatDateReadable = (ymd: string) => {
-                      if (!ymd) return "";
-                      const [y, m, d] = String(ymd).split("-").map((v) => parseInt(v, 10));
-                      if (!y || !m || !d) return ymd;
-                      const dt = new Date(y, m - 1, d);
-                      return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-                    };
                     const start = timeToHHMM(s.start_time ?? s.start ?? s.from_time ?? "");
                     const end = timeToHHMM(s.end_time ?? s.end ?? "");
                     const date = s.date;
@@ -1527,122 +1513,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
 
                 // optional: inspect perRowResponses for debugging
                 console.log("[sched] per-row responses count:", perRowResponses.length);
-                // --- END per-row save ---
-                // for (const s of schedulesToSave) {
-                //   try {
-                //     const targetBranchId = s.branch_id ?? s.branch ?? defaultBranchIdToUse ?? "";
-                //     const start = timeToHHMM(s.start_time ?? s.start ?? s.from_time ?? "");
-                //     const end = timeToHHMM(s.end_time ?? s.end ?? "");
-                //     const date = s.date;
-                //     const startFmt = formatTime12(start);
-                //     const endFmt = formatTime12(end);
-                //     const dateReadable = formatDateReadable(date);
-                //     const timePart = startFmt && endFmt ? `${startFmt} - ${endFmt}` : (startFmt || endFmt || "");
-                //     try {
-                //       const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
-                //       const empBody =
-                //         targetBranchId && employeeBranchId && String(targetBranchId) !== String(employeeBranchId)
-                //           ? `New Shift assigned at Branch: ${assignedBranchName} for Date: ${dateReadable}, Time: ${timePart},`
-                //           : `New Shift assigned for Date: ${dateReadable}, Time: ${timePart},`;
-                //       await sendNotificationToUser(employeeIdToUse, {
-                //         title: "Shift Assigned",
-                //         body: empBody,
-                //         type: "shift_assigned",
-                //         meta: {
-                //           branchId: targetBranchId || null,
-                //           date,
-                //           start_time: start,
-                //           end_time: end,
-                //         },
-                //       });
-                //       console.log("[sched] notified employee for date", date, employeeIdToUse);
-                //     } catch (e) {
-                //       console.warn("[sched] sendNotificationToUser (employee) failed for date", date, e);
-                //     }
-                //     if (targetBranchId && String(targetBranchId) !== String(employeeBranchId)) {
-                //       let branchAdmins: any[] = [];
-                //       try {
-                //         const fetched = await fetchUsers({ branchId: targetBranchId, role: 'admin', limit: 1000 });
-                //         const fetchedList = fetched?.users ?? (fetched as any)?.data ?? [];
-                //         const normalized = normalizeUsers(Array.isArray(fetchedList) ? fetchedList : []);
-                //         branchAdmins = normalized.filter((u: any) => {
-                //           const role = (u.role || "").toString().toLowerCase();
-                //           return role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
-                //         });
-                //         console.log("[sched] fetched branch admins via API:", branchAdmins.map((a: any) => a.id));
-                //       } catch (e) {
-                //         console.warn("[sched] fetchUsers(role=admin) failed for branch", targetBranchId, e);
-                //       }
-                //       if ((!branchAdmins || branchAdmins.length === 0) && Array.isArray(localUsers) && localUsers.length > 0) {
-                //         branchAdmins = localUsers.filter((u: any) => {
-                //           const uBranch = u.branch_id ?? (u.raw?.branch && typeof u.raw.branch === 'object' && '_id' in u.raw.branch ? u.raw.branch._id : (u.raw?.branch && typeof u.raw.branch === 'object' && 'id' in u.raw.branch ? u.raw.branch.id : "")) ?? "";
-                //           const role = (u.role ?? u.raw?.role ?? "").toString().toLowerCase();
-                //           const isAdmin = role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
-                //           return String(uBranch) === String(targetBranchId) && isAdmin;
-                //         });
-                //         console.log("[sched] fallback branchAdmins from localUsers:", branchAdmins.map((a: any) => a.id));
-                //       }
-                //       const assignedBranchName = (localBranches.find(b => String(b.id) === String(targetBranchId))?.name) || "";
-                //       const fromBranchName = (localBranches.find(b => String(b.id) === String(employeeBranchId))?.name) || "";
-                //       const adminBody = `Branch '${fromBranchName || "Unknown"}' has assigned ${employeeName} to work at your branch '${assignedBranchName}'.\n Date: ${dateReadable}${timePart ? `, Time: ${timePart}` : ""}`;
-                //       try {
-                //         const adminIds = Array.from(new Set((branchAdmins || []).map((a: any) => String(a.id))))
-                //           .filter(id =>
-                //             id &&
-                //             String(id) !== String(employeeIdToUse) &&
-                //             String(id) !== String(userId) // <-- exclude the sender
-                //           );
-                //         await Promise.all(adminIds.map((adminId: string) =>
-                //           sendNotificationToUser(adminId, {
-                //             title: "Staff Assigned to Your Branch",
-                //             body: adminBody,
-                //             type: "branch_staff_assigned",
-                //             meta: {
-                //               fromBranchId: employeeBranchId,
-                //               toBranchId: targetBranchId,
-                //               employeeId: employeeIdToUse,
-                //               date,
-                //               start_time: start,
-                //               end_time: end,
-                //             },
-                //           })
-                //         ));
-                //         console.log("[sched] notified branch admins individually for branch", targetBranchId, "date", date, adminIds);
-                //       } catch (e) {
-                //         console.warn("[sched] notify branch admins individually failed for branch", targetBranchId, e);
-                //       }
-                //       try {
-                //         const adminBranchDoc = {
-                //           title: "Staff Assigned to Your Branch",
-                //           body: adminBody,
-                //           type: "branch_staff_assigned",
-                //           meta: {
-                //             fromBranchId: employeeBranchId ?? null,
-                //             fromUserId: userId ?? null,
-                //             fromUserName: employeeName ?? null,
-                //             toBranchId: targetBranchId ?? null,
-                //             toBranchName: assignedBranchName ?? null, // <-- add this
-                //             assignedBranchName: assignedBranchName ?? null, // keep this (backwards compatibility)
-                //             employeeId: employeeIdToUse,
-                //             date,
-                //             start_time: start,
-                //             end_time: end,
-                //           },
-                //           read: false,
-                //           createdAt: serverTimestamp(),
-                //         };
-                //         await addDoc(collection(db, "notifications_branch", String(targetBranchId), "inbox"), adminBranchDoc);
-                //         console.log("[sched] wrote branch-level notification (single-day) for branch", targetBranchId, "date", date);
-                //       } catch (e) {
-                //         console.warn("[sched] write branch-level notification failed for branch", targetBranchId, e);
-                //       }
-                //     } else {
-                //       console.log("[sched] skipping admin notification for date", s.date, "because targetBranch equals employeeBranch or missing");
-                //     }
-                //   } catch (e) {
-                //     console.warn("[sched] notify loop error for schedule row", s, e);
-                //   }
-                // }
+        
                 // --- REPLACED BLOCK: send admin / branch notifications only (no duplicate employee notification) ---
                 for (const s of schedulesToSave) {
                   try {
@@ -1660,10 +1531,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                       let branchAdmins: any[] = [];
                       try {
                         const fetched = await fetchUsers({ branchId: targetBranchId, role: 'admin', limit: 1000 });
-                        const fetchedList =
-                          fetched?.users ??
-                          (("data" in (fetched ?? {})) ? (fetched as any).data : []) ??
-                          [];
+                        const fetchedList = fetched?.users ?? (fetched as any)?.data ?? [];
                         const normalized = normalizeUsers(Array.isArray(fetchedList) ? fetchedList : []);
                         branchAdmins = normalized.filter((u: any) => {
                           const role = (u.role || "").toString().toLowerCase();
@@ -1677,7 +1545,7 @@ export default function AddScheduleScreen(props: { userId?: string; langId?: str
                       // fallback to localUsers if API returned none
                       if ((!branchAdmins || branchAdmins.length === 0) && Array.isArray(localUsers) && localUsers.length > 0) {
                         branchAdmins = localUsers.filter((u: any) => {
-                          const uBranch = u.branch_id ?? (u.raw?.branch?._id ?? u.raw?.branch?.id) ?? "";
+                          const uBranch = u.branch_id ?? (u.raw?.branch && typeof u.raw.branch === 'object' && '_id' in u.raw.branch ? u.raw.branch._id : (u.raw?.branch && typeof u.raw.branch === 'object' && 'id' in u.raw.branch ? u.raw.branch.id : "")) ?? "";
                           const role = (u.role ?? u.raw?.role ?? "").toString().toLowerCase();
                           const isAdmin = role === "admin" || role === "branch_admin" || role.includes("admin") || role === "manager";
                           return String(uBranch) === String(targetBranchId) && isAdmin;
@@ -1852,7 +1720,7 @@ const styles = StyleSheet.create({
   },
   plus: { width: 16, height: 16 },
   // overlay (full-screen pressable backdrop)
-  overlayBackdrop: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
+  overlayBackdrop: { position: "absolute", left: 0, right: 0, top: 8, bottom: 0 },
   overlayContainer: {
     position: "absolute",
     height: "80%",
@@ -1889,4 +1757,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   clock: { width: 14, height: 14, marginRight: 4 },
-});	
+});
