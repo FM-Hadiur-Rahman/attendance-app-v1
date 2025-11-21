@@ -285,6 +285,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
       // --- compute start/end dates ---
       let startDate = "";
       let endDate = "";
+      const branchId = currentBranchId || "";
 
       if (selectedRange.type === "day") {
         startDate = selectedRange.ymd;
@@ -305,8 +306,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
       const prof = await getProfile(); // current logged-in user
       const loggedInBranchId =
         typeof prof.branch === "string"
-          ? prof.branch
-          : prof.branch?._id ?? null;
+          ? prof.branch : null;
       const loggedInUserId = prof._id;
       const userRole = prof.role;
 
@@ -317,7 +317,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
       const res = await getAttendanceReport(
         startDate,
         endDate,
-        loggedInBranchId
+        branchId
       );
       const rows = Array.isArray(res) ? res : (res as any)?.rows ?? (res as any)?.data ?? [];
       const normalized = Array.isArray(rows) ? rows : [];
@@ -396,15 +396,15 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
     return (attendanceData || []).map((r) => {
       // r likely has:
       // { actualIn, actualOut, branchId, branchName, date, employeeId, endStatus, fullname, scheduledEnd, scheduledStart, startStatus, username }
-      const dateYmd = normalizeDateToYMD(r.date ?? r.startDate ?? "");
+      const dateYmd = normalizeDateToYMD(r.date ?? r.startStatus ?? "");
       const checkInRaw = r.actualIn && r.actualIn !== "" ? r.actualIn : null;
       const checkOutRaw =
         r.actualOut && r.actualOut !== "" ? r.actualOut : null;
-      const scheduledStart = r.scheduledStart ?? r.scheduled_start ?? "";
-      const scheduledEnd = r.scheduledEnd ?? r.scheduled_end ?? "";
+      const scheduledStart = r.scheduledStart ?? "";
+      const scheduledEnd = r.scheduledEnd  ?? "";
       const startStatus =
-        r.startStatus ?? r.start_status ?? r.startstatus ?? r.start_status;
-      const endStatus = r.endStatus ?? r.end_status ?? r.endstatus;
+        r.startStatus;
+      const endStatus = r.endStatus;
 
       // compute checkIn/checkOut time strings (HH:MM or ISO)
       const checkInTime = checkInRaw ? checkInRaw : null;
@@ -472,13 +472,11 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
         raw: r,
         id:
           r.employeeId ??
-          r.employee_id ??
-          r._id ??
           Math.random().toString(36).slice(2),
-        name: r.fullname ?? r.username ?? r.name ?? "Unknown",
+        name: r.fullname ?? r.username  ?? "Unknown",
         username: r.username ?? "",
-        branchId: r.branchId ?? r.branch_id ?? "",
-        branchName: r.branchName ?? r.branch_name ?? "",
+        branchId: r.branchId ??"",
+        branchName: r.branchName  ?? "",
         date: dateYmd,
         scheduledStart,
         scheduledEnd,
@@ -848,7 +846,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
                 displayedRecords.map((r, index) => {
                   return (
                     <CartBox
-                      key={`${r.id}-${r.date}-${index}`}
+                      key={`${r.id}-${r.date}-${index}-${r.checkInTime || r.checkOutTime || ''}`}
                       containerStyle={styles.detail_cartbox}
                     >
                       <View

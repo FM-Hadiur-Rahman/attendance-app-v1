@@ -1,5 +1,5 @@
 {
-  "name": "attendance-app",
+  "name": "Time Track",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
@@ -48,6 +48,7 @@
   "devDependencies": {
     "@types/base-64": "^1.0.2",
     "@types/react": "~19.1.0",
+    "expo-module-scripts": "^5.0.7",
     "typescript": "~5.9.2"
   },
   "private": true

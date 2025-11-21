@@ -1,23 +1,25 @@
-// PrivacyPolicy.tsx
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Image,
   ScrollView,
-  Dimensions,
   RefreshControl,
+  Dimensions,
+  Image,
 } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+
 import Header from '../../components/Header';
 import CartBox from '../../components/CartBox';
-import { contactList, GroupedContactList } from '../../components/Contact';
-import colors from '../../styles/Colors';
-import { contents, Content } from '../../api/Content';
+import { GroupedContactList, contactList } from '../../components/Contact';
+import { Content, contents } from '../../api/Content';
 
-type RouteParams = {
-  params: {
+import colors from '../../styles/Colors';
+import fonts from '../../styles/Fonts';
+
+type RootStackParamList = {
+  PrivacyScreen: {
     orderId?: string;
     userId?: string;
     UserId?: string;
@@ -25,7 +27,9 @@ type RouteParams = {
     LangId?: string;
     branchId?: string;
     BranchId?: string;
-    [k: string]: any;
+    id?: string;
+    language?: string;
+    branch?: string;
   };
 };
 const translations = require('../../assets/translations.json');
@@ -33,7 +37,7 @@ const translations = require('../../assets/translations.json');
 const PrivacyScreen = () => {
   const { width } = Dimensions.get('window');
   const navigation = useNavigation();
-  const route = useRoute() as RouteProp<RouteParams['params'], 'params'>;
+  const route = useRoute<RouteProp<RootStackParamList, 'PrivacyScreen'>>();
 
   // accept multiple param name variants and provide fallbacks
   const incomingUserId =
