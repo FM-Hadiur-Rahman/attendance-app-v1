@@ -24,7 +24,6 @@ import { getSchedulesForDate } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser, getUserById } from "../../../api/profile";
 import { ScheduleItem } from "../../../api/schedules";
 
-
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -155,52 +154,85 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
     return () => { mounted = false; };
   }, [userId, activeBranchId]);
-
-  const displayYMD = useMemo(() => dateToYMD(displayDate), [displayDate]);
   const loadSchedules = useCallback(async (date: Date) => {
     if (!user) return;
     try {
       setLoading(true);
       const dateYMD = date.toISOString().split("T")[0];
       let data = await getSchedulesForDate(dateYMD);
-
       const loggedUserBranchId =
-        typeof user?.branch === "object" && user?.branch !== null 
-          ? (user.branch as any)?._id 
-          : user?.branch;
+        typeof user.branch === "object" && user.branch !== null ? user.branch : user.branch;
 
-      // Strict branch match filter
-      data = data.filter((s) => {
-        // First check if employee_id exists
-        if (!s.employee_id) return false;
-        
-        let employeeBranchId;
-        if (typeof s.employee_id === 'string') {
-          // If employee_id is a string, we need to get the user first to determine their branch
-          // For now, we'll allow it through and filter later
-          return true;
-        } else if (typeof s.employee_id === 'object' && s.employee_id !== null) {
-          // If employee_id is an object, we can't directly access branch since it's not in the interface
-          // We'll need to fetch the user profile to get the branch information
-          return true;
-        } else {
-          return false;
+      if (!loggedUserBranchId) {
+        console.warn("WorkScheduleScreen: logged user has no branch - hiding schedules");
+        setSchedules([]);
+        return;
+      }
+      const employeeIds = Array.from(
+        new Set(
+          data
+            .map((s) => {
+              if (!s.employee_id) return null;
+              if (typeof s.employee_id === "string") return s.employee_id;
+              if (typeof s.employee_id === "object" && s.employee_id !== null) {
+                return (s.employee_id as any)._id || (s.employee_id as any).user_id || null;
+              }
+              return null;
+            })
+            .filter(Boolean) as string[]
+        )
+      );
+      const profileCache: Record<string, any> = {};
+      await Promise.all(
+        employeeIds.map(async (id) => {
+          try {
+            const p = await getUserById(id);
+            profileCache[id] = p || null;
+          } catch (err) {
+            profileCache[id] = null;
+            console.warn("getUserById failed for", id, err);
+          }
+        })
+      );
+      const filtered: ScheduleItem[] = data.filter((s) => {
+        // resolve scheduleBranchId (if schedule has branch_id)
+        let scheduleBranchId: string | undefined;
+        if (s.branch_id) {
+          if (typeof s.branch_id === "object" && s.branch_id !== null) {
+            scheduleBranchId = String((s.branch_id)._id || (s.branch_id));
+          } else if (typeof s.branch_id === "string") {
+            scheduleBranchId = s.branch_id;
+          }
         }
+        let empId: string | undefined;
+        if (s.employee_id) {
+          if (typeof s.employee_id === "string") empId = s.employee_id;
+          else if (typeof s.employee_id === "object" && s.employee_id !== null) {
+            empId = (s.employee_id)._id
+          }
+        }
+        let employeeProfileBranchId: string | undefined;
+        if (empId && profileCache[empId]) {
+          const prof = profileCache[empId];
+          if (prof.branch) {
+            employeeProfileBranchId =
+              typeof prof.branch === "object" && prof.branch !== null? prof.branch._id : prof.branch;
+          }
+        }
+        const resolvedEmployeeBranchId = employeeProfileBranchId || scheduleBranchId || null;
+        if (!resolvedEmployeeBranchId) return false;
+        return String(resolvedEmployeeBranchId) === String(loggedUserBranchId);
       });
 
-      setSchedules(data);
+      setSchedules(filtered);
+      console.log(`📅 Found ${filtered.length} schedules for ${dateYMD} in branch ${loggedUserBranchId}`);
     } catch (err) {
       console.error("❌ Error loading schedules:", err);
+      setSchedules([]);
     } finally {
       setLoading(false);
     }
   }, [user]);
-
-
-
-
-
-
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1); // move one day back
@@ -396,8 +428,8 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       const positions: Record<string, string> = {};
 
       for (const s of schedulesForDate) {
-        const userId = typeof s.user === 'object' && s.user !== null 
-          ? (s.user as any)._id || (s.user as any).user_id 
+        const userId = typeof s.user === 'object' && s.user !== null
+          ? (s.user as any)._id || (s.user as any).user_id
           : s.user;
         if (userId && !positions[userId]) {
           try {
@@ -525,39 +557,39 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           ) : (
             schedulesForDate.map(({ schedule, user }, index) => {
               if (!user) return null;
-            
+
               // Generate a truly unique key by combining schedule ID, date, time, and index
-              const uniqueKey = 
-                schedule._id ? `${schedule._id}-${index}` : 
-                schedule.id ? `${schedule.id}-${index}` : 
-                `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
-            
+              const uniqueKey =
+                schedule._id ? `${schedule._id}-${index}` :
+                  schedule.id ? `${schedule.id}-${index}` :
+                    `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
+
               // Time String
               const startTime = schedule.start_time || "";
               const endTime = schedule.end_time || "";
               const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
-            
+
               // 🔹 Branch Logic: compare schedule branch vs employee's default branch
               const employeeBranchId =
                 typeof user === 'object' && user !== null
                   ? typeof (user as any).branch === "object" && (user as any).branch !== null
-                    ? (user as any).branch?._id 
+                    ? (user as any).branch?._id
                     : typeof (user as any).branch === "string" ? (user as any).branch : undefined
                   : undefined;
-            
+
               const scheduleBranchId =
-                typeof schedule.branch_id === "object" && schedule.branch_id !== null 
-                  ? (schedule.branch_id as any)?._id 
+                typeof schedule.branch_id === "object" && schedule.branch_id !== null
+                  ? (schedule.branch_id as any)?._id
                   : typeof schedule.branch_id === "string" ? schedule.branch_id : undefined;
-            
+
               const scheduleBranchName =
                 typeof schedule.branch_id === "object" && schedule.branch_id !== null
                   ? (schedule.branch_id as any)?.name
                   : scheduleBranchId ? branchMap[scheduleBranchId as string] || "Unknown Branch" : "Unknown Branch";
-            
+
               // Show branch name only if schedule branch is different from employee's branch
               const showBranch = scheduleBranchId && employeeBranchId && scheduleBranchId !== employeeBranchId;
-              
+
               return (
                 <TouchableOpacity
                   key={uniqueKey}
@@ -623,10 +655,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         </ScrollView>
       </View>
       {/* Floating Add Button */}
-      <Button3 
-        width={60} 
-        height={60} 
-        onPress={openAddScreen} 
+      <Button3
+        width={60}
+        height={60}
+        onPress={openAddScreen}
         iconSource={require("../../../assets/icons/button3.png")}
       />
       {/* Toast */}
@@ -707,7 +739,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
 
   },
@@ -718,7 +750,7 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
   },
   branchHeader: {
