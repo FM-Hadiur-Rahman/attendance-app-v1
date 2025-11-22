@@ -15,7 +15,6 @@ import {
   TouchableWithoutFeedback,
   Platform,
   RefreshControl,
-  Dimensions,
   LayoutChangeEvent,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -31,9 +30,11 @@ import fonts from "../../../../styles/Fonts";
 import Popup from "../../../../components/Popup";
 import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
+
+// API helpers 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
-import { register as authRegister, RegisterPayload } from "../../../../api/auth/authService";
+import { register as authRegister } from "../../../../api/auth/authService";
 import {
   getBranchId,
   getBranchById,
@@ -42,15 +43,7 @@ import {
   postSchedulesBulk,
   getLoggedInUserBranch,
 } from "../../../../api/profile";
-
-// Define the interface for schedule data that matches what postSchedulesBulk expects
-interface ScheduleData {
-  date: string;
-  day_of_week: string;
-  start_time: string;
-  end_time: string;
-  duration?: number; // Optional duration property for display purposes
-}
+import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
 
 const PHONE_RULES: Record<
   string,
@@ -66,14 +59,28 @@ const PHONE_RULES: Record<
 };
 const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 
+type ScheduleEntry = {
+  startTime: string;
+  endTime: string;
+  duration?: number;      // in hours (optional)
+  date?: string | null;   // YYYY-MM-DD (optional)
+};
+
+type SchedulePayload = {
+  date: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+  duration?: number; // hours (optional)
+};
+
 const AddStaffScreen: React.FC = (props: any) => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const [refreshing, setRefreshing] = useState(false);
   const { userId, langId, onSave } = route.params || {};
   const currentLang = langId || "en";
-  const lang = translations[currentLang as keyof typeof translations] || translations['en'];
-
+  const lang = (translations as any)[langId] || (translations as any)["en"];
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -174,16 +181,8 @@ const AddStaffScreen: React.FC = (props: any) => {
   const [durationHours, setDurationHours] = useState<string>("");
   const [durationError, setDurationError] = useState<string>("");
   const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
-  const [selectedBranchObj, setSelectedBranchObj] = useState<{ _id?: string; id?: string; name?: string } | null>(null);
-
-  const [schedules, setSchedules] = useState<{
-    [dayName: string]: {
-      startTime: string;
-      endTime: string;
-      duration?: number;
-      date?: string;
-    };
-  }>({});
+  const [schedules, setSchedules] = useState<Record<string, ScheduleEntry>>({});
+  const [finalSchedule, setFinalSchedule] = useState<SchedulePayload[]>([]);
   const [activeDate, setActiveDate] = useState<string | null>(null); // will hold weekday name like "Sunday"
   const FULL_WEEKDAYS = [
     "Sunday",
@@ -244,76 +243,92 @@ const AddStaffScreen: React.FC = (props: any) => {
     setTimeFrom(`${hh}:${mm}:${ss}`);
     setTimeFromError("");
   };
-  const [finalSchedule, setFinalSchedule] = useState<ScheduleData[]>([]);
 
+  const buildScheduleArray = () => {
+    const result: SchedulePayload[] = [];
 
-  const buildScheduleArray = (): ScheduleData[] => {
-    const result: ScheduleData[] = [];
-
-    const normalizeHHMMSS = (t: string) => {
+    const normalizeHHMM = (t: string) => {
       if (!t) return "";
       const parts = t.split(":").map((p) => p.trim());
-      const hh = (parts[0] || "00").padStart(2, "0");
-      const mm = (parts[1] || "00").padStart(2, "0");
-      const ss = (parts[2] || "00").padStart(2, "0");
-      // return HH:MM:SS for maximum compatibility
-      return `${hh}:${mm}:${ss}`;
+      if (parts.length >= 2) {
+        const hh = parts[0].padStart(2, "0");
+        const mm = parts[1].padStart(2, "0");
+        return `${hh}:${mm}`;
+      }
+      return t;
     };
 
     const addEntry = (
-      dateYmd: string,
+      date: string,
       weekday: string,
       start: string,
-      end: string
+      end: string,
+      durationHours?: number
     ) => {
-      const s = normalizeHHMMSS(start);
-      const e = normalizeHHMMSS(end);
-      if (!dateYmd || !weekday || !s || !e) {
-        console.warn("Skipping malformed schedule entry", { dateYmd, weekday, start, end });
+      const s = normalizeHHMM(start);
+      const e = normalizeHHMM(end);
+      if (!date || !weekday || !s || !e) {
+        console.warn("Skipping malformed schedule entry", { date, weekday, start, end });
         return;
       }
-      result.push({ date: dateYmd, day_of_week: weekday, start_time: s, end_time: e });
+      result.push({
+        date,
+        day_of_week: weekday,
+        start_time: s,
+        end_time: e,
+        duration: durationHours,
+      });
+    };
+
+    const computeDurationHours = (startMinutes: number, endMinutes: number) => {
+      if (endMinutes >= startMinutes) {
+        return Number(((endMinutes - startMinutes) / 60).toFixed(2));
+      }
+      // cross-midnight handled by splitting, but keep fallback:
+      return Number(((24 * 60 - startMinutes + endMinutes) / 60).toFixed(2));
     };
 
     FULL_WEEKDAYS.forEach((dayName) => {
       const s = schedules[dayName];
       if (!s) return;
 
-      const dateYmd = String(s.date ?? getDateForWeekday(dayName));
-      if (!dateYmd) return;
+      const date = String(s.date ?? getDateForWeekday(dayName));
+      if (!date) return;
       if (!s.startTime || !s.endTime) return;
 
-      const start_time = normalizeHHMMSS(String(s.startTime));
-      const end_time = normalizeHHMMSS(String(s.endTime));
+      const start_time = normalizeHHMM(String(s.startTime));
+      const end_time = normalizeHHMM(String(s.endTime));
 
-      // parse hours/minutes for comparison
+      if (!start_time || !end_time) return;
+
       const [sh, sm] = start_time.split(":").map(Number);
       const [eh, em] = end_time.split(":").map(Number);
-      const startMinutes = (sh || 0) * 60 + (sm || 0);
-      const endMinutes = (eh || 0) * 60 + (em || 0);
+      const startMinutes = sh * 60 + sm;
+      const endMinutes = eh * 60 + em;
 
       if (endMinutes >= startMinutes) {
-        addEntry(dateYmd, dayName, start_time, end_time);
+        const duration = computeDurationHours(startMinutes, endMinutes);
+        addEntry(date, dayName, start_time, end_time, duration);
       } else {
-        // crosses midnight -> split
-        addEntry(dateYmd, dayName, start_time, "23:59:59");
+        // crosses midnight -> split into two entries
+        const duration1 = computeDurationHours(startMinutes, 24 * 60 - 1); // start -> 23:59
+        addEntry(date, dayName, start_time, "23:59", duration1);
 
-        const nextDateObj = new Date(dateYmd);
+        const nextDateObj = new Date(date);
         nextDateObj.setDate(nextDateObj.getDate() + 1);
         const y = nextDateObj.getFullYear();
-        const m = String(nextDateObj.getMonth() + 1).padStart(2, "0");
-        const d = String(nextDateObj.getDate()).padStart(2, "0");
+        const m = (nextDateObj.getMonth() + 1).toString().padStart(2, "0");
+        const d = nextDateObj.getDate().toString().padStart(2, "0");
         const nextDate = `${y}-${m}-${d}`;
 
         const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
-        addEntry(nextDate, nextWeekday, "00:00:00", end_time);
+
+        const duration2 = computeDurationHours(0, endMinutes);
+        addEntry(nextDate, nextWeekday, "00:00", end_time, duration2);
       }
     });
-
     return result;
   };
-
-
 
   // --- 1) Helper: getDateForWeekday ---
   const getDateForWeekday = (dayName: string) => {
@@ -343,7 +358,6 @@ const AddStaffScreen: React.FC = (props: any) => {
         setDurationError(lang.invalid_duration || "Enter duration in hours");
       return;
     }
-
     if (!activeDate) {
       console.warn("No active day selected for schedule");
       return;
@@ -365,19 +379,28 @@ const AddStaffScreen: React.FC = (props: any) => {
     // compute date for this weekday in current week (YYYY-MM-DD)
     const dateForDay = getDateForWeekday(dayName);
 
-    setSchedules(prev => {
+    setSchedules((prev) => {
       const newSchedules = {
         ...prev,
         [dayName]: {
           startTime: timeFrom,
           endTime: endTime,
           duration: durationNum,
-          date: dateForDay ?? undefined, // <-- ensures type matches
-        }
+          date: dateForDay,
+        },
       };
+      console.log("Schedule added for", dayName, "=>", newSchedules[dayName]);
+      console.table(
+        Object.entries(newSchedules).map(([day, sObj]) => ({
+          day,
+          date: sObj.date,
+          start: sObj.startTime,
+          end: sObj.endTime,
+          duration: sObj.duration,
+        }))
+      );
       return newSchedules;
     });
-
 
     // close modal and reset modal fields
     setAddScheduleModalVisible(false);
@@ -681,10 +704,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         }
       } catch (e) {
         // if the check fails unexpectedly, we do not block user — but log it
-        console.warn(
-          "Email availability check failed, proceeding without blocking:",
-          e
-        );
+        console.warn("Email availability check failed, proceeding without blocking:", e);
       }
     }
 
@@ -826,17 +846,18 @@ const AddStaffScreen: React.FC = (props: any) => {
         }
       }
     } else {
+      // no existing schedule: compute date and set modal defaults empty
       const computed = getDateForWeekday(dayName);
+      // we do not persist until user presses Add, but keeping date available is helpful
       setTimeFrom("");
       setDurationHours("");
-
+      // optionally preload date into schedules as a placeholder (commented)
+      // setSchedules(prev => ({ ...prev, [dayName]: { date: computed } }));
     }
 
     setAddScheduleModalVisible(true);
   };
 
-  const screenH = Dimensions.get("window").height;
-  const screenW = Dimensions.get("window").width;
   const hasWeeklySchedule = React.useMemo(() => {
     return FULL_WEEKDAYS.some((d) => !!schedules[d]);
   }, [schedules]);
@@ -852,8 +873,9 @@ const AddStaffScreen: React.FC = (props: any) => {
     setAddScheduleModalVisible(false);
   };
   const handleProceedFromStep2 = () => {
-    const scheduleArray = buildScheduleArray(); // ✅ includes date, start_time, end_time, duration
+    const scheduleArray = buildScheduleArray(); //includes date, start_time, end_time, duration
 
+    // Log a friendly summary to the console before proceeding
     const summary =
       scheduleArray.length === 0
         ? "No schedules set for this week."
@@ -877,11 +899,9 @@ const AddStaffScreen: React.FC = (props: any) => {
         }))
       );
     }
-
-    setFinalSchedule(scheduleArray);
+    setFinalSchedule(scheduleArray); // <-- if you store to state for Step3
     goToStep3();
   };
-  ;
 
   useEffect(() => {
     if (usernameTimer.current) {
@@ -941,7 +961,10 @@ const AddStaffScreen: React.FC = (props: any) => {
       setCheckingEmail(false);
       return;
     }
+
+    // quick format check
     if (!validateEmail(email)) {
+      // don't run availability check if invalid format
       setErrors((prev) => ({
         ...prev,
         email: lang.invalid_email || "Invalid email",
@@ -949,6 +972,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       setCheckingEmail(false);
       return;
     } else {
+      // clear format error (we will check uniqueness)
       setErrors((prev) => ({ ...prev, email: "" }));
     }
 
@@ -979,18 +1003,24 @@ const AddStaffScreen: React.FC = (props: any) => {
 
   const handleSave = async () => {
     if (!(await validateStep2())) return;
+
+    // build payload (API expects "fullname" per your raw body)
     const finalPhone = `${selectedCountry.code}${phoneRaw}`;
+
+    // Determine branch id to use: prefer selectedBranchId, else use saved admin branch
     let branchIdToUse: string | null = null;
     try {
-      branchIdToUse = await getLoggedInUserBranch(false);
+      // Force server fetch to ensure we use the active logged-in user's branch
+      branchIdToUse = await getLoggedInUserBranch(false); // pass true to prefer cache if you want
       if (!branchIdToUse) {
+        console.warn("No branch id found for logged-in user; payload will send empty string for branch");
       }
     } catch (e) {
       console.warn("Failed to obtain logged-in user's branch id", e);
       branchIdToUse = null;
     }
 
-    const payload: RegisterPayload = {
+    const payload: any = {
       fullname: fullName,
       branch: branchIdToUse ?? "",
       username: username,
@@ -998,7 +1028,10 @@ const AddStaffScreen: React.FC = (props: any) => {
       password: password,
       position: position,
       phone: finalPhone,
+      role: "",
     };
+
+    // Save current admin token & userId so we can restore later
     let prevToken: string | null = null;
     let prevUserId: string | null = null;
     try {
@@ -1009,9 +1042,11 @@ const AddStaffScreen: React.FC = (props: any) => {
     }
 
     try {
+      // call register from AuthService
       const result = await authRegister(payload);
+      // result contains { token, user } per interface
       const createdUser = result?.user ?? null;
-      const createdId = (createdUser && typeof createdUser === 'object' && '_id' in createdUser) ? createdUser._id : null;
+      const createdId = createdUser.id ?? null;
 
       // call onSave callback without password
       if (onSave) {
@@ -1022,6 +1057,8 @@ const AddStaffScreen: React.FC = (props: any) => {
           console.warn("onSave callback error", e);
         }
       }
+
+      // Immediately restore previous admin token BEFORE fetching user profile and posting schedules
       try {
         if (prevToken) {
           await AsyncStorage.setItem("userToken", prevToken);
@@ -1044,7 +1081,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       if (createdId) {
         try {
           const fresh = await getUserById(String(createdId));
-          console.log("✅ Created user fetched from DB:", fresh);
+          console.log("Created user fetched from DB:", fresh);
         } catch (fetchErr) {
           console.warn(
             "Failed to fetch created user after register:",
@@ -1083,6 +1120,57 @@ const AddStaffScreen: React.FC = (props: any) => {
       } catch (outerErr) {
         console.warn("Error while preparing schedules:", outerErr);
       }
+      // --- after your schedule POST (inside try that created the user) ---
+      try {
+        // prepare friendly notification body
+        const employeeId = String(createdId);
+        const scheduleArrayForNotif: SchedulePayload[] = buildScheduleArray() || [];
+
+        const formatDateReadable = (ymd: string) => {
+          if (!ymd) return "";
+          const [y, m, d] = String(ymd).split("-").map((v) => Number(v));
+          if (!y || !m || !d) return ymd;
+          const dt = new Date(y, m - 1, d);
+          return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+        };
+
+        const composeBody = () => {
+          let body = `Welcome ${fullName ?? "Member"} - Your account has been created.`;
+          if (scheduleArrayForNotif.length > 0) {
+            // give a short, readable summary of schedules
+            const lines = scheduleArrayForNotif.map((s) => {
+              const dateReadable = formatDateReadable(s.date);
+              const start = s.start_time || "";
+              const end = s.end_time || "";
+              return `${s.day_of_week} (${dateReadable}), Time: ${start} - ${end}`;
+            });
+            body += `\nYour shifts this week: ` + lines.slice(0, 10).join("\n"); // cap lines to 10 for safety
+          }
+          return body;
+        };
+
+        const notifPayload = {
+          title: scheduleArrayForNotif.length > 0 ? "Welcome - New Shift Assigned" : "Welcome to the team",
+          body: composeBody(),
+          type: "staff_created",
+          meta: {
+            createdBy: userId ?? null,
+            branchId: branchIdToUse ?? null,
+            schedulesCount: scheduleArrayForNotif.length,
+            schedulesPreview: scheduleArrayForNotif.slice(0, 10), // small payload
+          },
+        };
+
+        try {
+          await sendNotificationToUser(employeeId, notifPayload);
+          console.log("[notif] welcome notification written for", employeeId);
+        } catch (e) {
+          // do not block success path
+          console.warn("[notif] failed to write welcome notification for", employeeId, e);
+        }
+      } catch (e) {
+        console.warn("[notif] unexpected error preparing/sending welcome notification:", e);
+      }
 
       showSuccessToast(
         lang?.staff_created_success ?? "Staff created successfully"
@@ -1110,6 +1198,8 @@ const AddStaffScreen: React.FC = (props: any) => {
 
       showErrorToast(String(message));
     } finally {
+      // restore previous admin token and userId (if any) to avoid switching session
+      // NOTE: we already attempted restore above; keep this as a safety net.
       try {
         if (prevToken) {
           axiosInstance.defaults.headers[
@@ -1738,7 +1828,6 @@ const AddStaffScreen: React.FC = (props: any) => {
               backgroundColor={colors.secondary}
               width={"45%"}
             />
-            {/* <Button1 text={lang.save} onPress={() => { if (validateStep2()) setConfirmPopupVisible(true); }} backgroundColor={colors.primary} width={"45%"} /> */}
             <Button1
               text={lang.save}
               onPress={onSavePress}
@@ -1781,16 +1870,10 @@ const AddStaffScreen: React.FC = (props: any) => {
                 >
                   <InputBox
                     label={lang.branch}
-                    placeholder=""
+                    placeholder={""}
                     value={selectedBranch}
                     editable={false}
-                    setValue={() => {
-                      // Assuming you have `selectedBranchObj` in scope
-                      const branch = selectedBranchObj;
-                      if (!branch) return;
-                      setSelectedBranch(branch.name ?? String(branch._id ?? branch.id ?? ""));
-                      setSelectedBranchId(branch._id ?? branch.id ?? null);
-                    }}
+                    setValue={() => { }}
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}
                   />
@@ -1850,6 +1933,7 @@ const AddStaffScreen: React.FC = (props: any) => {
   );
 };
 export default AddStaffScreen;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
   content: { paddingHorizontal: 20, paddingBottom: 80 },
@@ -1906,7 +1990,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     fontFamily: fonts.family.regular,
     color: colors.search,
     minHeight: 14,
@@ -1947,7 +2031,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     textAlign: "center",
     marginBottom: 19,
     lineHeight: 22,
@@ -1964,81 +2048,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontFamily: fonts.family.regular,
   },
-  scheduleRow: {
-    flexDirection: "row",
-  },
-  dayCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: colors.secondary,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-    marginRight: 10,
-    marginBottom: 20,
-  },
-  addBox: {
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: colors.secondary,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "80%",
-  },
-
-  dayText: {
-    fontFamily: fonts.family.regular,
-    color: colors.primary,
-    fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular,
-    textAlign: "center",
-  },
-
-  addButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addIcon: {
-    width: 24,
-    height: 24,
-  },
-  modalOverlayAbsolute: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  overlayContainer: {
-    position: "absolute",
-    backgroundColor: colors.secondary,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-    // shadow
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  suggestionItemInline: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  suggestionText: { color: colors.text, fontSize: fonts.size.m },
   each_day: {
     flexDirection: "row",
     width: "100%",
@@ -2071,20 +2080,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   plus: { width: 16, height: 16 },
-  branch_name: {
-    fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular,
-    color: colors.primary,
-  },
   time_text: {
     fontSize: fonts.size.s,
     fontWeight: fonts.weight.regular,
     color: colors.primary,
-  },
-  branch: {
-    width: 16,
-    height: 16,
-    marginRight: 4,
   },
   clock: { width: 14, height: 14, marginRight: 4 },
 });

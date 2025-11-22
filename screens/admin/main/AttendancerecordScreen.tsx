@@ -164,8 +164,8 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
 
   const [query, setQuery] = useState<string>("");
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+const [loading, setLoading] = useState(true);       // initial load
+const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
 
   const defaultToday = (() => {
@@ -173,9 +173,8 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
     d.setHours(0, 0, 0, 0);
     return d;
   })();
-  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${
-    MONTHS[defaultToday.getMonth()]
-  } ${defaultToday.getDate()}`;
+  const WEEKDAY_FMT = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]
+    } ${defaultToday.getDate()}`;
   const [dateInput, setDateInput] = useState<string>(WEEKDAY_FMT);
   const [dateError, setDateError] = useState<string>("");
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(
@@ -386,7 +385,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
 
   // onRefresh
   const onRefresh = async () => {
-    setRefreshing(true);
+    setRefreshing(false);
     await fetchAttendanceReport();
     setRefreshing(false);
   };
@@ -401,7 +400,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
       const checkOutRaw =
         r.actualOut && r.actualOut !== "" ? r.actualOut : null;
       const scheduledStart = r.scheduledStart ?? "";
-      const scheduledEnd = r.scheduledEnd  ?? "";
+      const scheduledEnd = r.scheduledEnd ?? "";
       const startStatus =
         r.startStatus;
       const endStatus = r.endStatus;
@@ -418,32 +417,89 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
         ? formatTimeFromAny(scheduledEnd)
         : "";
       const displayCheckIn = checkInTime ? formatTimeFromAny(checkInTime) : "";
-      const displayCheckOut = checkOutTime
-        ? formatTimeFromAny(checkOutTime)
-        : "";
 
-      // duration actualOut - actualIn (minutes)
+          // duration actualOut - actualIn (minutes)
       let durationMins: number | null = null;
-      const inDt = checkInRaw ? new Date(checkInRaw) : null;
-      const outDt = checkOutRaw ? new Date(checkOutRaw) : null;
-      if (inDt && !isNaN(inDt.getTime()) && outDt && !isNaN(outDt.getTime())) {
+
+      // Parse incoming raw values; if they are full date strings we normalize to ignore seconds.
+      const parseDateIgnoreSeconds = (v?: string | null) => {
+        if (!v) return null;
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return null;
+        // create new Date with seconds/milliseconds zeroed so seconds won't affect calculations
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), 0, 0);
+      };
+
+      const inDt = parseDateIgnoreSeconds(checkInRaw);
+      const outDt = parseDateIgnoreSeconds(checkOutRaw);
+
+      // Will hold a Date used for display when actualOut is missing (uses "now")
+      let checkOutUsedForCalc: Date | null = outDt;
+
+      if (inDt && outDt) {
+        // both are full date-times -> simple difference (seconds ignored because we zeroed them)
         durationMins = Math.max(
           0,
           Math.round((outDt.getTime() - inDt.getTime()) / 60000)
         );
       } else {
+        // try time-only parsing (HH:MM or HH:MM:SS) — timeToMinutesAny already ignores seconds
         const inMinutes = timeToMinutesAny(checkInRaw);
         const outMinutes = timeToMinutesAny(checkOutRaw);
+
         if (inMinutes !== null && outMinutes !== null) {
+          // both are time-only strings -> difference in minutes (seconds ignored)
           durationMins = Math.max(0, outMinutes - inMinutes);
+        } else if (inDt) {
+          // check-in is full date but check-out missing/unparsable -> use current time
+          const now = new Date();
+          // zero seconds for consistency
+          const nowRounded = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            now.getHours(),
+            now.getMinutes(),
+            0,
+            0
+          );
+          checkOutUsedForCalc = nowRounded;
+          durationMins = Math.max(
+            0,
+            Math.round((nowRounded.getTime() - inDt.getTime()) / 60000)
+          );
+        } else if (inMinutes !== null) {
+          // check-in is time-only and check-out missing -> use current time-of-day (ignore seconds)
+          const now = new Date();
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          durationMins = Math.max(0, nowMinutes - inMinutes);
+          // create a pseudo Date for display (seconds=0)
+          checkOutUsedForCalc = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            now.getHours(),
+            now.getMinutes(),
+            0,
+            0
+          );
+        } else {
+          durationMins = null; // cannot compute
         }
       }
 
-      // compute diffVsScheduleText as duration
+      // compute diffVsScheduleText as duration (format "HHh MMm")
       let diffVsScheduleText = "";
       if (durationMins !== null && durationMins > 0) {
         diffVsScheduleText = minutesToDurationText(durationMins);
       }
+
+      // display check-out: use actualOut if present, otherwise the computed "now" pseudo-checkout
+      const displayCheckOut = checkOutRaw
+        ? formatTimeFromAny(checkOutRaw)
+        : checkOutUsedForCalc
+        ? formatTimeFromAny(checkOutUsedForCalc.toISOString())
+        : "";
 
       // status normalized (start status)
       let status = "no-schedule";
@@ -473,10 +529,10 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
         id:
           r.employeeId ??
           Math.random().toString(36).slice(2),
-        name: r.fullname ?? r.username  ?? "Unknown",
+        name: r.fullname ?? r.username ?? "Unknown",
         username: r.username ?? "",
-        branchId: r.branchId ??"",
-        branchName: r.branchName  ?? "",
+        branchId: r.branchId ?? "",
+        branchName: r.branchName ?? "",
         date: dateYmd,
         scheduledStart,
         scheduledEnd,
@@ -583,14 +639,12 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
         const s = getStartOfWeekSunday(selectedDate);
         const e = getEndOfWeekSaturday(selectedDate);
         setDateInput(
-          `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
-            WEEKDAYS[e.getDay()]
+          `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]
           }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
         );
       } else {
         setDateInput(
-          `${
-            FULL_MONTHS[selectedDate.getMonth()]
+          `${FULL_MONTHS[selectedDate.getMonth()]
           } ${selectedDate.getFullYear()}`
         );
       }
@@ -603,8 +657,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
     today.setHours(0, 0, 0, 0);
     setSelectedDateObj(today);
     setDateInput(
-      `${WEEKDAYS[today.getDay()]}, ${
-        MONTHS[today.getMonth()]
+      `${WEEKDAYS[today.getDay()]}, ${MONTHS[today.getMonth()]
       } ${today.getDate()}`
     );
   };
@@ -614,8 +667,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
     const s = getStartOfWeekSunday(dt);
     const e = getEndOfWeekSaturday(dt);
     setDateInput(
-      `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${
-        WEEKDAYS[e.getDay()]
+      `${WEEKDAYS[s.getDay()]}, ${MONTHS[s.getMonth()]} ${s.getDate()} - ${WEEKDAYS[e.getDay()]
       }, ${MONTHS[e.getMonth()]} ${e.getDate()}`
     );
   };
@@ -653,10 +705,10 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
           item.status === "late"
             ? "Late"
             : item.status === "early"
-            ? "Early"
-            : item.status === "on_time"
-            ? "On Time"
-            : "",
+              ? "Early"
+              : item.status === "on_time"
+                ? "On Time"
+                : "",
         Difference: item.diffVsScheduleText || "",
       }));
 
@@ -783,15 +835,15 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
                 mode === "day"
                   ? lang.date_label
                   : mode === "week"
-                  ? "Week"
-                  : "Month"
+                    ? "Week"
+                    : "Month"
               }
               placeholder={
                 mode === "day"
                   ? "Thu, Aug 18"
                   : mode === "week"
-                  ? "Sun, Oct 12 - Sat, Oct 18"
-                  : "October 2025"
+                    ? "Sun, Oct 12 - Sat, Oct 18"
+                    : "October 2025"
               }
               value={dateInput}
               setValue={setDateInput}
@@ -829,9 +881,6 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
               {loading ? (
                 <View style={{ alignItems: "center", marginTop: 20 }}>
                   <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={{ marginTop: 12, color: colors.text }}>
-                    Loading attendance records...
-                  </Text>
                 </View>
               ) : !Array.isArray(displayedRecords) ||
                 displayedRecords.length === 0 ? (
@@ -839,8 +888,8 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
                   {mode === "day"
                     ? "No records found for selected day"
                     : mode === "week"
-                    ? "No records for selected week"
-                    : "No records for selected month"}
+                      ? "No records for selected week"
+                      : "No records for selected month"}
                 </Text>
               ) : (
                 displayedRecords.map((r, index) => {
@@ -858,9 +907,9 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
                         <View style={{ flex: 1 }}>
                           {/* 🔹 Branch name row */}
                           {r.branchName &&
-                          currentBranchId &&
-                          r.branchId &&
-                          r.branchId !== currentBranchId ? (
+                            currentBranchId &&
+                            r.branchId &&
+                            r.branchId !== currentBranchId ? (
                             <View style={styles.branchRow}>
                               <Image
                                 source={require("../../../assets/icons/branch.png")}
@@ -907,9 +956,8 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
 
                               <Text style={styles.time}>
                                 {r.date
-                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${
-                                      MONTHS[new Date(r.date).getMonth()]
-                                    } ${new Date(r.date).getDate()}`
+                                  ? `${WEEKDAYS[new Date(r.date).getDay()]}, ${MONTHS[new Date(r.date).getMonth()]
+                                  } ${new Date(r.date).getDate()}`
                                   : ""}
                               </Text>
                             </View>
@@ -928,19 +976,19 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
                               r.status === "late"
                                 ? styles.status_late
                                 : r.status === "early"
-                                ? styles.status_early
-                                : r.status === "on_time"
-                                ? styles.status_on_time
-                                : { display: "none" }
+                                  ? styles.status_early
+                                  : r.status === "on_time"
+                                    ? styles.status_on_time
+                                    : { display: "none" }
                             }
                           >
                             {r.status === "late"
                               ? "Late"
                               : r.status === "early"
-                              ? "Early"
-                              : r.status === "on_time"
-                              ? "On Time"
-                              : ""}
+                                ? "Early"
+                                : r.status === "on_time"
+                                  ? "On Time"
+                                  : ""}
                           </Text>
 
                           {r.diffVsScheduleText ? (
@@ -958,7 +1006,6 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
           </ScrollView>
         </View>
       </View>
-
       {showDatePicker && (
         <DateTimePicker
           value={selectedDateObj ?? new Date()}
@@ -967,7 +1014,6 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
           onChange={onNativeDateChange}
         />
       )}
-
       <Toast config={toastConfig} />
     </View>
   );
@@ -1064,7 +1110,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_noschedule: {
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
     fontSize: fonts.size.xs,
     paddingVertical: 2,

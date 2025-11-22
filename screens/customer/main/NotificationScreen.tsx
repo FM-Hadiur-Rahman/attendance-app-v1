@@ -33,7 +33,6 @@ import { sendNotificationToUser } from "../../../api/notification/firebaseNotifi
 
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
-import { Button1 } from "../../../components/Button";
 
 interface NotificationItem {
   n_id: string;
@@ -216,22 +215,6 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
     }
   };
 
-  //------------Remove this section once everything ok (test notification)------------//
-  // debug helper: write test doc to Firestore and trigger local alert
-  const sendTestNotificationToSelf = async () => {
-    try {
-      if (!effectiveUserId) return;
-      const title = "Test Notification";
-      const body = `Test notif for ${effectiveUserId} at ${new Date().toLocaleString()}`;
-      await sendNotificationToUser(effectiveUserId, { title, body, type: "test" });
-      // Also fire local alert so sound plays now (useful for debug while in-app)
-      playNotificationLocal(title, body);
-    } catch (e) {
-      console.warn("[notif-screen] test send failed", e);
-    }
-  };
-  //-----------------------------------------------------------//
-
   // Format relative time with negative-diff clamped to 0 minutes
   const formatTime = (time: string) => {
     const now = new Date();
@@ -329,17 +312,6 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
           />
         )}
       </View>
-
-      {/* Remove this button once everything ok */}
-      <View style={{ padding: 16 }}>
-        <Button1
-          width={'100%'}
-          text="Send Test Notification"
-          onPress={sendTestNotificationToSelf}>
-        </Button1>
-      </View>
-      {/* //---------------------------// */}
-
     </View>
   );
 };
