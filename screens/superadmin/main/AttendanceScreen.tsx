@@ -212,11 +212,12 @@ const AttendanceScreen: React.FC = (props: any) => {
       attendance: AttendanceHistoryItem;
       userProfile: any | null;
       schedule?: ScheduleItem | null;
-      status: "early" | "late" | "noschedule" | "not_checked_in";
+      status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in";
       diffText: string;
       branchNameToShow?: string | null;
     }>
   >([]);
+
 
   const [loadingAttendance, setLoadingAttendance] = useState<boolean>(false);
 
@@ -411,7 +412,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         if (sYMD !== targetYmdForDay) return;
       }
 
-      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null
         ? (s.employee_id as any)._id || s.employee_id
         : s.employee_id ?? null;
       if (empId) uniqueEmpIds.add(String(empId));
@@ -425,7 +426,7 @@ const AttendanceScreen: React.FC = (props: any) => {
   const totalScheduledEmployees = useMemo(() => {
     const uniqueEmpIds = new Set<string>();
     schedulesState.forEach((s) => {
-      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null
         ? (s.employee_id as any)._id || s.employee_id
         : s.employee_id ?? null;
       if (empId) uniqueEmpIds.add(String(empId));
@@ -536,7 +537,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         attendance: AttendanceHistoryItem;
         userProfile: any | null;
         schedule?: ScheduleItem | null;
-        status: "early" | "late" | "noschedule" | "not_checked_in";
+        status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in";
         diffText: string;
         branchNameToShow?: string | null;
       }> = await Promise.all(filtered.map(async (att) => {
@@ -560,7 +561,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         }) ?? null;
 
         // compute status & diffText
-        let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
+        let status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in" = "noschedule";
         let diffText = "00h 00m";
 
         try {
@@ -593,15 +594,25 @@ const AttendanceScreen: React.FC = (props: any) => {
             if (schedule && schedule.start_time) {
               const schedMin = hhmmToMinutes(schedule.start_time);
               const inMin = datetimeToMinutes(att.In || String(inDT));
-              if (isNaN(schedMin) || isNaN(inMin)) {
+
+              if (Number.isNaN(schedMin) || Number.isNaN(inMin)) {
+                // fallback if we can't parse numbers
                 status = "early";
               } else {
-                const startDiff = inMin - schedMin;
-                status = startDiff > 0 ? "late" : "early";
+                const startDiff = inMin - schedMin; // positive => checked in after schedule start
+                if (startDiff > 0) {
+                  status = "late";
+                } else if (startDiff === 0) {
+                  // exactly same minute -> on time
+                  status = "ontime";
+                } else {
+                  status = "early";
+                }
               }
             } else {
               status = "noschedule";
             }
+
           }
         } catch (err) {
           status = "noschedule";
@@ -665,130 +676,68 @@ const AttendanceScreen: React.FC = (props: any) => {
     return () => { mounted = false; };
   }, [activeBranchId, passedBranchName]);
 
-  // useEffect(() => {
-  //   if (!activeBranchId || !rangeStartEnd) return;
-
-  //   // build array of target ymd strings depending on rangeStartEnd
-  //   let targetDates: string[] = [];
-  //   if (selectedRange?.type === "day") {
-  //     targetDates = [rangeStartEnd.startDate]; // single day
-  //   } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
-  //     targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-  //   } else {
-  //     const todayYMDLocal = toYMD(new Date());
-  //     targetDates = [todayYMDLocal];
-  //   }
-
-  //   let cancelled = false;
-  //   (async () => {
-  //     try {
-  //       setLoadingData(true);
-  //       setRefreshing(true);
-
-  //       // 1) fetch schedules & users and get them back
-  //       const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
-  //       if (cancelled) return;
-
-  //       // 2) enrich attendance with the freshly fetched schedules & users
-  //       await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
-  //     } catch (err) {
-  //       console.warn("fetch data error", err);
-  //     } finally {
-  //       if (!cancelled) {
-  //         setLoadingData(false);
-  //         setRefreshing(false);
-  //       }
-  //     }
-  //   })();
-
-  //   return () => { cancelled = true; };
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [activeBranchId, rangeStartEnd, version]);
-
   useEffect(() => {
-  if (!activeBranchId || !rangeStartEnd) return;
+    if (!activeBranchId || !rangeStartEnd) return;
 
-  // build array of target ymd strings depending on rangeStartEnd
-  let targetDates: string[] = [];
-  if (selectedRange?.type === "day") {
-    targetDates = [rangeStartEnd.startDate]; // single day
-  } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
-    targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-  } else {
-    const todayYMDLocal = toYMD(new Date());
-    targetDates = [todayYMDLocal];
-  }
-
-  let cancelled = false;
-  (async () => {
-    try {
-      setLoadingData(true);
-
-      // 1) fetch schedules & users and get them back
-      const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
-      if (cancelled) return;
-
-      // 2) enrich attendance with the freshly fetched schedules & users
-      await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
-    } catch (err) {
-      console.warn("fetch data error", err);
-    } finally {
-      if (!cancelled) {
-        setLoadingData(false);
-      }
+    // build array of target ymd strings depending on rangeStartEnd
+    let targetDates: string[] = [];
+    if (selectedRange?.type === "day") {
+      targetDates = [rangeStartEnd.startDate]; // single day
+    } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
+      targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
+    } else {
+      const todayYMDLocal = toYMD(new Date());
+      targetDates = [todayYMDLocal];
     }
-  })();
 
-  return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeBranchId, rangeStartEnd, version]);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingData(true);
 
+        // 1) fetch schedules & users and get them back
+        const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
+        if (cancelled) return;
 
-  // const onRefresh = async () => {
-  //   setRefreshing(true);
-  //   await new Promise((r) => setTimeout(r, 400));
-  //   setQuery("");
-  //   setDateError("");
-  //   setSelectedDateObj(defaultToday);
-  //   if (mode === "day") {
-  //     setDateInput(defaultDateDisplay);
-  //   } else if (mode === "week") {
-  //     setDateInput(formatWeekDisplayFromDate(defaultToday));
-  //   } else {
-  //     setDateInput(formatMonthDisplayFromDate(defaultToday));
-  //   }
-  //   prevDateRef.current = "";
-  //   setVersion((v) => v + 1);
-  //   setRefreshing(false);
-  // };
+        // 2) enrich attendance with the freshly fetched schedules & users
+        await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
+      } catch (err) {
+        console.warn("fetch data error", err);
+      } finally {
+        if (!cancelled) {
+          setLoadingData(false);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId, rangeStartEnd, version]);
 
   const onRefresh = async () => {
-  if (!activeBranchId || !rangeStartEnd) {
-    return;
-  }
+    if (!activeBranchId || !rangeStartEnd) {
+      return;
+    }
 
-  // build array of target ymd strings depending on rangeStartEnd
-  let targetDates: string[] = [];
-  if (selectedRange?.type === "day") {
-    targetDates = [rangeStartEnd.startDate];
-  } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
-    targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
-  } else {
-    targetDates = [toYMD(new Date())];
-  }
-
-  try {
-    setLoadingData(true);
-
-    const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
-    await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
-  } catch (err) {
-    console.warn("refresh error", err);
-  } finally {
-    setLoadingData(false);
-  }
-};
-
+    // build array of target ymd strings depending on rangeStartEnd
+    let targetDates: string[] = [];
+    if (selectedRange?.type === "day") {
+      targetDates = [rangeStartEnd.startDate];
+    } else if (selectedRange?.type === "week" || selectedRange?.type === "month") {
+      targetDates = ymdRangeToArray(rangeStartEnd.startDate, rangeStartEnd.endDate);
+    } else {
+      targetDates = [toYMD(new Date())];
+    }
+    try {
+      setLoadingData(true);
+      const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
+      await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
+    } catch (err) {
+      console.warn("refresh error", err);
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   // REPLACE your existing onGenerateCSV with this
   const onGenerateCSV = async () => {
@@ -797,7 +746,6 @@ const AttendanceScreen: React.FC = (props: any) => {
       showErrorToast(lang.please_select_valid_date || 'Select a valid date');
       return;
     }
-
     try {
       // Use scheduleEntries (not recentCheckins) so we include everyone scheduled (including no In)
       // scheduleEntries items: { schedule, userProfile, attendance, status, diffText, branchNameToShow, dateYmd, empId }
@@ -830,6 +778,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         else if (it.status === "noschedule") statusStr = "No schedule";
         else if (it.status === "early") statusStr = "Early";
         else if (it.status === "late") statusStr = "Late";
+        else if (it.status === "ontime") statusStr = (lang.on_time || "On Time");
         else statusStr = String(it.status || "");
 
         // Check-in/out values — attendance shape uses In/Out fields (from all-history)
@@ -890,7 +839,6 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
-
   // Build schedule-based entries (show schedules even if no attendance In)
   const scheduleEntries = useMemo(() => {
     if (!Array.isArray(schedulesState) || !activeBranchId || !rangeStartEnd) return [];
@@ -948,7 +896,7 @@ const AttendanceScreen: React.FC = (props: any) => {
       if (String(schedBranchId) !== String(activeBranchId)) return;
 
       // employee id can be object or string
-      const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
+      const empId = typeof s.employee_id === 'object' && s.employee_id !== null
         ? (s.employee_id as any)._id || s.employee_id
         : s.employee_id ?? null;
       // find optional attendance matching this schedule
@@ -999,7 +947,6 @@ const AttendanceScreen: React.FC = (props: any) => {
 
     return out;
   }, [schedulesState, recentCheckins, usersState, activeBranchId, rangeStartEnd]);
-
 
   const filteredScheduleEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1235,16 +1182,23 @@ const AttendanceScreen: React.FC = (props: any) => {
                     </Text>
                   ) : null}
 
-                  {!loadingData && filteredScheduleEntries.map(({ schedule, userProfile, attendance, status, diffText, branchNameToShow, dateYmd }) => {
+                  {!loadingData && filteredScheduleEntries.map(({ schedule, userProfile, attendance, status, diffText, branchNameToShow, dateYmd }, idx) => {
                     const displayName = userProfile?.fullname ?? userProfile?.username ?? schedule?.employee_id?.username ?? 'Unknown';
                     const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
                     const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
                     const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
                     const dateDisplay = formatYMDDisplay(dateYmd || toYMD(new Date()));
 
-                    // If attendance provided, attendance may be object with In/Out; else leave blank
                     const att = attendance || {};
-                    const key = att?.id ?? `${displayName}_${dateYmd}`;
+                    // prefer attendance id -> prefer user id -> prefer schedule.employee_id -> fallback to displayName + date + index
+                    const idPart =
+                      att?.id ??
+                      userProfile?._id ??
+                      schedule?.employee_id?._id ??
+                      schedule?.employee_id ??
+                      displayName;
+
+                    const key = `${String(idPart)}_${String(dateYmd)}_${idx}`;
 
                     return (
                       <CartBox key={key} containerStyle={styles.detail_cartbox}>
@@ -1270,11 +1224,17 @@ const AttendanceScreen: React.FC = (props: any) => {
 
                           <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
                             {status === "late" ? (
-                              <Text style={styles.status_late} ellipsizeMode="tail" numberOfLines={1}>{lang.late}</Text>
-                            ) : status === "early" ? (
-                              <Text style={styles.status_early} ellipsizeMode="tail" numberOfLines={1}>{lang.early}</Text>
+                              <Text style={styles.status_late} ellipsizeMode="tail" numberOfLines={1}>
+                                {lang.late}
+                              </Text>
+                            ) : status === "early" || status === "ontime" ? (
+                              <Text style={styles.status_early} ellipsizeMode="tail" numberOfLines={1}>
+                                {status === "ontime" ? (lang.on_time || "On Time") : lang.early}
+                              </Text>
                             ) : (
-                              <Text style={styles.status_noschedule} ellipsizeMode="tail" numberOfLines={1}>{lang.Havent_checked_in}</Text>
+                              <Text style={styles.status_noschedule} ellipsizeMode="tail" numberOfLines={1}>
+                                {lang.Havent_checked_in}
+                              </Text>
                             )}
                             <Text style={styles.duration} ellipsizeMode="tail" numberOfLines={1}>{diffText}</Text>
                           </View>
@@ -1332,7 +1292,7 @@ const styles = StyleSheet.create({
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6, width: 150 },
   duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8, width: 50 },
   status_early: {
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.status_early,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -1354,7 +1314,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   status_noschedule: {
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
     fontSize: fonts.size.xs,
     paddingVertical: 2,
@@ -1381,7 +1341,7 @@ const styles = StyleSheet.create({
   },
   branchName: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
   },
   icon: {
     width: 30,
@@ -1400,13 +1360,13 @@ const styles = StyleSheet.create({
     width: "75%"
   },
   total_count: {
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.xxl,
     color: colors.primary,
     marginTop: 8,
   },
   shift_count: {
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.xxl,
     color: colors.text,
     marginTop: 8,
