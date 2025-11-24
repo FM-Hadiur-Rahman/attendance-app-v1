@@ -295,19 +295,17 @@ export default function ProfileScreen(props: any) {
                       setLanguageModalVisible(true);
                       return;
                     }
-
                     const payload = {
                       id: userId,
                       langId: selectedLanguage,
                       branchId: branchId,
+                      email: user?.email,
                     };
-
                     if (item.screen) {
                       console.log(`ProfileScreen: navigating -> ${item.screen}`, payload);
                       navigation.navigate(item.screen, payload);
                       return;
                     }
-
                     console.log("ProfileScreen: item pressed (no screen):", item.label, payload);
                   }}
 

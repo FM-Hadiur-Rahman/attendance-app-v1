@@ -350,6 +350,7 @@ export default function MoreScreen(props: any) {
                         userId: userId,
                         branchId: branchId,
                         langId: selectedLanguage, // pass langId
+                        email:user?.email
                       });
                     } else {
                       console.log(item.label);
