@@ -15,7 +15,7 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
 
 // API helpers
 import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
@@ -134,7 +134,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       attendance: AttendanceHistoryItem;
       userProfile: any | null;
       schedule?: ScheduleItem | null;
-      status: "early" | "late" | "noschedule";
+      status: "early" | "late" | "ontime" | "noschedule";
       diffText: string;
       branchNameToShow?: string | null;
     }>
@@ -314,7 +314,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           }) ?? null;
 
           // compute status (early/late/noschedule) same as before (based on schedule start_time)
-          let status: "early" | "late" | "noschedule" | "not_checked_in" = "noschedule";
+          let status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in" = "noschedule";
           let diffText = "";
 
           try {
@@ -333,13 +333,21 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
             // status still uses schedule start_time vs "In" time (minutes from midnight)
             if (schedule && schedule.start_time && att.In) {
-              const schedMin = hhmmToMinutes(schedule.start_time);
-              const inMin = datetimeToMinutes(att.In);
-              const startDiff = inMin - schedMin;
-              if (startDiff > 0) {
-                status = "late";
+              const schedMin = hhmmToMinutes(schedule.start_time);      // hh:mm -> minutes
+              const inMin = datetimeToMinutes(att.In);                  // "YYYY-MM-DD HH:MM:SS" -> minutes (ignores seconds)
+              if (Number.isNaN(schedMin) || Number.isNaN(inMin)) {
+                // If parsing fails, keep noschedule as a safe fallback
+                status = "noschedule";
               } else {
-                status = "early";
+                const startDiff = inMin - schedMin; // positive => checked in after schedule start
+                if (startDiff > 0) {
+                  status = "late";
+                } else if (startDiff === 0) {
+                  // exactly same minute -> on time
+                  status = "ontime";
+                } else {
+                  status = "early";
+                }
               }
             } else {
               status = "noschedule";
@@ -402,6 +410,26 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       setRecentCheckins([]);
     }
   };
+  const isFocused = useIsFocused();
+
+  useEffect(() => {
+    if (!activeBranchId || !isFocused) return;
+
+    // immediate refresh when screen becomes focused
+    fetchShiftData(activeBranchId);
+    fetchAttendanceAndEnrich(activeBranchId);
+
+    // poll attendance only (keeps UI live while screen open)
+    const pollMs = 60 * 1000; // 60s - adjust as needed
+    const interval = setInterval(() => {
+      fetchAttendanceAndEnrich(activeBranchId);
+    }, pollMs);
+
+    return () => {
+      clearInterval(interval);
+    };
+    // note: we intentionally watch isFocused so polling starts/stops with screen focus
+  }, [activeBranchId, isFocused, version]);
 
   // initial & deps
   useEffect(() => {
@@ -567,11 +595,14 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                         <View style={styles.statusInline}>
                           {status === "late" ? (
                             <Text style={styles.status_late} numberOfLines={1} ellipsizeMode="tail">{lang.late}</Text>
-                          ) : status === "early" ? (
-                            <Text style={styles.status_early} numberOfLines={1} ellipsizeMode="tail">{lang.early}</Text>
+                          ) : status === "early" || status === "ontime" ? (
+                            <Text style={styles.status_early} numberOfLines={1} ellipsizeMode="tail">
+                              {status === "ontime" ? (lang.on_time) : lang.early}
+                            </Text>
                           ) : (
                             <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
                           )}
+
                           {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
                         </View>
                       </View>
