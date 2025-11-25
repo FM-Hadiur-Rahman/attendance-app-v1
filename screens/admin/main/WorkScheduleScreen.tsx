@@ -604,7 +604,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                           style={styles.branchIcon}
                           resizeMode="contain"
                         />
-                        <Text style={styles.branchName}>{scheduleBranchName}</Text>
+                        <Text style={styles.branchName} ellipsizeMode="tail" numberOfLines={1}>{scheduleBranchName}</Text>
                       </View>
                     )}
 
@@ -756,17 +756,16 @@ const styles = StyleSheet.create({
   branchHeader: {
     flexDirection: "row",
     marginBottom: 10,
-    alignSelf: 'flex-start'
-
+    alignSelf: 'flex-start',
+    alignItems: "center",
+    width: '90%'
   },
-
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 6,
-
+    alignSelf: "center"
   },
-
   branchName: {
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular,

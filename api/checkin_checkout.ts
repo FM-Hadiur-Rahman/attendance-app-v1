@@ -74,7 +74,7 @@ export const startAttendance = async (payload: LocationPayload) => {
     const response = await axiosInstance.post("/attendance/start", payload);
     return response.data;
   } catch (error: any) {
-    console.error("❌ Check-in API error:", error.response?.data || error.message);
+    //console.error("❌ Check-in API error:", error.response?.data || error.message);
     throw error;
   }
 };
@@ -84,7 +84,7 @@ export const endAttendance = async (payload: LocationPayload) => {
     const response = await axiosInstance.post("/attendance/end", payload);
     return response.data;
   } catch (error: any) {
-    console.error("❌ Check-out API error:", error.response?.data || error.message);
+    //console.error("❌ Check-out API error:", error.response?.data || error.message);
     throw error;
   }
 };
@@ -129,7 +129,7 @@ export const getTodaySchedule = async (opts: { userId?: string; branchId?: strin
     }
     return { schedules: allSchedules, todaySchedule: null };
   } catch (err: any) {
-    console.error("❌ getTodaySchedule failed:", err.response?.data ?? err.message);
+    //console.error("❌ getTodaySchedule failed:", err.response?.data ?? err.message);
     return { schedules: allSchedules, todaySchedule: null };
   }
 };
@@ -160,7 +160,7 @@ export const getBranchDetails = async (branchId: string) => {
       location: branch.location || null, // ✅ include location here
     };
   } catch (error: any) {
-    console.error("❌ Error fetching branch details:", error.response?.data || error.message);
+   // console.error("❌ Error fetching branch details:", error.response?.data || error.message);
     return null;
   }
 };
@@ -213,7 +213,7 @@ export const getWeeklySchedules = async (opts: { userId?: string; timezone?: str
       raw: s,
     }));
   } catch (err: any) {
-    console.error("❌ getWeeklySchedules failed:", err.response?.data ?? err.message);
+    //console.error("❌ getWeeklySchedules failed:", err.response?.data ?? err.message);
     return [];
   }
 };
@@ -250,7 +250,7 @@ export const getMonthlySchedules = async (opts: { userId?: string; timezone?: st
     }
     return monthSchedules;
   } catch (err: any) {
-    console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
+    //console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
     return [];
   }
 };
@@ -315,7 +315,7 @@ export const getMonthlySchedules1 = async (
     return monthSchedules;
 
   } catch (err: any) {
-    console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
+    //console.error("❌ getMonthlySchedules failed:", err.response?.data ?? err.message);
     return [];
   }
 };
@@ -354,7 +354,7 @@ export const getSchedules = async (): Promise<ScheduleItem[]> => {
     }
     return [];
   } catch (err: any) {
-    console.error("getSchedules error:", err?.response?.data || err);
+    //console.error("getSchedules error:", err?.response?.data || err);
     throw err?.response?.data || err;
   }
 };
@@ -394,7 +394,7 @@ export const getSchedulesForDate = async (
     console.log(`📅 Found ${filtered.length} schedules for ${dateYMD}`);
     return filtered;
   } catch (err: any) {
-    console.error("❌ getSchedulesForDate failed:", err.response?.data || err.message);
+    //console.error("❌ getSchedulesForDate failed:", err.response?.data || err.message);
     return [];
   }
 };
@@ -417,7 +417,7 @@ export const getAttendanceReport = async (
     console.log("✅ Parsed attendance array length:", data.length);
     return data;
   } catch (error: any) {
-    console.error("❌ Failed to fetch attendance report:", error.response?.data || error.message);
+    //console.error("❌ Failed to fetch attendance report:", error.response?.data || error.message);
     throw error;
   }
 };
@@ -446,7 +446,7 @@ export const getMyAttendanceHistory = async (): Promise<AttendanceRecord[]> => {
     console.warn('⚠️ Attendance API returned success=false or invalid data:', res.data);
     return [];
   } catch (err) {
-    console.error('❌ Error fetching attendance history:', err);
+    //console.error('❌ Error fetching attendance history:', err);
     return [];
   }
 };
@@ -468,7 +468,7 @@ export const getMyAttendanceHistory1 = async (): Promise<any[]> => {
       created_at: fixDate(r.created_at),
     }));
   } catch (err) {
-    console.error('Error fetching attendance history:', err);
+    //console.error('Error fetching attendance history:', err);
     return [];
   }
 };
