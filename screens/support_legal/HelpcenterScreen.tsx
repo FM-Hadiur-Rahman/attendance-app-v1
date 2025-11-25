@@ -27,6 +27,7 @@ type RootStackParamList = {
     userId: string;
     langId: string;
     branchId: string;
+    email:string;
   };
 };
 
@@ -40,12 +41,13 @@ const HelpCenterScreen: React.FC = () => {
   const incomingUserId = route.params.userId ?? undefined;
   const incomingLangId = route.params.langId ?? 'en';
   const incomingBranchId = route.params.branchId ?? undefined;
+  const incomingEmail = route.params.email ?? '';
 
   console.log('HelpCenterScreen -> received params:', {userId: incomingUserId, langId: incomingLangId, branchId: incomingBranchId,});
 
   const lang = translations[(incomingLangId as string) || 'en'] ?? translations['en'];
 
-  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
+  const [formData, setFormData] = useState({ name: '', email: incomingEmail, message: '' });
   const [errors, setErrors] = useState<{ name?: string; email?: string; message?: string }>({});
   const [sending, setSending] = useState(false);
 

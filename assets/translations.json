@@ -337,9 +337,10 @@
     "checkedInAt": "Checked in At",
     "checkedOutAt": "Checked Out At",
     "duration": "Duration",
-      "scheduleNotAdded": "Schedule Not Added",
-      "enterAtLeast": "Enter at least"
-    
+    "scheduleNotAdded": "Schedule Not Added",
+    "enterAtLeast": "Enter at least",
+    "Employee_has_already_checkin": "Employee has already check-in",
+     "on_time":"On Time"
   },
   "de": {
     "profile": "Profil",
@@ -666,10 +667,10 @@
     "staffAssignedToBranch": "Mitarbeiter Ihrer Filiale zugewiesen",
     "schedulesCreatedSuccessfully": "Zeitpläne erfolgreich erstellt",
     "noScheduleToday1": "Heute sind keine Aufgaben oder Schichten geplant.",
-     "editProfile": "Profil bearbeiten",
-       "editPhoneNumber": "Telefonnummer bearbeiten",
-        "editEmail": "E-Mail bearbeiten",
-            "tooFarFromShop": "Sie sind zu weit vom Geschäft entfernt. Ein Check-in ist nicht möglich.",
+    "editProfile": "Profil bearbeiten",
+    "editPhoneNumber": "Telefonnummer bearbeiten",
+    "editEmail": "E-Mail bearbeiten",
+    "tooFarFromShop": "Sie sind zu weit vom Geschäft entfernt. Ein Check-in ist nicht möglich.",
     "checkInWindow": "Sie können sich nur 15 Minuten vor einchecken",
     "cannotCheckOutYet": "Sie können noch nicht auschecken. Bitte warten Sie, bis Ihre Schicht beendet ist.",
     "offDuty": "Außer Dienst",
@@ -677,9 +678,9 @@
     "checkedInAt": "Eingecheckt um",
     "checkedOutAt": "Ausgecheckt um",
     "duration": "Dauer",
-     "scheduleNotAdded": "Dienstplan nicht hinzugefügt",
-       "enterAtLeast": "Geben Sie mindestens ein"
-       
-
+    "scheduleNotAdded": "Dienstplan nicht hinzugefügt",
+    "enterAtLeast": "Geben Sie mindestens ein",
+    "Employee_has_already_checkin": "Der Mitarbeiter hat bereits eingecheckt.",
+    "on_time":"Rechtzeitig"
   }
 }

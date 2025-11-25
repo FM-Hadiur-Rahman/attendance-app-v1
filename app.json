@@ -23,8 +23,7 @@
       },
       "package": "com.yourcompany.timetrack",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.sanjeevan23.attendanceapp"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/icon.png"
