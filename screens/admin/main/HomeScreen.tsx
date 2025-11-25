@@ -642,9 +642,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "flex-start",
   },
-  profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
+  profileImage: { width: 38 * base, height: 38, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "55%", },
-  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text, },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular, },
   status_early: {
     fontWeight: fonts.weight.regular,
@@ -655,6 +655,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
     textAlign: "center",
+    marginRight:8
   },
   status_late: {
     fontWeight: fonts.weight.regular,
@@ -665,6 +666,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_late_bg,
     borderRadius: 8,
     textAlign: "center",
+    marginRight:8
   },
   status_noschedule: {
     fontWeight: fonts.weight.regular,
@@ -673,7 +675,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 12,
     borderRadius: 10,
-    marginRight: 7,
+    marginRight: 8,
     textAlign: "center",
     width: 55 * base,
   },
@@ -727,12 +729,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
-    width: '90%'
+    width: '90%',
   },
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 6,
+    alignSelf: "center",
   },
   branchName: {
     fontSize: fonts.size.m,
@@ -747,22 +750,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     flex: 1,
-    marginLeft: 10,
   },
   statusInline: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    marginLeft: 8,
     marginTop: 2,
     flexShrink: 0,
+    width:'45%',
   },
   duration: {
     color: colors.primary,
     fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
-    marginLeft: 8,
-    width: 64 * base,
+    width: 70,
   },
 });
 

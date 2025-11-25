@@ -340,7 +340,8 @@
     "scheduleNotAdded": "Schedule Not Added",
     "enterAtLeast": "Enter at least",
     "Employee_has_already_checkin": "Employee has already check-in",
-     "on_time":"On Time"
+     "on_time":"On Time",
+     "Absent":"Absent"
   },
   "de": {
     "profile": "Profil",
@@ -681,6 +682,7 @@
     "scheduleNotAdded": "Dienstplan nicht hinzugefügt",
     "enterAtLeast": "Geben Sie mindestens ein",
     "Employee_has_already_checkin": "Der Mitarbeiter hat bereits eingecheckt.",
-    "on_time":"Rechtzeitig"
+    "on_time":"Rechtzeitig",
+    "Absent":"Abwesend"
   }
 }

@@ -41,7 +41,7 @@ export const getBranches = async (params: Record<string, any> = {}) : Promise<Ge
     const response = await axiosInstance.get('/branch', { params });
     return response.data as GetBranchesResponse;
   } catch (err: any) {
-    console.error('getBranches error', err?.response?.data ?? err);
+    //console.error('getBranches error', err?.response?.data ?? err);
     throw err?.response?.data || err;
   }
 };

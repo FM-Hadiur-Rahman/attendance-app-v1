@@ -193,7 +193,6 @@ const AttendanceScreen: React.FC = (props: any) => {
 
   const [version, setVersion] = useState<number>(0);
   const [query, setQuery] = useState<string>("");
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
 
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
@@ -217,9 +216,6 @@ const AttendanceScreen: React.FC = (props: any) => {
       branchNameToShow?: string | null;
     }>
   >([]);
-
-
-  const [loadingAttendance, setLoadingAttendance] = useState<boolean>(false);
 
   const defaultToday = (() => {
     const d = new Date();
@@ -420,20 +416,6 @@ const AttendanceScreen: React.FC = (props: any) => {
 
     return uniqueEmpIds.size;
   }, [schedulesState, activeBranchId, selectedRange, rangeStartEnd, selectedDateObj, mode]);
-
-
-  // Derived: total employees scheduled for the active branch (only role === 'user')
-  const totalScheduledEmployees = useMemo(() => {
-    const uniqueEmpIds = new Set<string>();
-    schedulesState.forEach((s) => {
-      const empId = typeof s.employee_id === 'object' && s.employee_id !== null
-        ? (s.employee_id as any)._id || s.employee_id
-        : s.employee_id ?? null;
-      if (empId) uniqueEmpIds.add(String(empId));
-    });
-
-    return uniqueEmpIds.size;
-  }, [schedulesState, activeBranchId]);
 
   // helper to convert a start/end yyyy-mm-dd into an array of ymd strings
   const ymdRangeToArray = (startYmd: string, endYmd: string) => {
@@ -659,7 +641,6 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
-
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -739,7 +720,6 @@ const AttendanceScreen: React.FC = (props: any) => {
     }
   };
 
-  // REPLACE your existing onGenerateCSV with this
   const onGenerateCSV = async () => {
     if (!rangeStartEnd) {
       setDateError(lang.please_select_valid_date || 'Select a valid date');
@@ -747,8 +727,7 @@ const AttendanceScreen: React.FC = (props: any) => {
       return;
     }
     try {
-      // Use scheduleEntries (not recentCheckins) so we include everyone scheduled (including no In)
-      // scheduleEntries items: { schedule, userProfile, attendance, status, diffText, branchNameToShow, dateYmd, empId }
+
       const dataToExport = scheduleEntries || [];
 
       // Build rows. Always include Branch column (empty if same as activeBranchId)
@@ -774,7 +753,7 @@ const AttendanceScreen: React.FC = (props: any) => {
 
         // Status string
         let statusStr = "";
-        if (it.status === "not_checked_in") statusStr = lang.Havent_checked_in || "Haven't checked in";
+        if (it.status === "not_checked_in") statusStr = lang.Absent || "Absent";
         else if (it.status === "noschedule") statusStr = "No schedule";
         else if (it.status === "early") statusStr = "Early";
         else if (it.status === "late") statusStr = "Late";
@@ -900,12 +879,11 @@ const AttendanceScreen: React.FC = (props: any) => {
         ? (s.employee_id as any)._id || s.employee_id
         : s.employee_id ?? null;
       // find optional attendance matching this schedule
-      const matchedAttObj = findAttendanceFor(empId, sYMD); // may be null
+      const matchedAttObj = findAttendanceFor(empId, sYMD); 
 
       // attempt to resolve userProfile from usersState (if available)
       const userProfile = (usersState || []).find((u: any) => String(u._id) === String(empId) || String((u as any).id) === String(empId)) || null;
 
-      // If matchedAttObj exists use its status/diffText, else mark as not_checked_in
       const status = matchedAttObj ? matchedAttObj.status : "not_checked_in";
       const diffText = matchedAttObj ? (matchedAttObj.diffText || "00h 00m") : "00h 00m";
 
@@ -957,16 +935,6 @@ const AttendanceScreen: React.FC = (props: any) => {
       return name.includes(q) || pos.includes(q);
     });
   }, [scheduleEntries, query]);
-
-  const filteredRecent = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return recentCheckins;
-    return recentCheckins.filter(({ userProfile }) => {
-      if (!userProfile) return false;
-      const full = `${userProfile.fullname || ''} ${userProfile.position || ''} ${userProfile.username || ''}`.toLowerCase();
-      return full.includes(q);
-    });
-  }, [recentCheckins, query]);
 
   const onSelectNow = () => {
     setMode("day");
@@ -1233,7 +1201,7 @@ const AttendanceScreen: React.FC = (props: any) => {
                               </Text>
                             ) : (
                               <Text style={styles.status_noschedule} ellipsizeMode="tail" numberOfLines={1}>
-                                {lang.Havent_checked_in}
+                                {lang.Absent}
                               </Text>
                             )}
                             <Text style={styles.duration} ellipsizeMode="tail" numberOfLines={1}>{diffText}</Text>
@@ -1246,7 +1214,6 @@ const AttendanceScreen: React.FC = (props: any) => {
               )}
             </View>
           </ScrollView>
-
         </View>
       </View>
 
@@ -1287,10 +1254,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     justifyContent: "flex-start"
   },
-  name_position: { marginLeft: 10, width: "75%", },
+  name_position: { marginLeft: 10, width: "70%"},
   name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6, width: 150 },
-  duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 8, width: 50 },
+  duration: { color: colors.primary, fontWeight: "500", fontSize: 14, marginLeft: 12, width: 70,  },
   status_early: {
     fontWeight: fonts.weight.regular,
     color: colors.status_early,
@@ -1299,7 +1266,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
-    marginRight: 7,
     textAlign: "center",
   },
   status_late: {
@@ -1310,7 +1276,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: colors.status_late_bg,
     borderRadius: 10,
-    marginRight: 7,
     textAlign: "center",
   },
   status_noschedule: {
@@ -1321,10 +1286,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: "#00000006",
     borderRadius: 10,
-    marginRight: 7,
     textAlign: "center",
-    width: 100
-
   },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
   profileImage: { width: 40, height: 40, borderRadius: 20, resizeMode: "cover" },
@@ -1332,12 +1294,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: 10,
     alignSelf: 'flex-start',
+    alignItems: "center",
     width: '90%',
   },
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 4,
+    alignSelf: "center",
   },
   branchName: {
     fontSize: fonts.size.m,
@@ -1382,7 +1346,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     borderEndWidth: 1
   },
-
 });
 
 export default AttendanceScreen;
