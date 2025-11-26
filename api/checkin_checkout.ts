@@ -36,8 +36,8 @@ export interface AttendanceRecord {
   branchName: string;
   startStatus: string;
   endStatus: string;
-  In : string;
-  Out:string;
+  In: string;
+  Out: string;
 }
 
 export interface AttendanceReportItem {
@@ -89,34 +89,95 @@ export const endAttendance = async (payload: LocationPayload) => {
   }
 };
 
-export const getTodaySchedule = async (opts: { userId?: string; branchId?: string; timezone?: string } = {}) => {
+export const getTodaySchedule = async (
+  opts: { userId?: string; branchId?: string; timezone?: string } = {}
+) => {
   const { userId, branchId, timezone = "Asia/Colombo" } = opts;
+
   const todayInTZ = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-  console.log("📅 Looking for schedule on:", todayInTZ);
+  console.log("📅 Today in timezone:", timezone, "=>", todayInTZ);
+
   let page = 1;
   const limit = 20;
   let totalPages = 1;
   let allSchedules: any[] = [];
+
   try {
     while (page <= totalPages) {
-      const resp = await axiosInstance.get("/schedule/", { params: { page, limit } });
+      console.log(`➡️ Fetching page ${page}/${totalPages} ...`);
+
+      const resp = await axiosInstance.get("/schedule/", {
+        params: { page, limit },
+      });
+
+      console.log("📦 API Response:", resp.data);
+
       const schedules: any[] = resp.data?.schedules ?? resp.data?.data ?? [];
+      console.log(`📄 Page ${page} items found:`, schedules.length);
+
       allSchedules = allSchedules.concat(schedules);
-      if (resp.data.totalPages) totalPages = resp.data.totalPages;
-      else if (resp.data.total && resp.data.limit) totalPages = Math.ceil(resp.data.total / resp.data.limit);
+      console.log("🔢 Total accumulated schedules:", allSchedules.length);
+
+      if (resp.data.totalPages) {
+        totalPages = resp.data.totalPages;
+        console.log("📘 Total pages detected:", totalPages);
+      } else if (resp.data.total && resp.data.limit) {
+        totalPages = Math.ceil(resp.data.total / resp.data.limit);
+        console.log("📗 Calculated total pages:", totalPages);
+      }
+
       page++;
-      if (page > 50) break; // safety
+
+      if (page > 50) {
+        console.log("⚠️ Safety break triggered (page > 50)");
+        break;
+      }
     }
-    // Find today's schedule after fetching all pages
+
+    console.log("🔍 Searching for schedule matching today:", todayInTZ);
+
     const todaySchedule = allSchedules.find((s: any) => {
       if (!s?.date) return false;
-      const schedDate = new Date(s.date!).toLocaleDateString("en-CA", { timeZone: timezone });
+
+      const schedDate = new Date(s.date).toLocaleDateString("en-CA", {
+        timeZone: timezone,
+      });
+
+      console.log(`🗓 Checking: ${s.date} => ${schedDate}`);
+
       return schedDate === todayInTZ;
     });
+
     if (todaySchedule) {
-      // Optional filter by user/branch
-      if (userId && (typeof todaySchedule.employee_id === 'object' && todaySchedule.employee_id !== null ? todaySchedule.employee_id._id : todaySchedule.employee_id) !== userId) return { schedules: allSchedules, todaySchedule: null };
-      if (branchId && (typeof todaySchedule.branch_id === 'object' && todaySchedule.branch_id !== null ? todaySchedule.branch_id._id : todaySchedule.branch_id) !== branchId) return { schedules: allSchedules, todaySchedule: null };
+      console.log("✅ Today schedule found:", todaySchedule);
+
+      const empId =
+        typeof todaySchedule.employee_id === "object" &&
+          todaySchedule.employee_id !== null
+          ? todaySchedule.employee_id._id
+          : todaySchedule.employee_id;
+
+      const brId =
+        typeof todaySchedule.branch_id === "object" &&
+          todaySchedule.branch_id !== null
+          ? todaySchedule.branch_id._id
+          : todaySchedule.branch_id;
+
+      if (userId && empId !== userId) {
+        console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
+        return { schedules: allSchedules, todaySchedule: null };
+      }
+
+      if (branchId && brId !== branchId) {
+        console.log(
+          "🚫 Branch ID filter mismatch. Needed:",
+          branchId,
+          "Found:",
+          brId
+        );
+        return { schedules: allSchedules, todaySchedule: null };
+      }
+
       return {
         schedules: allSchedules,
         todaySchedule: {
@@ -127,12 +188,15 @@ export const getTodaySchedule = async (opts: { userId?: string; branchId?: strin
         },
       };
     }
+
+    console.log("❌ No schedule found for today.");
     return { schedules: allSchedules, todaySchedule: null };
   } catch (err: any) {
-    //console.error("❌ getTodaySchedule failed:", err.response?.data ?? err.message);
+    console.log("❌ ERROR:", err.response?.data ?? err.message);
     return { schedules: allSchedules, todaySchedule: null };
   }
 };
+
 
 export const getBranchDetails = async (branchId: string) => {
   try {
@@ -160,7 +224,7 @@ export const getBranchDetails = async (branchId: string) => {
       location: branch.location || null, // ✅ include location here
     };
   } catch (error: any) {
-   // console.error("❌ Error fetching branch details:", error.response?.data || error.message);
+    // console.error("❌ Error fetching branch details:", error.response?.data || error.message);
     return null;
   }
 };
@@ -257,10 +321,10 @@ export const getMonthlySchedules = async (opts: { userId?: string; timezone?: st
 
 
 export const getMonthlySchedules1 = async (
-  opts: { 
-    userId?: string; 
-    userBranchId?: string; 
-    timezone?: string 
+  opts: {
+    userId?: string;
+    userBranchId?: string;
+    timezone?: string
   } = {}
 ) => {
   const { userId, userBranchId, timezone = "Asia/Colombo" } = opts;
@@ -271,8 +335,8 @@ export const getMonthlySchedules1 = async (
 
   try {
     // Fetch attendance history
-    const resp = await axiosInstance.get("/attendance/my-history", { 
-      params: { page: 1, limit: 500 } 
+    const resp = await axiosInstance.get("/attendance/my-history", {
+      params: { page: 1, limit: 500 }
     });
 
     const allSchedules = resp.data?.attendance ?? resp.data?.data ?? [];

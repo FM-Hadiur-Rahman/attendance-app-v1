@@ -31,7 +31,7 @@ import Popup from "../../../../components/Popup";
 import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 
-// API helpers 
+// API helpers
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
 import { register as authRegister } from "../../../../api/auth/authService";
@@ -62,8 +62,8 @@ const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 type ScheduleEntry = {
   startTime: string;
   endTime: string;
-  duration?: number;      // in hours (optional)
-  date?: string | null;   // YYYY-MM-DD (optional)
+  duration?: number; // in hours (optional)
+  date?: string | null; // YYYY-MM-DD (optional)
 };
 
 type SchedulePayload = {
@@ -268,7 +268,12 @@ const AddStaffScreen: React.FC = (props: any) => {
       const s = normalizeHHMM(start);
       const e = normalizeHHMM(end);
       if (!date || !weekday || !s || !e) {
-        console.warn("Skipping malformed schedule entry", { date, weekday, start, end });
+        console.warn("Skipping malformed schedule entry", {
+          date,
+          weekday,
+          start,
+          end,
+        });
         return;
       }
       result.push({
@@ -321,7 +326,8 @@ const AddStaffScreen: React.FC = (props: any) => {
         const d = nextDateObj.getDate().toString().padStart(2, "0");
         const nextDate = `${y}-${m}-${d}`;
 
-        const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
+        const nextWeekday =
+          FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
 
         const duration2 = computeDurationHours(0, endMinutes);
         addEntry(nextDate, nextWeekday, "00:00", end_time, duration2);
@@ -568,16 +574,19 @@ const AddStaffScreen: React.FC = (props: any) => {
       valid = false;
     } else if (digits.length < rule.min) {
       if (rule.min === rule.max) {
-        newErrors.phone = `${lang.Please_complete_all || "Please complete all"
-          } ${rule.max} ${lang.digits || "digits"}`;
+        newErrors.phone = `${
+          lang.Please_complete_all || "Please complete all"
+        } ${rule.max} ${lang.digits || "digits"}`;
       } else {
-        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${rule.min
-          } ${lang.digits || "digits"}`;
+        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${
+          rule.min
+        } ${lang.digits || "digits"}`;
       }
       valid = false;
     } else if (digits.length > rule.max) {
-      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${lang.digits || "digits"
-        }`;
+      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${
+        lang.digits || "digits"
+      }`;
       valid = false;
     }
     setErrors(newErrors);
@@ -704,7 +713,10 @@ const AddStaffScreen: React.FC = (props: any) => {
         }
       } catch (e) {
         // if the check fails unexpectedly, we do not block user — but log it
-        console.warn("Email availability check failed, proceeding without blocking:", e);
+        console.warn(
+          "Email availability check failed, proceeding without blocking:",
+          e
+        );
       }
     }
 
@@ -880,11 +892,11 @@ const AddStaffScreen: React.FC = (props: any) => {
       scheduleArray.length === 0
         ? "No schedules set for this week."
         : scheduleArray
-          .map(
-            (item) =>
-              `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
-          )
-          .join("\n");
+            .map(
+              (item) =>
+                `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
+            )
+            .join("\n");
 
     console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
 
@@ -931,7 +943,7 @@ const AddStaffScreen: React.FC = (props: any) => {
             ...prev,
             username:
               prev.username ===
-                (lang.username_exists || "Username already taken")
+              (lang.username_exists || "Username already taken")
                 ? ""
                 : prev.username,
           }));
@@ -1013,7 +1025,9 @@ const AddStaffScreen: React.FC = (props: any) => {
       // Force server fetch to ensure we use the active logged-in user's branch
       branchIdToUse = await getLoggedInUserBranch(false); // pass true to prefer cache if you want
       if (!branchIdToUse) {
-        console.warn("No branch id found for logged-in user; payload will send empty string for branch");
+        console.warn(
+          "No branch id found for logged-in user; payload will send empty string for branch"
+        );
       }
     } catch (e) {
       console.warn("Failed to obtain logged-in user's branch id", e);
@@ -1124,14 +1138,21 @@ const AddStaffScreen: React.FC = (props: any) => {
       try {
         // prepare friendly notification body
         const employeeId = String(createdId);
-        const scheduleArrayForNotif: SchedulePayload[] = buildScheduleArray() || [];
+        const scheduleArrayForNotif: SchedulePayload[] =
+          buildScheduleArray() || [];
 
         const formatDateReadable = (ymd: string) => {
           if (!ymd) return "";
-          const [y, m, d] = String(ymd).split("-").map((v) => Number(v));
+          const [y, m, d] = String(ymd)
+            .split("-")
+            .map((v) => Number(v));
           if (!y || !m || !d) return ymd;
           const dt = new Date(y, m - 1, d);
-          return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+          return dt.toLocaleDateString(undefined, {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          });
         };
 
         const composeBody = () => {
@@ -1150,7 +1171,10 @@ const AddStaffScreen: React.FC = (props: any) => {
         };
 
         const notifPayload = {
-          title: scheduleArrayForNotif.length > 0 ? "Welcome - New Shift Assigned" : "Welcome to the team",
+          title:
+            scheduleArrayForNotif.length > 0
+              ? "Welcome - New Shift Assigned"
+              : "Welcome to the team",
           body: composeBody(),
           type: "staff_created",
           meta: {
@@ -1166,27 +1190,44 @@ const AddStaffScreen: React.FC = (props: any) => {
           console.log("[notif] welcome notification written for", employeeId);
         } catch (e) {
           // do not block success path
-          console.warn("[notif] failed to write welcome notification for", employeeId, e);
+          console.warn(
+            "[notif] failed to write welcome notification for",
+            employeeId,
+            e
+          );
         }
       } catch (e) {
-        console.warn("[notif] unexpected error preparing/sending welcome notification:", e);
+        console.warn(
+          "[notif] unexpected error preparing/sending welcome notification:",
+          e
+        );
       }
 
       showSuccessToast(
         lang?.staff_created_success ?? "Staff created successfully"
       );
       setConfirmPopupVisible(false);
-      console.log("Creating staff with payload branch:", branchIdToUse, "payload:", {
-        fullname: fullName,
-        branch: branchIdToUse ?? "",
-        username, email, position, phone: finalPhone,
-      })
+      console.log(
+        "Creating staff with payload branch:",
+        branchIdToUse,
+        "payload:",
+        {
+          fullname: fullName,
+          branch: branchIdToUse ?? "",
+          username,
+          email,
+          position,
+          phone: finalPhone,
+        }
+      );
       navigation.goBack();
     } catch (err: any) {
       setConfirmPopupVisible(false);
       setErrors((prev) => ({
         ...prev,
-        username: lang.username_exists_use || "This username already exists in another branch.",
+        username:
+          lang.username_exists_use ||
+          "This username already exists in another branch.",
       }));
       setUsernameExists(true);
 
@@ -1202,9 +1243,8 @@ const AddStaffScreen: React.FC = (props: any) => {
       // NOTE: we already attempted restore above; keep this as a safety net.
       try {
         if (prevToken) {
-          axiosInstance.defaults.headers[
-            "Authorization"
-          ] = `Bearer ${prevToken}`;
+          axiosInstance.defaults.headers["Authorization"] =
+            `Bearer ${prevToken}`;
         } else {
           await AsyncStorage.removeItem("userToken");
         }
@@ -1443,6 +1483,57 @@ const AddStaffScreen: React.FC = (props: any) => {
                   errorMessage={touched.phone ? errors.phone : ""}
                   leftIcon={selectedCountry.flag}
                   leftIcon2={require("../../../../assets/icons/down_b.png")}
+                  onLeftIconPress={() =>
+                    navigation.navigate("Code", {
+                      initialSelectedId: selectedCountry.id,
+                      onSelect: (item: any) => {
+                        setSelectedCountry(item);
+                        const newRule =
+                          PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
+                          DEFAULT_PHONE_RULE;
+
+                        let currentRaw = (phone || "").replace(/\D/g, "");
+                        const hasLeadingZero = currentRaw.startsWith("0");
+                        const maxDisplay =
+                          newRule.max + (hasLeadingZero ? 1 : 0);
+                        currentRaw = currentRaw.slice(0, maxDisplay);
+
+                        let normalized = currentRaw.startsWith("0")
+                          ? currentRaw.slice(1)
+                          : currentRaw;
+                        normalized = normalized.slice(0, newRule.max);
+
+                        setPhone(formatPhoneForDisplay(currentRaw));
+                        setPhoneRaw(normalized);
+
+                        if (!normalized || normalized.length === 0) {
+                          setErrors((prev) => ({
+                            ...prev,
+                            phone: lang.phone_required,
+                          }));
+                        } else if (normalized.length < newRule.min) {
+                          if (newRule.min === newRule.max) {
+                            setErrors((prev) => ({
+                              ...prev,
+                              phone: `${
+                                lang.Please_complete_all ||
+                                "Please complete all"
+                              } ${newRule.max} digits`,
+                            }));
+                          } else {
+                            setErrors((prev) => ({
+                              ...prev,
+                              phone: `${
+                                lang.enterAtLeast || "Enter at least"
+                              } ${newRule.min} ${lang.digits || "digits"}`,
+                            }));
+                          }
+                        } else {
+                          setErrors((prev) => ({ ...prev, phone: "" }));
+                        }
+                      },
+                    })
+                  }
                   onLeftIcon2Press={() =>
                     navigation.navigate("Code", {
                       initialSelectedId: selectedCountry.id,
@@ -1475,15 +1566,17 @@ const AddStaffScreen: React.FC = (props: any) => {
                           if (newRule.min === newRule.max) {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${lang.Please_complete_all ||
+                              phone: `${
+                                lang.Please_complete_all ||
                                 "Please complete all"
-                                } ${newRule.max} digits`,
+                              } ${newRule.max} digits`,
                             }));
                           } else {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${lang.enterAtLeast || "Enter at least"
-                                } ${newRule.min} ${lang.digits || "digits"}`,
+                              phone: `${
+                                lang.enterAtLeast || "Enter at least"
+                              } ${newRule.min} ${lang.digits || "digits"}`,
                             }));
                           }
                         } else {
@@ -1545,10 +1638,10 @@ const AddStaffScreen: React.FC = (props: any) => {
                                   <Text style={styles.time_text}>
                                     {schedules[dayName]
                                       ? `${formatTime12(
-                                        schedules[dayName].startTime
-                                      )} - ${formatTime12(
-                                        schedules[dayName].endTime
-                                      )}`
+                                          schedules[dayName].startTime
+                                        )} - ${formatTime12(
+                                          schedules[dayName].endTime
+                                        )}`
                                       : ""}
                                   </Text>
                                 </View>
@@ -1833,7 +1926,7 @@ const AddStaffScreen: React.FC = (props: any) => {
               onPress={onSavePress}
               backgroundColor={colors.primary}
               width={"45%"}
-            //disabled={checkingUsername} // optional - depends on Button1 props
+              //disabled={checkingUsername} // optional - depends on Button1 props
             />
           </View>
         )}
@@ -1873,7 +1966,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                     placeholder={""}
                     value={selectedBranch}
                     editable={false}
-                    setValue={() => { }}
+                    setValue={() => {}}
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}
                   />

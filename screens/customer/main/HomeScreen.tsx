@@ -30,7 +30,7 @@ import {
 
 // ✅ Define your navigation stack param list
 export type RootStackParamList = {
-  Home: undefined;
+  Home: { userId: string; langId: string };
   C_NotificationScreen: { userId: string; langId: string };
   // Add other screens with params here
 };
@@ -46,17 +46,6 @@ interface HomeScreenProps {
   userId: string;
   langId: string;
   setLangId: (lang: string) => void;
-}
-
-// Optional: WorkHour interface
-interface WorkHour {
-  id: string;
-  user_id: string;
-  check_in: string; // "HH:MM:SS"
-  check_out: string; // "HH:MM:SS" or empty
-  date: string; // YYYY-MM-DD
-  createDate: string;
-  updateDate: string;
 }
 
 // ✅ Main Component
@@ -80,11 +69,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     raw?: any;
   } | null>(null);
 
-  // derive shop coords from branchInfo (no dummy getBranchById)
+  // derive shop coords from branchInfo
   const SHOP_LAT = branchInfo?.coordinates?.latitude ?? 0;
   const SHOP_LON = branchInfo?.coordinates?.longitude ?? 0;
 
-  const [branchAddress, setBranchAddress] = useState<string | null>(null);
   const todayDate = new Date().toISOString().split("T")[0];
   const [loading, setLoading] = useState(true);
   const [todaySchedule, setTodaySchedule] = useState<any>(null);
@@ -98,10 +86,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [checkedOut, setCheckedOut] = useState<boolean>(false);
   const [canCheckOut, setCanCheckOut] = useState<boolean>(false);
   const offDuty = !checkedIn || checkedOut;
-  const [allSchedules, setAllSchedules] = useState<any[]>([]); // for schedules from API
-
-  // local work hours store (replaces dummy workHours)
-  const [localWorkHours, setLocalWorkHours] = useState<WorkHour[]>([]);
 
   const CHECKIN_RADIUS = 10000000; // keep radius same (meters)
 
@@ -131,6 +115,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
       return null;
     }
   };
+
   const extractLatLon = (branchRawOrObj: any): { lat?: number; lon?: number } | null => {
     if (!branchRawOrObj) return null;
     const candidates = [
@@ -241,37 +226,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     };
   }, [todaySchedule]);
 
-
-  useEffect(() => {
-    if (todaySchedule?.raw?.branch_id?._id) {
-      getBranchDetails(todaySchedule.raw.branch_id._id)
-        .then((branch) => {
-          if (!branch) return;
-
-          // Extract coordinates from branch or branch.raw
-          const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
-          let finalLat: number | undefined;
-          let finalLon: number | undefined;
-
-          if (coords) {
-            finalLat = coords.lat;
-            finalLon = coords.lon;
-          }
-
-          setBranchInfo(prev => prev ?? {
-            name: branch.name,
-            address: branch.address ?? undefined,
-            coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
-              ? { latitude: finalLat, longitude: finalLon }
-              : null,
-            raw: branch.raw ?? branch,
-          });
-        })
-        .catch((err) => console.error("❌ Branch info fetch failed:", err));
-    }
-  }, [todaySchedule]);
-
-
   const handleCheckInAttempt = () => {
     if (!todaySchedule) return;
 
@@ -287,89 +241,200 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return true;
   };
 
-  const loadTodaySchedule = async () => {
+const loadTodaySchedule = async () => {
+  try {
+    setLoading(true);
+
+    // ✅ Proper safe extraction of branch ID (NO more never)
+    let branchId: string | undefined = undefined;
+
+    if (currentUser?.branch) {
+      if (typeof currentUser.branch === "string") {
+        branchId = currentUser.branch;
+      } else if (typeof currentUser.branch === "object" && currentUser.branch !== null) {
+        // ✅ Type assertion to access _id safely
+        branchId = (currentUser.branch as { _id?: string })?._id || undefined;
+      }
+    }
+
+    console.log("🏷️ Using Branch ID:", branchId);
+
+    // ➡ Fetch schedule WITHOUT branchId filter to allow cross-branch schedules
+    const resp = await getTodaySchedule({
+      userId,
+      // branchId,  // ❌ Do NOT pass branchId - allows showing schedules for any branch assigned to user
+      timezone: "Asia/Colombo",
+    });
+
+    const schedules = resp?.schedules ?? [];
+    const rawToday = resp?.todaySchedule ?? null;
+
+    console.log("📌 Today schedule:", rawToday);
+    console.log("📦 Total schedules fetched:", schedules.length);
+
+    // ❌ If no today schedule found — stop
+    if (!rawToday || !("start_time" in rawToday)) {
+      console.log("❌ No valid today schedule. Setting null.");
+      setTodaySchedule(null);
+      return;
+    }
+
+    // 🔍 Extract raw object
+    const raw = "raw" in rawToday ? rawToday.raw : rawToday;
+
+    // ⏱ Start & End times (safe)
+    const start_time =
+      rawToday.start_time ??
+      raw.start_time ??
+      raw.start ??
+      "";
+
+    const end_time =
+      rawToday.end_time ??
+      raw.end_time ??
+      raw.end ??
+      "";
+
+    // ⏳ Duration calculation
+    let duration = typeof raw.duration === "number" ? raw.duration : 0;
+
+    if (start_time && end_time && !duration) {
+      try {
+        const [sh, sm] = String(start_time).split(":");
+        const [eh, em] = String(end_time).split(":");
+
+        const sD = new Date();
+        sD.setHours(Number(sh), Number(sm), 0, 0);
+
+        const eD = new Date();
+        eD.setHours(Number(eh), Number(em), 0, 0);
+
+        if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
+
+        duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
+      } catch (e) {
+        console.warn("❌ Failed to compute duration:", e);
+      }
+    }
+
+    // 🏢 Branch info
+    const branchName =
+      rawToday.branchname ??
+      raw.branch_id?.name ??
+      raw.branch?.name ??
+      null;
+
+    const branchAddress =
+      raw.branch_id?.address ??
+      raw.branch?.address ??
+      "";
+
+    // 📦 Final Schedule Object
+    const scheduleObj = {
+      start_time,
+      end_time,
+      duration,
+      date: raw.date ?? new Date().toISOString().split("T")[0],
+      branch: branchName
+        ? {
+            name: branchName,
+            address: branchAddress,
+            rawBranch: raw.branch_id ?? raw.branch ?? null,
+          }
+        : null,
+      raw,
+    };
+
+    setTodaySchedule(scheduleObj);
+
+  } catch (err) {
+    console.error("❌ Error loading today's schedule:", err);
+    setTodaySchedule(null);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  const fetchAttendance = async () => {
     try {
-      setLoading(true);
+      const todayRecords = await getMyAttendanceHistory(); // Already filtered today
+      console.log("📌 Today Records from Helper:", todayRecords.length);
+      console.log("📌 Today Records from Helper records:", todayRecords);
 
-    // Extract branch ID properly from the branch object or string
-    const branchId = typeof currentUser?.branch === 'string' 
-      ? currentUser.branch 
-      :  undefined;
-
-      const resp = await getTodaySchedule({
-        userId,
-        branchId,
-        timezone: "Asia/Colombo",
-      });
-
-      const schedules = resp?.schedules ?? [];
-      const rawToday = resp?.todaySchedule ?? resp ?? null;
-
-      console.log("📌 Today schedule:", rawToday);
-      console.log("📦 Total schedules fetched:", schedules.length);
-
-      if (!rawToday || !("start_time" in rawToday)) {
-        // rawToday is either null or doesn't have schedule info
-        setTodaySchedule(null);
-        setBranchInfo(null);
-        setAllSchedules(schedules);
+      if (!todayRecords || todayRecords.length === 0) {
+        // no attendance today
+        setAttendanceToday(null);
+        setCheckInTime(null);
+        setCheckOutTime(null);
+        setDuration("0h 0m");
+        setCheckedIn(false);
+        setCheckedOut(false);
+        setCanCheckOut(false);
         return;
       }
 
-      // Now TypeScript knows rawToday has schedule properties
-      const raw = "raw" in rawToday ? rawToday.raw : rawToday;
+      // pick latest record by In
+      todayRecords.sort((a, b) => moment(b.In).valueOf() - moment(a.In).valueOf());
+      const rec = todayRecords[0];
 
-      const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
-      const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
+      setAttendanceToday(rec);
 
-      let duration = typeof raw.duration === "number" ? raw.duration : 0;
+      const hasIn = !!rec?.In;
+      const hasOut = !!rec?.Out;
 
-      if (start_time && end_time && !duration) {
-        try {
-          const [sh, sm] = String(start_time).split(":");
-          const [eh, em] = String(end_time).split(":");
+      // times (HH:mm)
+      const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
+      const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
 
-          const sD = new Date();
-          sD.setHours(Number(sh), Number(sm), 0, 0);
+      setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
+      setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
 
-          const eD = new Date();
-          eD.setHours(Number(eh), Number(em), 0, 0);
+      // duration: if out exists use out - in, otherwise now - in
+      const now = moment();
+      if (inMoment) {
+        const endMoment = outMoment || now;
+        const diff = moment.duration(endMoment.diff(inMoment));
+        const hrs = Math.floor(diff.asHours());
+        const mins = diff.minutes();
+        setDuration(`${hrs}h ${mins}m`);
+      } else {
+        setDuration("0h 0m");
+      }
 
-          if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
+      // derive checked states from actual data
+      setCheckedIn(hasIn && !hasOut);
+      setCheckedOut(hasOut);
 
-          duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
-        } catch (e) {
-          console.warn("❌ Failed to compute duration:", e);
+      // 🔥 canCheckOut logic: allow checkout only if user has checked in and not checked out, and schedule allows
+      let allowedToCheckOut = false;
+      if (hasIn && !hasOut && inMoment && todaySchedule) {
+        if (typeof todaySchedule?.duration === "number" && todaySchedule.duration > 0) {
+          const allowed = inMoment.clone().add(todaySchedule.duration, "hours");
+          allowedToCheckOut = now.isSameOrAfter(allowed);
+        }
+        // Fallback to shift end if no duration
+        if (!allowedToCheckOut && todaySchedule?.end_time) {
+          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+          let shiftEndMoment = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
+          allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
         }
       }
 
-      const branchName = rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? null;
-      const branchAddress = raw.branch_id?.address ?? raw.branch?.address ?? "";
-
-      const scheduleObj = {
-        start_time,
-        end_time,
-        duration,
-        date: raw.date ?? new Date().toISOString().split("T")[0],
-        branch: branchName
-          ? { name: branchName, address: branchAddress, rawBranch: raw.branch_id ?? raw.branch ?? null }
-          : null,
-        raw,
-      };
-
-      setTodaySchedule(scheduleObj);
-      setBranchInfo(scheduleObj.branch);
-      setAllSchedules(schedules);
+      setCanCheckOut(allowedToCheckOut);
     } catch (err) {
-      console.error("❌ Error loading today's schedule:", err);
-      setTodaySchedule(null);
-      setBranchInfo(null);
-      setAllSchedules([]);
-    } finally {
-      setLoading(false);
+      console.error("❌ fetchAttendance error:", err);
+
+      setAttendanceToday(null);
+      setCheckInTime(null);
+      setCheckOutTime(null);
+      setDuration("0h 0m");
+      setCheckedIn(false);
+      setCheckedOut(false);
+      setCanCheckOut(false);
     }
   };
-
 
   const refreshLocation = async () => {
     try {
@@ -398,6 +463,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
   const reloadAll = async () => {
     await Promise.all([loadTodaySchedule(), refreshLocation()]);
+    await fetchAttendance();
   };
 
   useEffect(() => {
@@ -425,21 +491,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   }, [todaySchedule]);
 
   useEffect(() => {
-    if (!checkInTime || checkOutTime) return;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const startTime = parseTimeStringToDate(checkInTime);
-      const diffMs = now.getTime() - startTime.getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      setDuration(`${diffHours}h ${diffMinutes}m`);
-    }, 60000); // update every minute
-
-    return () => clearInterval(interval);
-  }, [checkInTime, checkOutTime]);
-
-  useEffect(() => {
-    if (!checkedIn || !checkInTime || !todaySchedule) return;
+    if (!checkedIn || !checkInTime || checkOutTime || !todaySchedule) return;
 
     const [h, m, s] = checkInTime
       .replace(/[^0-9:]/g, "")
@@ -459,7 +511,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
     return () => clearInterval(timer);
   }, [checkedIn, checkInTime, todaySchedule]);
-
 
   const formatTime12h = (input: Date | string) => {
     let date: Date;
@@ -489,355 +540,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
     return `${hours}:${minuteStr} ${ampm}`;
   };
-
-
-  const parseTimeStringToDate = (timeStr?: string | Date) => {
-    const d = new Date();
-    if (!timeStr) return d;
-
-    if (timeStr instanceof Date) return timeStr;
-
-    const trimmed = String(timeStr).trim();
-    const lower = trimmed.toLowerCase();
-
-    if (lower.includes("am") || lower.includes("pm")) {
-      const parts = trimmed.split(" ");
-      const timePart = parts[0];
-      const modifier = parts[1];
-      const [hStr, mStr, sStr] = timePart.split(":");
-      let hours = parseInt(hStr || "0", 10);
-      const minutes = parseInt(mStr || "0", 10);
-      const seconds = parseInt(sStr || "0", 10);
-      if (modifier?.toLowerCase() === "pm" && hours < 12) hours += 12;
-      if (modifier?.toLowerCase() === "am" && hours === 12) hours = 0;
-      d.setHours(hours, minutes, seconds || 0, 0);
-      return d;
-    }
-
-    const [h = 0, m = 0, s = 0] = trimmed.split(":").map(Number);
-    d.setHours(h || 0, m || 0, s || 0, 0);
-    return d;
-  };
-
-
-  // add / update local work hours (replaces dummy global workHours)
-  const addWorkHour = (uid: string, checkInTimeDate: Date): WorkHour => {
-    const newId = `WH${(localWorkHours.length + 1).toString().padStart(3, "0")}`;
-    const formattedTime = checkInTimeDate.toTimeString().split(" ")[0];
-    const formattedDate = checkInTimeDate.toISOString().split("T")[0];
-
-    const newRecord: WorkHour = {
-      id: newId,
-      user_id: uid,
-      check_in: formattedTime,
-      check_out: "",
-      date: formattedDate,
-      createDate: checkInTimeDate.toISOString(),
-      updateDate: checkInTimeDate.toISOString(),
-    };
-
-    setLocalWorkHours(prev => [...prev, newRecord]);
-    return newRecord;
-  };
-
-  const updateWorkHour = (uid: string, checkOutTimeDate: Date): WorkHour | null => {
-    // Find last record for user without check_out
-    const idx = [...localWorkHours].reverse().findIndex(w => w.user_id === uid && !w.check_out);
-    if (idx === -1) {
-      console.warn("⚠️ No active work record found for check-out.");
-      return null;
-    }
-    // reverse index -> actual index
-    const actualIndex = localWorkHours.length - 1 - idx;
-    const updated = { ...localWorkHours[actualIndex] };
-    const formattedTime = checkOutTimeDate.toTimeString().split(" ")[0];
-    updated.check_out = formattedTime;
-    updated.updateDate = checkOutTimeDate.toISOString();
-
-    setLocalWorkHours(prev => {
-      const next = [...prev];
-      next[actualIndex] = updated;
-      return next;
-    });
-    return updated;
-  };
-
-  useEffect(() => {
-    const fetchBranchAddress = async () => {
-      const branchId = todaySchedule?.branch?.rawBranch?._id;
-      if (!branchId) return;
-
-      try {
-        const branch = await getBranchDetails(branchId);
-
-        if (!branch || !("location" in branch) || !branch.location?.coordinates) return;
-
-        const [longitude, latitude] = branch.location.coordinates;
-
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-
-        const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (result.length > 0) {
-          const place = result[0];
-          const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}${place.region ? ", " + place.region : ""}${place.postalCode ? ", " + place.postalCode : ""}${place.country ? ", " + place.country : ""}`;
-
-          setBranchInfo({
-            name: branch.name,
-            address: formatted,
-            coordinates: { latitude, longitude },
-          });
-          console.log("✅ Branch address:", formatted);
-        }
-      } catch (err) {
-        console.log("❌ Error fetching branch address:", err);
-      }
-    };
-
-    fetchBranchAddress();
-  }, [todaySchedule]);
-
-
-  // shop address from branch coordinates
-  const [shopAddress, setShopAddress] = useState<string | null>(null);
-  const displayBranchAddress = () => {
-    if (!branchInfo) return "No branch address";
-    if (typeof branchInfo.address === "string") return branchInfo.address;
-    if (branchInfo.coordinates) {
-      return `Lat: ${branchInfo.coordinates.latitude.toFixed(6)}, Lon: ${branchInfo.coordinates.longitude.toFixed(6)}`;
-    }
-    return "Address not available";
-  };
-
-  const today = new Date().toLocaleDateString(langId === "de" ? "de-DE" : "en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-  const [todayRecord, setTodayRecord] = useState<WorkHour | null>(null);
-
-  // formatTime helper
-  const formatTime = (time: string | Date | null) => {
-    if (!time) return "--:--";
-    if (time instanceof Date) return formatTime12h(time);
-    const s = String(time);
-    if (s.toLowerCase().includes("am") || s.toLowerCase().includes("pm")) return s;
-    return formatTime12h(parseTimeStringToDate(s));
-  };
-
-  const [now, setNow] = useState<Date>(new Date());
-  useEffect(() => {
-    if (!checkedIn) return;
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, [checkedIn]);
-
-  const handleCheckIn = async () => {
-    handleCheckInAttempt(); // shows toast if too early
-
-    if (!todaySchedule) {
-      showErrorToast(lang.noScheduleToday);
-      return;
-    }
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showErrorToast("Location permission denied.");
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const payload = {
-        latitude: loc.coords.latitude.toString(),
-        longitude: loc.coords.longitude.toString(),
-        branchId: todaySchedule.branch?._id,
-      };
-      await startAttendance(payload);
-      const nowDate = new Date();
-      const inTime = formatTime12h(nowDate); // convert to 12-hour format
-      setCheckInTime(inTime);
-
-      setCheckedIn(true);
-      setCanCheckOut(true);
-      setCheckInTime(inTime);
-      setCheckOutTime(null);
-      setDuration("--");
-
-      const saved = addWorkHour(userId, nowDate);
-      setTodayRecord(saved);
-
-      showSuccessToast(lang.checkInSuccess);
-    } catch (error: any) {
-      showErrorToast(error.response?.data?.message || "Check-in failed.");
-    }
-  };
-
-  const handleCheckOut = async () => {
-    if (!checkInTime) {
-      showErrorToast(lang.notCheckedIn);
-      return;
-    }
-
-    if (!todaySchedule) {
-      showErrorToast(lang.genericNoSchedule);
-      return;
-    }
-
-    try {
-      const now = new Date();
-
-      // Parse schedule start & end
-      const [startHour, startMin] = (todaySchedule.start_time || "00:00").split(":").map(Number);
-      const scheduleStart = new Date(now);
-      scheduleStart.setHours(startHour, startMin, 0, 0);
-
-      if (now < scheduleStart) {
-        showErrorToast(`You can only check out after ${formatTime12h(todaySchedule.start_time)}`);
-        return;
-      }
-
-      // Request location permission
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showErrorToast("Location permission denied.");
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const payload = {
-        latitude: loc.coords.latitude.toString(),
-        longitude: loc.coords.longitude.toString(),
-        branchId: todaySchedule.branch?._id,
-      };
-
-      await endAttendance(payload);
-
-      // Format check-out time
-      const checkOutStr = formatTime12h(now);
-      console.log("✅ Check-out Time:", checkOutStr); // <-- log checkout time
-      setCheckOutTime(checkOutStr);
-
-      // Calculate duration
-      const checkInDateObj = parseTimeStringToDate(checkInTime);
-      let diffMs = now.getTime() - checkInDateObj.getTime();
-      if (diffMs < 0) diffMs = 0;
-
-      const diffMinutes = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMinutes / 60);
-      const remainingMinutes = diffMinutes % 60;
-      const durationStr = `${diffHours > 0 ? diffHours + "h " : ""}${remainingMinutes}m`;
-
-      setDuration(durationStr);
-      setCheckedOut(true);
-      setCanCheckOut(false);
-      setShowPopup(false);
-
-      // Update local attendance record
-      const updated = updateWorkHour(userId, now);
-      if (updated) setTodayRecord(updated);
-
-      showSuccessToast(lang.checkOutSuccess);
-    } catch (error: any) {
-      console.error("Check-out error:", error);
-      showErrorToast(error.response?.data?.message || "Check-out failed.");
-    }
-  };
-
-
-
-
-  useEffect(() => {
-    const getShopAddress = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          console.log("❌ Location permission denied for reverse geocode");
-          return;
-        }
-
-        if (!SHOP_LAT || !SHOP_LON) return;
-
-        const result = await Location.reverseGeocodeAsync({
-          latitude: SHOP_LAT,
-          longitude: SHOP_LON,
-        });
-
-        if (result.length > 0) {
-          const place = result[0];
-          const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}`;
-          setShopAddress(formatted);
-          console.log("✅ Shop address:", formatted);
-        }
-      } catch (error) {
-        console.log("❌ Error getting shop address:", error);
-      }
-    };
-
-    getShopAddress();
-  }, [SHOP_LAT, SHOP_LON]);
-
-  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3;
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) ** 2 +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    const checkDistance = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-
-        const loc = await Location.getCurrentPositionAsync({});
-        const distance = getDistance(
-          loc.coords.latitude,
-          loc.coords.longitude,
-          SHOP_LAT,
-          SHOP_LON
-        );
-
-        setDistance(distance);
-        console.log("📏 Current distance to shop:", distance, "meters");
-
-        if (distance <= CHECKIN_RADIUS) {
-          setWithinRange(true);
-
-          // user is inside → stop auto-check after a small cooldown
-          clearTimeout(timer);
-          timer = setTimeout(() => {
-            console.log("⏹️ Auto distance check paused because user is inside");
-          }, 2000);
-
-        } else {
-          setWithinRange(false);
-
-          // user is outside → keep checking every 10 seconds
-          timer = setTimeout(checkDistance, 10000);
-        }
-
-      } catch (error) {
-        console.log("❌ Distance check failed:", error);
-      }
-    };
-
-    checkDistance();
-
-    return () => clearTimeout(timer);
-  }, [SHOP_LAT, SHOP_LON]);
-
 
   const parse12hToDate = (timeStr?: string | null): Date | null => {
     if (!timeStr) return null;
@@ -896,156 +598,171 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return () => clearInterval(interval);
   }, [checkedIn, checkInTime, checkOutTime]);
 
-  // load today's record from localWorkHours
-  useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    const record = [...localWorkHours].reverse().find(
-      (w) => w.user_id === userId && w.date === today
-    );
-    if (record) {
-      setTodayRecord(record);
-      setCheckedIn(!!record.check_in && !record.check_out);
-      setCheckInTime(record.check_in || null);
-      setCheckOutTime(record.check_out || null);
+  // formatTime helper
+  const formatTime = (time: string | Date | null) => {
+    if (!time) return "--:--";
+    if (time instanceof Date) return formatTime12h(time);
+    const s = String(time);
+    if (s.toLowerCase().includes("am") || s.toLowerCase().includes("pm")) return s;
+    return formatTime12h(parse12hToDate(s) ?? new Date());
+  };
 
-      if (record.check_in && record.check_out) {
-        setDuration(calculateDuration(record.check_in, record.check_out));
-      }
-    } else {
-      setTodayRecord(null);
-      setCheckedIn(false);
-      setCheckInTime(null);
-      setCheckOutTime(null);
-      setDuration("--");
+  const getBranchIdFromSchedule = () => {
+    return todaySchedule?.raw?.branch_id?._id ?? todaySchedule?.branch?.rawBranch?._id ?? null;
+  };
+
+  const handleCheckIn = async () => {
+    if (!todaySchedule) {
+      showErrorToast(lang.noScheduleToday);
+      return;
     }
-  }, [userId, localWorkHours]);
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        showErrorToast("Location permission denied.");
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({});
+      const branchId = getBranchIdFromSchedule();
+      if (!branchId) {
+        showErrorToast("Branch ID not available.");
+        return;
+      }
+      const payload = {
+        latitude: loc.coords.latitude.toString(),
+        longitude: loc.coords.longitude.toString(),
+        branchId,
+      };
+      await startAttendance(payload);
+
+      showSuccessToast(lang.checkInSuccess);
+      await fetchAttendance(); // Refresh states from API
+    } catch (error: any) {
+      showErrorToast(error.response?.data?.message || "Check-in failed.");
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!checkInTime) {
+      showErrorToast(lang.notCheckedIn);
+      return;
+    }
+
+    if (!todaySchedule) {
+      showErrorToast(lang.genericNoSchedule);
+      return;
+    }
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        showErrorToast("Location permission denied.");
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({});
+      const branchId = getBranchIdFromSchedule();
+      if (!branchId) {
+        showErrorToast("Branch ID not available.");
+        return;
+      }
+      const payload = {
+        latitude: loc.coords.latitude.toString(),
+        longitude: loc.coords.longitude.toString(),
+        branchId,
+      };
+
+      await endAttendance(payload);
+
+      showSuccessToast(lang.checkOutSuccess);
+      await fetchAttendance(); // Refresh states from API
+    } catch (error: any) {
+      console.error("Check-out error:", error);
+      showErrorToast(error.response?.data?.message || "Check-out failed.");
+    }
+  };
+
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) ** 2 +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const todayStr = new Date().toISOString().split("T")[0];
-      if (todayRecord && todayRecord.date !== todayStr) {
-        setTodayRecord(null);
-        setCheckedIn(false);
-        setCheckInTime(null);
-        setCheckOutTime(null);
-        setDuration("--");
+    let timer: NodeJS.Timeout;
+
+    const checkDistance = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+
+        const loc = await Location.getCurrentPositionAsync({});
+        const distance = getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+
+        setDistance(distance);
+        console.log("📏 Current distance to shop:", distance, "meters");
+
+        if (distance <= CHECKIN_RADIUS) {
+          setWithinRange(true);
+
+          // user is inside → stop auto-check after a small cooldown
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            console.log("⏹️ Auto distance check paused because user is inside");
+          }, 2000);
+
+        } else {
+          setWithinRange(false);
+
+          // user is outside → keep checking every 10 seconds
+          timer = setTimeout(checkDistance, 10000);
+        }
+
+      } catch (error) {
+        console.log("❌ Distance check failed:", error);
       }
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [todayRecord]);
+    };
+
+    if (SHOP_LAT !== 0 || SHOP_LON !== 0) {
+      checkDistance();
+    }
+
+    return () => clearTimeout(timer);
+  }, [SHOP_LAT, SHOP_LON]);
 
   const formatTo12Hour = (time?: string): string => {
     if (!time) return "";
     const [hour, minute] = time.split(":");
     let h = parseInt(hour, 10);
     const ampm = h >= 12 ? "PM" : "AM";
-    h = h % 12; // convert 0 to 12
+    h = h % 12 || 12;
     return `${h}:${minute} ${ampm}`;
   };
 
-
-
+  // load attendance on mount and interval
   useEffect(() => {
-    let mounted = true;
-
-    const fetchAttendance = async () => {
-      try {
-        const todayRecords = await getMyAttendanceHistory(); // Already filtered today
-        console.log("📌 Today Records from Helper:", todayRecords.length);
-        console.log("📌 Today Records from Helper records:", todayRecords);
-        if (!mounted) return;
-
-        if (!todayRecords || todayRecords.length === 0) {
-          // no attendance today
-          setAttendanceToday(null);
-          setCheckInTime(null);
-          setCheckOutTime(null);
-          setDuration("0h 0m");
-          setCheckedIn(false);
-          setCheckedOut(false);
-          setCanCheckOut(false);
-          return;
-        }
-
-        // pick latest record by In
-        todayRecords.sort((a, b) => moment(b.In).valueOf() - moment(a.In).valueOf());
-        const rec = todayRecords[0];
-
-        setAttendanceToday(rec);
-
-        const hasIn = !!rec?.In;
-        const hasOut = !!rec?.Out;
-
-        // times (HH:mm)
-        const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
-        const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
-
-        setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
-        setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
-
-        // duration: if out exists use out - in, otherwise now - in
-        const now = moment();
-        if (inMoment) {
-          const endMoment = outMoment || now;
-          const diff = moment.duration(endMoment.diff(inMoment));
-          const hrs = Math.floor(diff.asHours());
-          const mins = diff.minutes();
-          setDuration(`${hrs}h ${mins}m`);
-        } else {
-          setDuration("0h 0m");
-        }
-
-        // derive checked states from actual data
-        setCheckedIn(hasIn && !hasOut);
-        setCheckedOut(hasOut);
-
-        // 🔥 Shift / canCheckOut logic: allow checkout only if user has checked in and not checked out, and schedule allows
-        let shiftEndMoment: moment.Moment | null = null;
-        if (todaySchedule?.end_time && inMoment) {
-          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-          shiftEndMoment = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
-          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
-        }
-
-        // If there's an In and no Out, allow check out when now >= in + scheduled duration OR when now >= shiftEndMoment (fallback)
-        let allowedToCheckOut = false;
-        if (hasIn && !hasOut && inMoment) {
-          if (typeof todaySchedule?.duration === "number" && todaySchedule.duration > 0) {
-            const allowed = inMoment.clone().add(todaySchedule.duration, "hours");
-            allowedToCheckOut = now.isSameOrAfter(allowed);
-          }
-          if (!allowedToCheckOut && shiftEndMoment) {
-            allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
-          }
-        }
-
-        setCanCheckOut(allowedToCheckOut);
-      } catch (err) {
-        console.error("❌ fetchAttendance error:", err);
-
-        if (!mounted) return;
-
-        setAttendanceToday(null);
-        setCheckInTime(null);
-        setCheckOutTime(null);
-        setDuration("0h 0m");
-        setCheckedIn(false);
-        setCheckedOut(false);
-        setCanCheckOut(false);
-      }
-    };
-
     fetchAttendance();
 
     const interval = setInterval(fetchAttendance, 1000 * 60 * 2);
 
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [userId, currentUser?.branch, todaySchedule]);
-
-
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -1054,6 +771,22 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   };
 
   // ---------- JSX (return) ----------
+  const displayBranchAddress = () => {
+    if (!branchInfo) return "No branch address";
+    if (typeof branchInfo.address === "string") return branchInfo.address;
+    if (branchInfo.coordinates) {
+      return `Lat: ${branchInfo.coordinates.latitude.toFixed(6)}, Lon: ${branchInfo.coordinates.longitude.toFixed(6)}`;
+    }
+    return "Address not available";
+  };
+
+  const today = new Date().toLocaleDateString(langId === "de" ? "de-DE" : "en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
   return (
     <>
       <Header
@@ -1129,7 +862,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                     { color: colors.button_text },
                   ]}
                 >
-                  {lang.noScheduleToday1 ?? "No assignment or shift scheduled for today."}
+                  {lang.noScheduleToday ?? "No assignment or shift scheduled for today."}
                 </Text>
               </View>
             )}
@@ -1196,10 +929,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
                 if (handleCheckInAttempt()) {
                   setShowPopup(true);
-                } else {
-                  showErrorToast(
-                    `You can only check in 15 minutes before ${todaySchedule?.start_time }`
-                  );
                 }
               }}
               backgroundColor={
@@ -1220,7 +949,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
         ) : (
           <View style={{ width: "100%", alignItems: "flex-start" }}>
             <View style={styles.statusRow}>
-              <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l, alignItems: "flex-start", marginRight: 20 }}>
+              <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l, marginRight: 20 }}>
                 {lang.currentStatus}
               </Text>
               <View
@@ -1446,7 +1175,6 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
-    borderColor: "#000",
     borderRadius: 10,
     padding: 12,        // adds space inside border
     marginTop: 20,

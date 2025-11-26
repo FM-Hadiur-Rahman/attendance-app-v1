@@ -77,13 +77,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const todayYMD = new Date().toISOString().split("T")[0];
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, ProfileUser>>({});
-  const [userPositions, setUserPositions] = useState<Record<string, string>>({});
-  const [skipNextLoad, setSkipNextLoad] = useState(false);
-  const [version, setVersion] = useState<number>(0);
   const [branchMap, setBranchMap] = useState<Record<string, string>>({});
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   useEffect(() => {
     const loadBranches = async () => {
@@ -137,8 +134,9 @@ const WorkScheduleScreen: React.FC = (props: any) => {
             ? branchField
             : null;
         const branchName =
-          typeof branchField === "object"
-            ? branchField : null;
+          typeof branchField === "object" && branchField !== null
+            ? (branchField as any).name
+            : null;
 
         if (branchId) {
           setActiveBranchId(String(branchId));
@@ -154,18 +152,29 @@ const WorkScheduleScreen: React.FC = (props: any) => {
 
     return () => { mounted = false; };
   }, [userId, activeBranchId]);
+
   const loadSchedules = useCallback(async (date: Date) => {
-    if (!user) return;
+    if (!user) {
+      console.log('Skipping loadSchedules: user not loaded yet');
+      return;
+    }
     try {
       setLoading(true);
-      const dateYMD = date.toISOString().split("T")[0];
+      const dateYMD = dateToYMD(date);
+      console.log('🔄 Loading schedules for dateYMD:', dateYMD);
       let data = await getSchedulesForDate(dateYMD);
-      const loggedUserBranchId =
-        typeof user.branch === "object" && user.branch !== null ? user.branch : user.branch;
+
+      let loggedUserBranchId: string | null;
+      if (typeof user.branch === "object" && user.branch !== null) {
+        loggedUserBranchId = (user.branch as any)._id;
+      } else {
+        loggedUserBranchId = user.branch;
+      }
 
       if (!loggedUserBranchId) {
         console.warn("WorkScheduleScreen: logged user has no branch - hiding schedules");
         setSchedules([]);
+        setUserProfiles({});
         return;
       }
       const employeeIds = Array.from(
@@ -199,7 +208,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         let scheduleBranchId: string | undefined;
         if (s.branch_id) {
           if (typeof s.branch_id === "object" && s.branch_id !== null) {
-            scheduleBranchId = String((s.branch_id)._id || (s.branch_id));
+            scheduleBranchId = String((s.branch_id as any)._id);
           } else if (typeof s.branch_id === "string") {
             scheduleBranchId = s.branch_id;
           }
@@ -208,7 +217,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         if (s.employee_id) {
           if (typeof s.employee_id === "string") empId = s.employee_id;
           else if (typeof s.employee_id === "object" && s.employee_id !== null) {
-            empId = (s.employee_id)._id
+            empId = (s.employee_id as any)._id
           }
         }
         let employeeProfileBranchId: string | undefined;
@@ -216,23 +225,45 @@ const WorkScheduleScreen: React.FC = (props: any) => {
           const prof = profileCache[empId];
           if (prof.branch) {
             employeeProfileBranchId =
-              typeof prof.branch === "object" && prof.branch !== null? prof.branch._id : prof.branch;
+              typeof prof.branch === "object" && prof.branch !== null? (prof.branch as any)._id : prof.branch;
           }
         }
         const resolvedEmployeeBranchId = employeeProfileBranchId || scheduleBranchId || null;
         if (!resolvedEmployeeBranchId) return false;
+
+        // Filter by role
+        if (empId && profileCache[empId] && profileCache[empId].role !== 'user') return false;
+
         return String(resolvedEmployeeBranchId) === String(loggedUserBranchId);
       });
 
+      // Extract used profiles for the filtered schedules
+      const usedProfiles: Record<string, ProfileUser> = {};
+      filtered.forEach((s) => {
+        let empId: string | undefined;
+        if (s.employee_id) {
+          if (typeof s.employee_id === "string") empId = s.employee_id;
+          else if (typeof s.employee_id === "object" && s.employee_id !== null) {
+            empId = (s.employee_id as any)._id;
+          }
+        }
+        if (empId && profileCache[empId]) {
+          usedProfiles[empId] = profileCache[empId];
+        }
+      });
+
       setSchedules(filtered);
+      setUserProfiles(usedProfiles);
       console.log(`📅 Found ${filtered.length} schedules for ${dateYMD} in branch ${loggedUserBranchId}`);
     } catch (err) {
       console.error("❌ Error loading schedules:", err);
       setSchedules([]);
+      setUserProfiles({});
     } finally {
       setLoading(false);
     }
   }, [user]);
+
   const findPrevScheduledYMD = () => {
     const prev = new Date(displayDate);
     prev.setDate(displayDate.getDate() - 1); // move one day back
@@ -257,21 +288,29 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     return dt;
   };
 
-  const goToPrevScheduled = () => {
-    if (!prevYMD) return;
-    setDisplayDate(ymdToDate(prevYMD));
+  const goToPrevDay = () => {
+    const prev = new Date(displayDate);
+    prev.setDate(displayDate.getDate() - 1);
+    setDisplayDate(prev);
   };
-  const goToNextScheduled = () => {
-    if (!nextYMD) return;
-    setDisplayDate(ymdToDate(nextYMD));
+
+  const goToNextDay = () => {
+    const next = new Date(displayDate);
+    next.setDate(displayDate.getDate() + 1);
+    setDisplayDate(next);
   };
+
+  // Single useEffect to handle loading schedules
+  useEffect(() => {
+    loadSchedules(displayDate);
+  }, [displayDate, user, refreshTrigger]);
 
   const schedulesForDate = useMemo(() => {
     if (!schedules || schedules.length === 0) return [];
 
     const displayYMD = dateToYMD(displayDate);
 
-    return schedules
+    const filteredSchedules = schedules
       .filter((s) => {
         if (!s?.date) return false;
 
@@ -281,8 +320,10 @@ const WorkScheduleScreen: React.FC = (props: any) => {
       .map((s) => ({
         schedule: s,
         user: s.employee_id || null,
-      }))
-      .filter((x) => x.user && typeof x.user === 'object' && x.user !== null && (x.user as any).role === "user");
+      }));
+
+    console.log(`📋 schedulesForDate length for ${displayYMD}: ${filteredSchedules.length} (from ${schedules.length} total schedules)`);
+    return filteredSchedules;
   }, [schedules, displayDate]);
 
 
@@ -317,9 +358,9 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         date: string;
         branch_id?: string;
       }) => {
-        setVersion((v) => v + 1);
         const dt = ymdToDate(newSchedule.date);
         setDisplayDate(dt);
+        setRefreshTrigger((t) => t + 1);
         showSuccessToast("Schedule added");
       },
     });
@@ -330,22 +371,6 @@ const WorkScheduleScreen: React.FC = (props: any) => {
     setRefreshing(true);
     await loadSchedules(displayDate);
     setRefreshing(false);
-  }, [displayDate, loadSchedules]);
-
-  const goToPrevDay = () => {
-    const prev = new Date(displayDate);
-    prev.setDate(displayDate.getDate() - 1);
-    setDisplayDate(prev);
-  };
-
-  const goToNextDay = () => {
-    const next = new Date(displayDate);
-    next.setDate(displayDate.getDate() + 1);
-    setDisplayDate(next);
-  };
-
-  useEffect(() => {
-    loadSchedules(displayDate);
   }, [displayDate, loadSchedules]);
 
   // When tapping an existing schedule to edit
@@ -361,102 +386,13 @@ const WorkScheduleScreen: React.FC = (props: any) => {
         end_time: string;
         date: string;
       }) => {
-        setDisplayDate(ymdToDate(updated.date));
-        setVersion((v) => v + 1);
-        await loadSchedules(ymdToDate(updated.date)); // triggers spinner automatically
+        const updatedDate = ymdToDate(updated.date);
+        setDisplayDate(updatedDate);
+        setRefreshTrigger((t) => t + 1);
         showSuccessToast(updated.id ? lang.schedule_updated : lang.schedule_added);
       },
     });
   };
-
-  useEffect(() => {
-    if (activeBranchId) {
-      loadSchedules(displayDate);
-    }
-  }, [activeBranchId]);
-
-  // --- Fetch full profiles for employee IDs found in schedulesForDate ---
-  useEffect(() => {
-    if (!schedulesForDate || schedulesForDate.length === 0) {
-      setUserProfiles({});
-      return;
-    }
-
-    let mounted = true;
-
-    (async () => {
-      try {
-        // collect unique employee IDs
-        const ids = Array.from(
-          new Set(
-            schedulesForDate.map(
-              (item) =>
-                typeof item.schedule?.employee_id === 'object' && item.schedule?.employee_id !== null
-                  ? (item.schedule?.employee_id as any)?._id
-                  : item.schedule?.employee_id
-            ).filter(Boolean)
-          )
-        ) as string[];
-
-        const profiles: Record<string, ProfileUser> = {};
-
-        await Promise.all(
-          ids.map(async (id) => {
-            try {
-              const profile = await getUserById(id);
-              if (profile?.fullname) {
-                profiles[id] = profile; // only store if fullname exists
-              }
-            } catch (err) {
-              console.warn("getUserById failed for", id, err);
-            }
-          })
-        );
-
-        if (!mounted) return;
-        setUserProfiles(profiles);
-      } catch (err) {
-        console.warn("Failed to load user profiles for schedules", err);
-      }
-    })();
-
-    return () => { mounted = false; };
-  }, [schedulesForDate]);
-
-  useEffect(() => {
-    const fetchPositions = async () => {
-      const positions: Record<string, string> = {};
-
-      for (const s of schedulesForDate) {
-        const userId = typeof s.user === 'object' && s.user !== null
-          ? (s.user as any)._id || (s.user as any).user_id
-          : s.user;
-        if (userId && !positions[userId]) {
-          try {
-            const profile = await getUserById(userId);
-            positions[userId] = profile?.position ?? 'No Position';
-          } catch (err) {
-            console.warn('Failed to fetch profile for user', userId, err);
-            positions[userId] = 'No Position';
-          }
-        }
-      }
-      setUserPositions(positions);
-    };
-
-    if (schedulesForDate.length > 0) {
-      fetchPositions();
-    }
-  }, [schedulesForDate]);
-
-  useEffect(() => {
-    if (skipNextLoad) {
-      setSkipNextLoad(false);
-      return;
-    }
-    loadSchedules(displayDate);
-  }, [displayDate, loadSchedules]);
-
 
   return (
     <View style={styles.container}>
@@ -564,18 +500,30 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                   schedule.id ? `${schedule.id}-${index}` :
                     `${schedule.date}-${schedule.start_time}-${typeof user === 'object' && user !== null ? (user as any)._id || (user as any).user_id || '' : user || ''}-${index}`;
 
+              // EmpId computation
+              const empId =
+                typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
+                  ? (schedule?.employee_id as any)?._id
+                  : schedule?.employee_id;
+
+              const profile = userProfiles[empId || ''];
+
+              if (!profile) {
+                console.warn(`⚠️ No profile found for empId: ${empId}`);
+                return null;
+              }
+
               // Time String
               const startTime = schedule.start_time || "";
               const endTime = schedule.end_time || "";
               const timeStr = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
 
               // 🔹 Branch Logic: compare schedule branch vs employee's default branch
-              const employeeBranchId =
-                typeof user === 'object' && user !== null
-                  ? typeof (user as any).branch === "object" && (user as any).branch !== null
-                    ? (user as any).branch?._id
-                    : typeof (user as any).branch === "string" ? (user as any).branch : undefined
-                  : undefined;
+              const employeeBranchId = profile.branch
+                ? typeof profile.branch === "object" && profile.branch !== null
+                  ? (profile.branch as any)._id
+                  : profile.branch
+                : undefined;
 
               const scheduleBranchId =
                 typeof schedule.branch_id === "object" && schedule.branch_id !== null
@@ -593,7 +541,7 @@ const WorkScheduleScreen: React.FC = (props: any) => {
               return (
                 <TouchableOpacity
                   key={uniqueKey}
-                  onPress={() => openEditScreen(schedule._id)}
+                  onPress={() => openEditScreen(schedule._id || '')}
                 >
                   <CartBox containerStyle={styles.detail_cartbox}>
                     {/* 🔹 Branch Info */}
@@ -619,23 +567,12 @@ const WorkScheduleScreen: React.FC = (props: any) => {
                         <View style={styles.name_position}>
                           {/* fullname */}
                           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                            {(() => {
-                              const employeeId =
-                                typeof schedule?.employee_id === 'object' && schedule?.employee_id !== null
-                                  ? (schedule?.employee_id as any)?._id
-                                  : schedule?.employee_id;
-
-                              const fullname = employeeId ? userProfiles[employeeId]?.fullname : null;
-
-                              return fullname || "Unknown User"; // ONLY fullname
-                            })()}
+                            {profile.fullname || "Unknown User"}
                           </Text>
 
                           {/* Position */}
                           <Text style={styles.position}>
-                            {typeof user === 'object' && user !== null
-                              ? userPositions[(user as any)?._id || (user as any)?.user_id || ''] || (user as any)?.position || 'No Position'
-                              : 'No Position'}
+                            {profile.position || 'No Position'}
                           </Text>
                         </View>
                       </View>
