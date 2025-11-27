@@ -1307,8 +1307,8 @@ const AddStaffScreen: React.FC = (props: any) => {
       />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <KeyboardAwareScrollView
-          contentContainerStyle={styles.content}
-          extraScrollHeight={20} // adjust scroll when keyboard opens
+          contentContainerStyle={[styles.content, { paddingBottom: 100 }]}
+          extraScrollHeight={100}
           enableOnAndroid={true}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -1321,17 +1321,6 @@ const AddStaffScreen: React.FC = (props: any) => {
             />
           }
         >
-          <ScrollView
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                progressBackgroundColor={colors.secondary}
-                colors={[colors.primary]}
-                tintColor={colors.primary}
-              />
-            }
-          >
             <View style={styles.progressWrap}>
               <View
                 style={[
@@ -1803,7 +1792,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                 />
               </>
             )}
-          </ScrollView>
         </KeyboardAwareScrollView>
       </TouchableWithoutFeedback>
 
@@ -2083,7 +2071,7 @@ export default AddStaffScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
-  content: { paddingHorizontal: 20, paddingBottom: 80 },
+  content: { paddingHorizontal: 20 },
   contentBox: {
     marginBottom: 20,
   },

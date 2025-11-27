@@ -340,10 +340,12 @@
     "scheduleNotAdded": "Schedule Not Added",
     "enterAtLeast": "Enter at least",
     "Employee_has_already_checkin": "Employee has already check-in",
-     "on_time":"On Time",
-     "Absent":"Absent",
-     "Type_hours_here":"Type hours here",
-     "Edit_Position":"Edit Position"
+    "on_time": "On Time",
+    "Absent": "Absent",
+    "Type_hours_here": "Type hours here",
+    "Edit_Position": "Edit Position",
+    "Check_in_failed": "Check-in failed.",
+    "Check_out_failed": "Check-out failed."
   },
   "de": {
     "profile": "Profil",
@@ -684,9 +686,11 @@
     "scheduleNotAdded": "Dienstplan nicht hinzugefügt",
     "enterAtLeast": "Geben Sie mindestens ein",
     "Employee_has_already_checkin": "Der Mitarbeiter hat bereits eingecheckt.",
-    "on_time":"Rechtzeitig",
-    "Absent":"Abwesend",
-    "Type_hours_here":"Geben Sie hier Stunden ein",
-    "Edit_Position":"Position bearbeiten"
+    "on_time": "Rechtzeitig",
+    "Absent": "Abwesend",
+    "Type_hours_here": "Geben Sie hier Stunden ein",
+    "Edit_Position": "Position bearbeiten",
+    "Check_in_failed": "Einchecken fehlgeschlagen",
+    "Check_out_failed": "Auschecken fehlgeschlagen"
   }
 }

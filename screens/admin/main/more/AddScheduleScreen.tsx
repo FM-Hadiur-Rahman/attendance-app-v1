@@ -1794,7 +1794,7 @@ const styles = StyleSheet.create({
   },
   suggestionText: { color: colors.text, fontSize: fonts.size.m },
   branch: {
-    width: 16, height: 16, marginRight: 4
+    width: 16, height: 16, marginRight: 4, alignSelf:'center'
   },
   branch_name: {
     fontSize: fonts.size.m,
