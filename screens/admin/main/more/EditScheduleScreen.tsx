@@ -14,6 +14,9 @@ import {
     UIManager,
     Dimensions,
     LayoutChangeEvent,
+    KeyboardAvoidingView,
+    TouchableWithoutFeedback,
+    Keyboard,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
@@ -334,6 +337,29 @@ export default function EditScheduleScreen(props: any) {
             return "";
         }
     };
+
+        // added this for android keyboard avoiding view 
+        const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+      
+        useEffect(() => {
+          const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+          const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+      
+          const onShow = (e: any) => {
+            const h = e?.endCoordinates?.height ?? 0;
+            setKeyboardHeight(h);
+          };
+          const onHide = () => setKeyboardHeight(0);
+      
+          const showSub = Keyboard.addListener(showEvent, onShow);
+          const hideSub = Keyboard.addListener(hideEvent, onHide);
+      
+          return () => {
+            showSub.remove();
+            hideSub.remove();
+          };
+        }, []);
+
     const computeDurationFromStartEnd = (start: string, end: string): number => {
         if (!start || !end) return 0;
         const toSeconds = (t: string) => {
@@ -996,7 +1022,19 @@ export default function EditScheduleScreen(props: any) {
             </View>
             <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); }}>
                 <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); }} pointerEvents="auto">
-                    <View style={styles.modalContainer}>
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
                         <View style={styles.modalHandle} />
                         <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
                         <View>
@@ -1123,6 +1161,8 @@ export default function EditScheduleScreen(props: any) {
                             )}
                         </View>
                     </View>
+                    </TouchableWithoutFeedback>
+                    </KeyboardAvoidingView>
                 </Pressable>
             </Modal>
             {showTimePicker && (
@@ -1348,5 +1388,5 @@ const styles = StyleSheet.create({
         fontWeight: fonts.weight.regular,
         color: colors.primary,
     },
-    clock: { width: 14, height: 14, marginRight: 4 },
+    clock: { width: 14, height: 14, marginRight: 4, alignSelf:'center' },
 });

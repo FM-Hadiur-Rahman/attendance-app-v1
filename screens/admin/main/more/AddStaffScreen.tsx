@@ -16,6 +16,7 @@ import {
   Platform,
   RefreshControl,
   LayoutChangeEvent,
+  KeyboardAvoidingView,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -816,6 +817,28 @@ const AddStaffScreen: React.FC = (props: any) => {
       setSelectedBranch(String((await getBranchId()) ?? ""));
     }
   };
+
+    // added this for android keyboard avoiding view 
+    const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+  
+    useEffect(() => {
+      const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+      const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+  
+      const onShow = (e: any) => {
+        const h = e?.endCoordinates?.height ?? 0;
+        setKeyboardHeight(h);
+      };
+      const onHide = () => setKeyboardHeight(0);
+  
+      const showSub = Keyboard.addListener(showEvent, onShow);
+      const hideSub = Keyboard.addListener(hideEvent, onHide);
+  
+      return () => {
+        showSub.remove();
+        hideSub.remove();
+      };
+    }, []);
 
   useEffect(() => {
     // load default branch once on mount
@@ -1797,7 +1820,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit profile</Text>
+            <Text style={styles.modalTitle}>{lang.edit_profile}</Text>
 
             <CartBox
               paddingLeft={20}
@@ -1806,8 +1829,9 @@ const AddStaffScreen: React.FC = (props: any) => {
               alignItems="flex-start"
               borderRadius={12}
               borderWidth={1}
-              borderColor="#E5E7EB"
+              borderColor={colors.border}
               marginBottom={12}
+              backgroundColor={colors.secondary}
               onPress={openCamera}
             >
               <View style={styles.logout}>
@@ -1826,7 +1850,8 @@ const AddStaffScreen: React.FC = (props: any) => {
               alignItems="flex-start"
               borderRadius={12}
               borderWidth={1}
-              borderColor="#E5E7EB"
+              backgroundColor={colors.secondary}
+              borderColor={colors.border}
               onPress={openGallery}
             >
               <View style={styles.logout}>
@@ -1936,17 +1961,26 @@ const AddStaffScreen: React.FC = (props: any) => {
         animationType="slide"
         transparent
         visible={addScheduleModalVisible}
-        onRequestClose={() => {
-          setAddScheduleModalVisible(false);
-        }}
+        onRequestClose={() => { setAddScheduleModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => {
-            setAddScheduleModalVisible(true);
-          }}
+          onPress={() => { setAddScheduleModalVisible(true); }}
+          pointerEvents="auto"
         >
-          <View style={styles.modalContainer}>
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{lang.Add_Schedule}</Text>
 
@@ -1974,18 +2008,36 @@ const AddStaffScreen: React.FC = (props: any) => {
 
                 <InputBox
                   label={lang.set_time_from}
-                  placeholder={"00:00:00"}
+                  placeholder={"HH:MM"}
                   value={timeFrom}
-                  setValue={(v: string) => {
-                    setTimeFrom(v);
-                    const ok = /^(\d{2}):(\d{2}):(\d{2})$/.test(v);
-                    if (ok) setTimeFromError("");
-                  }}
+                      setValue={(v: string) => {
+                        let digits = v.replace(/[^0-9]/g, "");
+                        let hh = "";
+                        let mm = "";
+                        if (digits.length > 0) {
+                          hh = digits.slice(0, 2);
+                          if (parseInt(hh) > 23) hh = "23"; // clamp to 24
+                        }
+
+                        if (digits.length > 2) {
+                          mm = digits.slice(2, 4);
+                          if (parseInt(mm) > 59) mm = "59"; // clamp to 59
+                        }
+
+                        const formatted = hh + (mm ? ":" + mm : "");
+                        setTimeFrom(formatted);
+
+                        // Full validation
+                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
+                        if (isValid) setTimeFromError("");
+                        else setTimeFromError("Invalid time");
+                      }}
+                      keyboardType="numeric"  
+                       maxLength={5}    
                   rightIcon={require("../../../../assets/icons/clock_b.png")}
                   errorMessage={timeFromError}
                   rightIconStyle={{ tintColor: colors.primary }}
                   onRightIconPress={onShowNativeTimePicker}
-                  onPress={onShowNativeTimePicker}
                 />
 
                 <InputBox
@@ -2009,7 +2061,9 @@ const AddStaffScreen: React.FC = (props: any) => {
                 <View style={{ height: 20 }} />
               </ScrollView>
             </View>
-          </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
       {/* Native Time Picker */}
@@ -2094,7 +2148,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   logout: { flexDirection: "row" },
-  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" },
+  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain", alignSelf:"center" },
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
@@ -2107,12 +2161,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 50,
+    paddingBottom: 70,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
-    shadowRadius: 1.5,
-    elevation: 4,
+    shadowRadius: 20,
+    elevation: 20,
   },
   modalHandle: {
     width: 40,
@@ -2126,8 +2180,7 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.l,
     fontWeight: fonts.weight.medium,
     textAlign: "center",
-    marginBottom: 19,
-    lineHeight: 22,
+    marginBottom: 20,
   },
   modalButton: {
     paddingVertical: 12,
@@ -2178,5 +2231,5 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular,
     color: colors.primary,
   },
-  clock: { width: 14, height: 14, marginRight: 4 },
+  clock: { width: 14, height: 14, marginRight: 4, alignSelf:'center' },
 });

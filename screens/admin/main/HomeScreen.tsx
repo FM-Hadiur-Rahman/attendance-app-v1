@@ -560,7 +560,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
             ) : (
               // Loaded and has data: show the check-ins
               recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
-                const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
+                const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? 'Unknown';
                 const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
                 const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
                 const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
