@@ -214,7 +214,7 @@
     "schedule_details": "Schedule details",
     "create_new_work_schedule": "Create a new work schedule",
     "branch": "Branch",
-    "set_time_from": "Set time from:",
+    "set_time_from": "Set time, from:",
     "Dashboard": "Dashboard",
     "Logout": "Logout?",
     "logout_confirm": "Confirm the logging out by clicking 'yes.'",
@@ -341,7 +341,9 @@
     "enterAtLeast": "Enter at least",
     "Employee_has_already_checkin": "Employee has already check-in",
      "on_time":"On Time",
-     "Absent":"Absent"
+     "Absent":"Absent",
+     "Type_hours_here":"Type hours here",
+     "Edit_Position":"Edit Position"
   },
   "de": {
     "profile": "Profil",
@@ -683,6 +685,8 @@
     "enterAtLeast": "Geben Sie mindestens ein",
     "Employee_has_already_checkin": "Der Mitarbeiter hat bereits eingecheckt.",
     "on_time":"Rechtzeitig",
-    "Absent":"Abwesend"
+    "Absent":"Abwesend",
+    "Type_hours_here":"Geben Sie hier Stunden ein",
+    "Edit_Position":"Position bearbeiten"
   }
 }

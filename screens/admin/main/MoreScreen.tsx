@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.family.regular,
   },
   logout: { flexDirection: "row" },
-  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" },
+  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" , alignSelf:'center'},
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
@@ -673,7 +673,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 50,
+    paddingBottom: 70,
     shadowColor: colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
