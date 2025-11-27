@@ -52,6 +52,7 @@ export default function LoginScreen() {
 
   const [skipNextValidation, setSkipNextValidation] = useState(false);
   const [showBlueBorder, setShowBlueBorder] = useState(false);
+  const [suppressErrors, setSuppressErrors] = useState(false);
 
   // password validation (live)
   const validatePasswordLive = (pwd: string): string => {
@@ -100,6 +101,7 @@ export default function LoginScreen() {
       setPassword('');
       setEmailError('');
       setPasswordError('');
+      setSuppressErrors(false);
       return () => { };
     }, [])
   );
@@ -152,6 +154,15 @@ export default function LoginScreen() {
     return /invalid credentials|incorrect password|wrong password|user not found|invalid username|invalid email|unauthorized/i.test(combined);
   };
 
+  // Safe showErrorToast that suppresses after success
+  const safeShowErrorToast = (message: string) => {
+    if (suppressErrors) {
+      console.warn('Suppressed error toast during login success:', message);
+      return;
+    }
+    showErrorToast(message);
+  };
+
   // sign-in
   const handleSignIn = async () => {
     // Skip validation once after backend auth failure
@@ -186,7 +197,7 @@ export default function LoginScreen() {
 
       if (hasError) {
         Keyboard.dismiss(); // ✅ hide keyboard when showing error
-        showErrorToast(lang.toast_fill_fields);
+        safeShowErrorToast(lang.toast_fill_fields);
         return;
       }
     }
@@ -216,7 +227,7 @@ export default function LoginScreen() {
           setEmailError('');
           setPasswordError('');
           emailRef.current?.focus();
-          showErrorToast(lang.toast_incorrect_credentials);
+          safeShowErrorToast(lang.toast_incorrect_credentials);
           setSkipNextValidation(true);
           return;
         }
@@ -240,21 +251,28 @@ export default function LoginScreen() {
 
         showSuccessToast(lang.toast_login_success || 'Signed in');
 
-        const role = user.role ?? data.role ?? 'employee';
-        const routeMap: Record<string, string> = {
-          admin: 'Footer_A',
-          employee: 'Footer_C',
-          superadmin: 'Footer_S',
-        };
-        const routeName = routeMap[role] || 'Footer_C';
-        const params = { userId, langId, role };
+        // Suppress any potential errors during the delay
+        setSuppressErrors(true);
 
-        // ✅ Log token, userId, role, username
-        console.log('Login success:', { token, userId, role, username });
+        // Add delay to let toast show
+        setTimeout(() => {
+          const role = user.role ?? data.role ?? 'employee';
+          const routeMap: Record<string, string> = {
+            admin: 'Footer_A',
+            employee: 'Footer_C',
+            superadmin: 'Footer_S',
+          };
+          const routeName = routeMap[role] || 'Footer_C';
+          const params = { userId, langId, role };
 
-        setEmailOrUsername('');
-        setPassword('');
-        navigation.navigate(routeName as never, params as never);
+          // ✅ Log token, userId, role, username
+          console.log('Login success:', { token, userId, role, username });
+
+          setEmailOrUsername('');
+          setPassword('');
+          navigation.navigate(routeName as never, params as never);
+        }, 1500); // 1.5 seconds delay – adjust as needed (e.g., 1000 for 1 sec)
+
         return;
       }
 
@@ -273,7 +291,7 @@ export default function LoginScreen() {
 
         const errMsg =
           errsArray.length > 0 ? errsArray[0] : rawMessage || lang.toast_incorrect_credentials;
-        showErrorToast(errMsg);
+        safeShowErrorToast(errMsg);
         console.warn('Auth failure on login', { status: resp.status, data: resp.data });
         return;
       }
@@ -305,7 +323,7 @@ export default function LoginScreen() {
             emailRef.current?.focus();
           } else {
             Keyboard.dismiss(); // ✅ hide keyboard for unknown error toast
-            showErrorToast(err);
+            safeShowErrorToast(err);
           }
         });
 
@@ -313,7 +331,7 @@ export default function LoginScreen() {
       }
 
       // fallback
-      showErrorToast(`Server returned ${resp.status}`);
+      safeShowErrorToast(`Server returned ${resp.status}`);
       console.warn('Login failed (fallback)', { status: resp.status, data: resp.data });
 
     } catch (err: any) {
@@ -328,11 +346,11 @@ export default function LoginScreen() {
         setPasswordError('');
         emailRef.current?.focus();
         setSkipNextValidation(true);
-        showErrorToast(String(msg));
+        safeShowErrorToast(String(msg));
         return;
       }
 
-      showErrorToast(msg);
+      safeShowErrorToast(msg);
     }
   };
 
@@ -413,13 +431,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fonts.size.xl,
     fontFamily: fonts.family.medium,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
   },
   greetingSubtitle: {
     color: colors.subtext3,
     fontSize: fonts.size.l,
     fontFamily: fonts.family.regular,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     marginTop: 6,
   },
   inputsContainer: {
