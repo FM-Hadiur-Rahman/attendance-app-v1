@@ -88,7 +88,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const [checkedOut, setCheckedOut] = useState<boolean>(false);
   const [canCheckOut, setCanCheckOut] = useState<boolean>(false);
   const offDuty = !checkedIn || checkedOut;
-  const CHECKIN_RADIUS = 100; // keep radius same (meters)
+  const CHECKIN_RADIUS = 150; // keep radius same (meters)
   // ✅ New state for check-in time eligibility
   const [canCheckIn, setCanCheckIn] = useState(false);
   const tryReverseGeocode = async (lat: number, lon: number) => {
@@ -289,7 +289,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const now = new Date();
     if (now < earliestCheckInTime) {
       showErrorToast(
-        `⚠️ You can only check in 15 minutes before ${todaySchedule.start_time}`
+        `You can only check in 15 minutes before ${todaySchedule.start_time}`
       );
       return false;
     }
@@ -620,7 +620,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       showSuccessToast(lang.checkInSuccess);
       await fetchAttendance(); // Refresh states from API
     } catch (error: any) {
-      showErrorToast(error.response?.data?.message || "Check-in failed.");
+      showErrorToast(lang.Check_in_failed);
     }
   };
   const handleCheckOut = async () => {
@@ -654,7 +654,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       await fetchAttendance(); // Refresh states from API
     } catch (error: any) {
       console.error("Check-out error:", error);
-      showErrorToast(error.response?.data?.message || "Check-out failed.");
+      showErrorToast(lang.Check_out_failed);
     }
   };
   const getDistance = (

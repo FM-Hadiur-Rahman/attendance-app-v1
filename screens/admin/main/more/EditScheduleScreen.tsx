@@ -1,5 +1,5 @@
 // screens/admin/main/more/EditScheduleScreen.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
     View,
     Text,
@@ -34,6 +34,7 @@ import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../../api/attendanceAllHistory";
+import { useFocusEffect } from "@react-navigation/native";
 type Branch = {
     _id?: string;
     id?: string;
@@ -160,6 +161,24 @@ export default function EditScheduleScreen(props: any) {
             } as any;
         });
     };
+
+    // 30000 auto reaload 
+    const autoRefreshRunningRef = useRef(false);
+
+    useEffect(() => {
+        const intervalMs = 30000; // 30s - change as needed
+        const id = setInterval(() => {
+            if (!autoRefreshRunningRef.current) {
+                autoRefreshRunningRef.current = true;
+                onRefresh().finally(() => {
+                    autoRefreshRunningRef.current = false;
+                });
+            }
+        }, intervalMs);
+
+        return () => clearInterval(id);
+    }, [screenBranchId]); // restart interval when branch changes
+
     const inStringToYmd = (inStr?: string) => {
         if (!inStr) return "";
         const parts = String(inStr).split(" ");
@@ -338,27 +357,27 @@ export default function EditScheduleScreen(props: any) {
         }
     };
 
-        // added this for android keyboard avoiding view 
-        const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
-      
-        useEffect(() => {
-          const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-          const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-      
-          const onShow = (e: any) => {
+    // added this for android keyboard avoiding view 
+    const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+        const onShow = (e: any) => {
             const h = e?.endCoordinates?.height ?? 0;
             setKeyboardHeight(h);
-          };
-          const onHide = () => setKeyboardHeight(0);
-      
-          const showSub = Keyboard.addListener(showEvent, onShow);
-          const hideSub = Keyboard.addListener(hideEvent, onHide);
-      
-          return () => {
+        };
+        const onHide = () => setKeyboardHeight(0);
+
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+        return () => {
             showSub.remove();
             hideSub.remove();
-          };
-        }, []);
+        };
+    }, []);
 
     const computeDurationFromStartEnd = (start: string, end: string): number => {
         if (!start || !end) return 0;
@@ -1022,146 +1041,146 @@ export default function EditScheduleScreen(props: any) {
             </View>
             <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); }}>
                 <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); }} pointerEvents="auto">
-          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1, justifyContent: "flex-end" }}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-          >
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-              <View
-                style={[
-                  styles.modalContainer,
-                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                ]}
-              >
-                        <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
-                        <View>
-                            <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                                <View
-                                    ref={(r) => { branchInputWrapperRef.current = r; }}
-                                    onLayout={onBranchLayout}
-                                >
-                                    <InputBox
-                                        label={lang.Branch}
-                                        placeholder={"Select branch"}
-                                        value={selectedBranch}
-                                        setValue={(v: string) => {
-                                            setSelectedBranch(v);
-                                            setSelectedBranchId(null);
-                                            setBranchFilterOpen(true);
-                                            setTimeout(() => {
-                                                if (!branchInputLayout) {
-                                                    const handle = findNodeHandle(branchInputWrapperRef.current);
-                                                    if (handle) {
-                                                        UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                                                            setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                                                        });
-                                                    }
+                    {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                        style={{ flex: 1, justifyContent: "flex-end" }}
+                        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+                    >
+                        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                            <View
+                                style={[
+                                    styles.modalContainer,
+                                    Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                                ]}
+                            >
+                                <View style={styles.modalHandle} />
+                                <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
+                                <View>
+                                    <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+                                        <View
+                                            ref={(r) => { branchInputWrapperRef.current = r; }}
+                                            onLayout={onBranchLayout}
+                                        >
+                                            <InputBox
+                                                label={lang.Branch}
+                                                placeholder={"Select branch"}
+                                                value={selectedBranch}
+                                                setValue={(v: string) => {
+                                                    setSelectedBranch(v);
+                                                    setSelectedBranchId(null);
+                                                    setBranchFilterOpen(true);
+                                                    setTimeout(() => {
+                                                        if (!branchInputLayout) {
+                                                            const handle = findNodeHandle(branchInputWrapperRef.current);
+                                                            if (handle) {
+                                                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                                                    setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                                                });
+                                                            }
+                                                        }
+                                                    }, 30);
+                                                }}
+                                                onPress={undefined}
+                                                rightIcon={require("../../../../assets/icons/branch_b.png")}
+                                                rightIconStyle={{ tintColor: colors.primary }}
+                                                onRightIconPress={() => {
+                                                    setSelectedBranch("");
+                                                    setBranchFilterOpen(true);
+                                                    setTimeout(() => {
+                                                        if (!branchInputLayout) {
+                                                            const handle = findNodeHandle(branchInputWrapperRef.current);
+                                                            if (handle) {
+                                                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                                                    setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                                                });
+                                                            }
+                                                        }
+                                                    }, 30);
+                                                }}
+                                                errorMessage={""}
+                                            />
+                                        </View>
+                                        <InputBox
+                                            label={lang.Start_time}
+                                            placeholder="HH:MM"
+                                            value={timeFrom}
+                                            setValue={(v: string) => {
+                                                // Remove non-digits
+                                                let digits = v.replace(/[^0-9]/g, "");
+                                                let hh = "";
+                                                let mm = "";
+                                                if (digits.length > 0) {
+                                                    // Hours (max 2 digits)
+                                                    hh = digits.slice(0, 2);
+                                                    if (parseInt(hh) > 23) hh = "23"; // clamp to 24
                                                 }
-                                            }, 30);
-                                        }}
-                                        onPress={undefined}
-                                        rightIcon={require("../../../../assets/icons/branch_b.png")}
-                                        rightIconStyle={{ tintColor: colors.primary }}
-                                        onRightIconPress={() => {
-                                            setSelectedBranch("");
-                                            setBranchFilterOpen(true);
-                                            setTimeout(() => {
-                                                if (!branchInputLayout) {
-                                                    const handle = findNodeHandle(branchInputWrapperRef.current);
-                                                    if (handle) {
-                                                        UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                                                            setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                                                        });
-                                                    }
+                                                if (digits.length > 2) {
+                                                    // Minutes (max 2 digits)
+                                                    mm = digits.slice(2, 4);
+                                                    if (parseInt(mm) > 59) mm = "59"; // clamp to 59
                                                 }
-                                            }, 30);
-                                        }}
-                                        errorMessage={""}
-                                    />
+                                                const formatted = hh + (mm ? ":" + mm : "");
+                                                setTimeFrom(formatted);
+                                                // Full validation
+                                                const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
+                                                if (isValid) setTimeFromError("");
+                                                else setTimeFromError("Invalid time format (00 00)");
+                                            }}
+                                            keyboardType="numeric" // regular keyboard
+                                            maxLength={5} // HH:MM
+                                            rightIcon={require("../../../../assets/icons/clock_b.png")}
+                                            errorMessage={timeFromError}
+                                            rightIconStyle={{ tintColor: colors.primary }}
+                                            onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
+                                        />
+                                        <InputBox
+                                            label={lang.Duration}
+                                            placeholder={"Eg: 8"}
+                                            value={durationHours}
+                                            setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
+                                            errorMessage={durationError}
+                                            rightIconStyle={{ tintColor: colors.primary }}
+                                            keyboardType="numeric"
+                                        />
+                                        <View style={{ height: 18 }} />
+                                        <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
+                                        <View style={{ height: 20 }} />
+                                    </ScrollView>
+                                    {branchFilterOpen && branchInputLayout && (
+                                        <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
+                                            <View
+                                                style={[
+                                                    styles.overlayContainer,
+                                                    {
+                                                        left: Math.max(branchInputLayout.x),
+                                                        top: Math.max(branchInputLayout.y + branchInputLayout.height),
+                                                        width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
+                                                        maxHeight: 300,
+                                                    },
+                                                ]}
+                                            >
+                                                <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                                    {branchSuggestions.length === 0 ? (
+                                                        <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
+                                                    ) : (
+                                                        branchSuggestions.map((b) => (
+                                                            <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
+                                                                setSelectedBranch(b.name);
+                                                                setSelectedBranchId(b.id);
+                                                                setBranchFilterOpen(false);
+                                                            }}>
+                                                                <Text style={styles.suggestionText}>{b.name}</Text>
+                                                            </Pressable>
+                                                        ))
+                                                    )}
+                                                </ScrollView>
+                                            </View>
+                                        </Pressable>
+                                    )}
                                 </View>
-                                <InputBox
-                                    label={lang.Start_time}
-                                    placeholder="HH:MM"
-                                    value={timeFrom}
-                                    setValue={(v: string) => {
-                                        // Remove non-digits
-                                        let digits = v.replace(/[^0-9]/g, "");
-                                        let hh = "";
-                                        let mm = "";
-                                        if (digits.length > 0) {
-                                            // Hours (max 2 digits)
-                                            hh = digits.slice(0, 2);
-                                            if (parseInt(hh) > 23) hh = "23"; // clamp to 24
-                                        }
-                                        if (digits.length > 2) {
-                                            // Minutes (max 2 digits)
-                                            mm = digits.slice(2, 4);
-                                            if (parseInt(mm) > 59) mm = "59"; // clamp to 59
-                                        }
-                                        const formatted = hh + (mm ? ":" + mm : "");
-                                        setTimeFrom(formatted);
-                                        // Full validation
-                                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
-                                        if (isValid) setTimeFromError("");
-                                        else setTimeFromError("Invalid time format (00 00)");
-                                    }}
-                                    keyboardType="numeric" // regular keyboard
-                                    maxLength={5} // HH:MM
-                                    rightIcon={require("../../../../assets/icons/clock_b.png")}
-                                    errorMessage={timeFromError}
-                                    rightIconStyle={{ tintColor: colors.primary }}
-                                    onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
-                                />
-                                <InputBox
-                                    label={lang.Duration}
-                                    placeholder={"Eg: 8"}
-                                    value={durationHours}
-                                    setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
-                                    errorMessage={durationError}
-                                    rightIconStyle={{ tintColor: colors.primary }}
-                                    keyboardType="numeric"
-                                />
-                                <View style={{ height: 18 }} />
-                                <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
-                                <View style={{ height: 20 }} />
-                            </ScrollView>
-                            {branchFilterOpen && branchInputLayout && (
-                                <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
-                                    <View
-                                        style={[
-                                            styles.overlayContainer,
-                                            {
-                                                left: Math.max(branchInputLayout.x),
-                                                top: Math.max(branchInputLayout.y + branchInputLayout.height),
-                                                width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
-                                                maxHeight: 300,
-                                            },
-                                        ]}
-                                    >
-                                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                                            {branchSuggestions.length === 0 ? (
-                                                <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
-                                            ) : (
-                                                branchSuggestions.map((b) => (
-                                                    <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
-                                                        setSelectedBranch(b.name);
-                                                        setSelectedBranchId(b.id);
-                                                        setBranchFilterOpen(false);
-                                                    }}>
-                                                        <Text style={styles.suggestionText}>{b.name}</Text>
-                                                    </Pressable>
-                                                ))
-                                            )}
-                                        </ScrollView>
-                                    </View>
-                                </Pressable>
-                            )}
-                        </View>
-                    </View>
-                    </TouchableWithoutFeedback>
+                            </View>
+                        </TouchableWithoutFeedback>
                     </KeyboardAvoidingView>
                 </Pressable>
             </Modal>
@@ -1376,7 +1395,7 @@ const styles = StyleSheet.create({
     },
     suggestionText: { color: colors.text, fontSize: fonts.size.m },
     branch: {
-        width: 16, height: 16, marginRight: 4
+        width: 16, height: 16, marginRight: 4, alignSelf: 'center'
     },
     branch_name: {
         fontSize: fonts.size.m,
@@ -1388,5 +1407,5 @@ const styles = StyleSheet.create({
         fontWeight: fonts.weight.regular,
         color: colors.primary,
     },
-    clock: { width: 14, height: 14, marginRight: 4, alignSelf:'center' },
+    clock: { width: 14, height: 14, marginRight: 4, alignSelf: 'center' },
 });

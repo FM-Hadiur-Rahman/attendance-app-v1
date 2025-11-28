@@ -754,13 +754,13 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           dialogTitle: fileName,
         });
-        showSuccessToast("✅ Excel file exported successfully");
+        showSuccessToast(lang.csv_prepared);
       } else {
-        showSuccessToast("📂 File saved to: " + fileUri);
+        showSuccessToast("File saved to: " + fileUri);
       }
     } catch (err) {
       console.warn("XLSX Export Error:", err);
-      showErrorToast("❌ Failed to export Excel file");
+      showErrorToast(" Failed to export Excel file");
     }
   };
 

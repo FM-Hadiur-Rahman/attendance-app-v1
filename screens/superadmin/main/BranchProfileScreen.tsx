@@ -13,6 +13,10 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -127,6 +131,28 @@ export default function BranchProfileScreen(props: any) {
   useEffect(() => setPhoneInput(phoneNumber), [phoneNumber]);
   useEffect(() => setAddressLatInput(latitude ?? ""), [latitude]);
   useEffect(() => setAddressLonInput(longitude ?? ""), [longitude]);
+
+      // added this for android keyboard avoiding view 
+      const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+    
+      useEffect(() => {
+        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    
+        const onShow = (e: any) => {
+          const h = e?.endCoordinates?.height ?? 0;
+          setKeyboardHeight(h);
+        };
+        const onHide = () => setKeyboardHeight(0);
+    
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+    
+        return () => {
+          showSub.remove();
+          hideSub.remove();
+        };
+      }, []);
 
   // --- helper: read/write cache map (branchId -> { addr, lat, lon, savedAt }) ---
   const readGeoCache = async (): Promise<Record<string, any>> => {
@@ -965,9 +991,6 @@ export default function BranchProfileScreen(props: any) {
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ marginTop: 10, color: colors.subtext2 }}>
-            Loading branch...
-          </Text>
         </View>
       ) : (
         <ScrollView
@@ -1160,7 +1183,19 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setbranchnameModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
+                  {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1, justifyContent: "flex-end" }}
+                    keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+                  >
+                    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                      <View
+                        style={[
+                          styles.modalContainer,
+                          Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                        ]}
+                      >
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{lang.Edit_branch_name}</Text>
 
@@ -1182,6 +1217,8 @@ export default function BranchProfileScreen(props: any) {
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
+           </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -1196,7 +1233,19 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setManagerModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
+              {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+              <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1, justifyContent: "flex-end" }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+              >
+                <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                  <View
+                    style={[
+                      styles.modalContainer,
+                      Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                    ]}
+                  >
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{lang.Manager_name}</Text>
             <InputBox
@@ -1216,6 +1265,8 @@ export default function BranchProfileScreen(props: any) {
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
+           </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -1230,7 +1281,19 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setPhoneModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
+                   {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+                   <KeyboardAvoidingView
+                     behavior={Platform.OS === "ios" ? "padding" : "height"}
+                     style={{ flex: 1, justifyContent: "flex-end" }}
+                     keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+                   >
+                     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                       <View
+                         style={[
+                           styles.modalContainer,
+                           Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                         ]}
+                       >
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>
               {lang.Edit_manager_phone_number}
@@ -1267,6 +1330,8 @@ export default function BranchProfileScreen(props: any) {
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
+           </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -1281,7 +1346,19 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setAddressModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
+                   {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+                   <KeyboardAvoidingView
+                     behavior={Platform.OS === "ios" ? "padding" : "height"}
+                     style={{ flex: 1, justifyContent: "flex-end" }}
+                     keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+                   >
+                     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                       <View
+                         style={[
+                           styles.modalContainer,
+                           Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                         ]}
+                       >
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{lang.Edit_branch_address}</Text>
 
@@ -1311,6 +1388,9 @@ export default function BranchProfileScreen(props: any) {
               containerStyle={{ alignSelf: "center", marginTop: 10 }}
             />
           </View>
+
+          </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
       <Toast config={toastConfig} />

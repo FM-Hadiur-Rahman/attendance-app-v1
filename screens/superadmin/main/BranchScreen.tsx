@@ -419,9 +419,6 @@ const BranchScreen: React.FC = (props: any) => {
             style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
           >
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ marginTop: 10, color: colors.subtext2 }}>
-              Loading branches...
-            </Text>
           </View>
         ) : (
           <FlatList

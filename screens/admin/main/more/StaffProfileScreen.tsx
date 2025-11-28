@@ -958,35 +958,35 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPositionModalVisible(false)}
         />
-                  {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={{ flex: 1, justifyContent: "flex-end" }}
-                    keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                  >
-                    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                     <View
-                       style={[
-                         styles.modalContainer,
-                         Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                       ]}
-                     >
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.Edit_Position}</Text>
-          <InputBox
-            label={lang.position}
-            value={positionInput}
-            setValue={setPositionInput}
-            placeholder="Enter position"
-          />
-          <Button1
-            text={lang.save}
-            width="100%"
-            onPress={handleSavePosition}
-          />
-        </View>
-        
-        </TouchableWithoutFeedback>
+        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        >
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View
+              style={[
+                styles.modalContainer,
+                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+              ]}
+            >
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>{lang.Edit_Position}</Text>
+              <InputBox
+                label={lang.position}
+                value={positionInput}
+                setValue={setPositionInput}
+                placeholder="Enter position"
+              />
+              <Button1
+                text={lang.save}
+                width="100%"
+                onPress={handleSavePosition}
+              />
+            </View>
+
+          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1001,41 +1001,41 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setEmailModalVisible(false)}
         />
-          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1, justifyContent: "flex-end" }}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-          >
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-              <View
-                style={[
-                  styles.modalContainer,
-                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                ]}
-              >
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editEmail}</Text>
-          <InputBox
-            label={lang.email}
-            value={emailInput}
-            setValue={(text) => {
-              const formatted = text.toLowerCase();
-              setEmailInput(formatted);
-              if (!formatted.includes("@"))
-                setEmailError("Enter a valid email");
-              else setEmailError("");
-            }}
-            placeholder="Enter email"
-            errorMessage={emailError}
-          />
-          <Button1
-            text={lang.save}
-            width="100%"
-            onPress={handleSaveEmail}
-          />
-        </View>
-        </TouchableWithoutFeedback>
+        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        >
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View
+              style={[
+                styles.modalContainer,
+                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+              ]}
+            >
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>{lang.editEmail}</Text>
+              <InputBox
+                label={lang.email}
+                value={emailInput}
+                setValue={(text) => {
+                  const formatted = text.toLowerCase();
+                  setEmailInput(formatted);
+                  if (!formatted.includes("@"))
+                    setEmailError("Enter a valid email");
+                  else setEmailError("");
+                }}
+                placeholder="Enter email"
+                errorMessage={emailError}
+              />
+              <Button1
+                text={lang.save}
+                width="100%"
+                onPress={handleSaveEmail}
+              />
+            </View>
+          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1050,90 +1050,90 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPhoneModalVisible(false)}
         />
-        
-                 {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-                 <KeyboardAvoidingView
-                   behavior={Platform.OS === "ios" ? "padding" : "height"}
-                   style={{ flex: 1, justifyContent: "flex-end" }}
-                   keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                 >
-                   <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                     <View
-                       style={[
-                         styles.modalContainer,
-                         Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                       ]}
-                     >
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.editPhoneNumber}</Text>
-          {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
-          <InputBox
-            label={lang.phoneNumber}
-            placeholder="123 456 789"
-            value={phone} // <-- use phoneInput state
-            setValue={(text: string) => onPhoneChange(text)}
-            errorMessage={touched.phone ? errors.phone : ""}
-            leftIcon={selectedCountry.flag}
-            leftIcon2={require("../../../../assets/icons/down_b.png")}
-            onLeftIcon2Press={() =>
-              (navigation as any).navigate("Code", {
-                initialSelectedId: selectedCountry.id,
-                onSelect: (item: any) => {
-                  setSelectedCountry(item);
-                  const newRule =
-                    PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
-                    DEFAULT_PHONE_RULE;
 
-                  let currentRaw = (phone || "").replace(/\D/g, "");
-                  const hasLeadingZero = currentRaw.startsWith("0");
-                  const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
-                  currentRaw = currentRaw.slice(0, maxDisplay);
+        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        >
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View
+              style={[
+                styles.modalContainer,
+                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+              ]}
+            >
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>{lang.editPhoneNumber}</Text>
+              {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
+              <InputBox
+                label={lang.phoneNumber}
+                placeholder="123 456 789"
+                value={phone} // <-- use phoneInput state
+                setValue={(text: string) => onPhoneChange(text)}
+                errorMessage={touched.phone ? errors.phone : ""}
+                leftIcon={selectedCountry.flag}
+                leftIcon2={require("../../../../assets/icons/down_b.png")}
+                onLeftIcon2Press={() =>
+                  (navigation as any).navigate("Code", {
+                    initialSelectedId: selectedCountry.id,
+                    onSelect: (item: any) => {
+                      setSelectedCountry(item);
+                      const newRule =
+                        PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
+                        DEFAULT_PHONE_RULE;
 
-                  let normalized = currentRaw.startsWith("0")
-                    ? currentRaw.slice(1)
-                    : currentRaw;
-                  normalized = normalized.slice(0, newRule.max);
+                      let currentRaw = (phone || "").replace(/\D/g, "");
+                      const hasLeadingZero = currentRaw.startsWith("0");
+                      const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
+                      currentRaw = currentRaw.slice(0, maxDisplay);
 
-                  setPhone(formatPhoneForDisplay(currentRaw));
-                  setPhoneRaw(normalized);
+                      let normalized = currentRaw.startsWith("0")
+                        ? currentRaw.slice(1)
+                        : currentRaw;
+                      normalized = normalized.slice(0, newRule.max);
 
-                  if (!normalized || normalized.length === 0) {
-                    setErrors((prev) => ({
-                      ...prev,
-                      phone: lang.phone_required,
-                    }));
-                  } else if (normalized.length < newRule.min) {
-                    if (newRule.min === newRule.max) {
-                      setErrors((prev) => ({
-                        ...prev,
-                        phone: `Please complete all ${newRule.max} digits`,
-                      }));
-                    } else {
-                      setErrors((prev) => ({
-                        ...prev,
-                        phone: `${lang.Enter_at_least || "Enter at least"} ${newRule.min
-                          } ${lang.digits || "digits"}`,
-                      }));
-                    }
-                  } else {
-                    setErrors((prev) => ({ ...prev, phone: "" }));
-                  }
-                },
-              })
-            }
-            onFocus={() => {
-              setFieldTouched("phone");
-            }}
-            onBlur={() => validateField("phone")}
-            keyboardType="phone-pad"
-          />
-          <Button1
-            text={lang.save}
-            width="100%"
-            onPress={handleSavePhone}
-          />
-        </View>
-        </TouchableWithoutFeedback>
+                      setPhone(formatPhoneForDisplay(currentRaw));
+                      setPhoneRaw(normalized);
+
+                      if (!normalized || normalized.length === 0) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          phone: lang.phone_required,
+                        }));
+                      } else if (normalized.length < newRule.min) {
+                        if (newRule.min === newRule.max) {
+                          setErrors((prev) => ({
+                            ...prev,
+                            phone: `Please complete all ${newRule.max} digits`,
+                          }));
+                        } else {
+                          setErrors((prev) => ({
+                            ...prev,
+                            phone: `${lang.Enter_at_least || "Enter at least"} ${newRule.min
+                              } ${lang.digits || "digits"}`,
+                          }));
+                        }
+                      } else {
+                        setErrors((prev) => ({ ...prev, phone: "" }));
+                      }
+                    },
+                  })
+                }
+                onFocus={() => {
+                  setFieldTouched("phone");
+                }}
+                onBlur={() => validateField("phone")}
+                keyboardType="phone-pad"
+              />
+              <Button1
+                text={lang.save}
+                width="100%"
+                onPress={handleSavePhone}
+              />
+            </View>
+          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       </Modal>
 
