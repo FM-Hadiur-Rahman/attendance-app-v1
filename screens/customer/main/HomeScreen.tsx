@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Image,
   ScrollView,
   RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import * as Location from "expo-location";
 import Header from "../../../components/Header";
@@ -30,6 +31,10 @@ import {
   getTodaySchedule,
   getBranchDetails,
   getMyAttendanceHistory,
+  isCheckedInToday,
+  hasCompletedShiftToday,
+  clearScheduleCache,
+  getTodayScheduleNoCache  // ✅ Import the no-cache function
 } from "../../../api/checkin_checkout";
 // ✅ Define your navigation stack param list
 export type RootStackParamList = {
@@ -61,6 +66,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const [showPopup, setShowPopup] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showCheckoutPopup, setShowCheckoutPopup] = useState(false);
+  const [showCheckInLoading, setShowCheckInLoading] = useState(false); // ✅ New state for check-in loading
+  const [showCheckOutLoading, setShowCheckOutLoading] = useState(false); // ✅ New state for check-out loading
+  const [showCheckInSuccessLoading, setShowCheckInSuccessLoading] = useState(false); // ✅ New state for post check-in success loading
   const currentLang = langId || "en";
   const lang =
     translations[currentLang as keyof typeof translations] ||
@@ -91,6 +99,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const CHECKIN_RADIUS = 150; // keep radius same (meters)
   // ✅ New state for check-in time eligibility
   const [canCheckIn, setCanCheckIn] = useState(false);
+  // Simplified state for attendance status
+  const [attendanceStatus, setAttendanceStatus] = useState<'not_checked_in' | 'checked_in' | 'shift_completed'>('not_checked_in');
+  // ✅ Add ref for location caching
+  const lastLocationCache = useRef<{location: any; timestamp: number} | null>(null);
   const tryReverseGeocode = async (lat: number, lon: number) => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -277,22 +289,28 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   }, [todaySchedule]);
   const handleCheckInAttempt = () => {
     if (!todaySchedule) return false;
+    
     const tzDate =
       todaySchedule.date?.split("T")[0] ??
       new Date().toISOString().split("T")[0];
-    const scheduleDateTime = new Date(
+    
+    const scheduleStartDateTime = new Date(
       `${tzDate}T${todaySchedule.start_time}:00`
     );
+    
     const earliestCheckInTime = new Date(
-      scheduleDateTime.getTime() - 15 * 60 * 1000
+      scheduleStartDateTime.getTime() - 15 * 60 * 1000
     );
+    
     const now = new Date();
+    
     if (now < earliestCheckInTime) {
       showErrorToast(
         `You can only check in 15 minutes before ${todaySchedule.start_time}`
       );
       return false;
     }
+    
     return true;
   };
   const loadTodaySchedule = async () => {
@@ -312,22 +330,27 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         }
       }
       console.log("🏷️ Using Branch ID:", branchId);
+      console.log("👤 User ID:", userId);
+      
       // ➡ Fetch schedule WITHOUT branchId filter to allow cross-branch schedules
-      const resp = await getTodaySchedule({
+      const resp = await getTodayScheduleNoCache({
         userId,
         // branchId, // ❌ Do NOT pass branchId - allows showing schedules for any branch assigned to user
         timezone: "Asia/Colombo",
       });
       const schedules = resp?.schedules ?? [];
       const rawToday = resp?.todaySchedule ?? null;
-      console.log("📌 Today schedule:", rawToday);
+      console.log("📌 Today schedule response:", resp);
       console.log("📦 Total schedules fetched:", schedules.length);
+      
       // ❌ If no today schedule found — stop
       if (!rawToday || !("start_time" in rawToday)) {
         console.log("❌ No valid today schedule. Setting null.");
         setTodaySchedule(null);
+        setLoading(false);
         return;
       }
+      
       // 🔍 Extract raw object
       const raw = "raw" in rawToday ? rawToday.raw : rawToday;
       // ⏱ Start & End times (safe)
@@ -369,6 +392,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           : null,
         raw,
       };
+      console.log("✅ Processed schedule object:", scheduleObj);
       setTodaySchedule(scheduleObj);
     } catch (err) {
       console.error("❌ Error loading today's schedule:", err);
@@ -379,20 +403,32 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   };
   const fetchAttendance = async () => {
     try {
-      const todayRecords = await getMyAttendanceHistory(); // Already filtered today
+      // Simplified logic: just check the attendance status
+      const isCheckedIn = await isCheckedInToday();
+      const isShiftCompleted = await hasCompletedShiftToday();
+      
+      if (isShiftCompleted) {
+        setAttendanceStatus('shift_completed');
+      } else if (isCheckedIn) {
+        setAttendanceStatus('checked_in');
+      } else {
+        setAttendanceStatus('not_checked_in');
+      }
+      
+      // Keep the existing detailed logic for displaying check-in/check-out times
+      const todayRecords = await getMyAttendanceHistory();
       console.log("📌 Today Records from Helper:", todayRecords.length);
       console.log("📌 Today Records from Helper records:", todayRecords);
+      
       if (!todayRecords || todayRecords.length === 0) {
         // no attendance today
         setAttendanceToday(null);
         setCheckInTime(null);
         setCheckOutTime(null);
         setDuration("0h 0m");
-        setCheckedIn(false);
-        setCheckedOut(false);
-        setCanCheckOut(false);
         return;
       }
+      
       // pick latest record by In
       todayRecords.sort(
         (a, b) => moment(b.In).valueOf() - moment(a.In).valueOf()
@@ -440,16 +476,42 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setCheckedIn(false);
       setCheckedOut(false);
       setCanCheckOut(false);
+      setAttendanceStatus('not_checked_in');
     }
   };
   const refreshLocation = async () => {
     try {
+      // ✅ Check if we have a recent location cached
+      const now = Date.now();
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data");
+        const cachedLoc = lastLocationCache.current.location;
+        const distance = getDistance(
+          cachedLoc.coords.latitude,
+          cachedLoc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+        setDistance(distance);
+        setWithinRange(distance <= CHECKIN_RADIUS);
+        console.log("📏 Cached distance updated:", distance.toFixed(2), "meters");
+        return;
+      }
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         console.log("❌ Location permission denied");
         return;
       }
       const loc = await Location.getCurrentPositionAsync({});
+      
+      // ✅ Cache the location
+      lastLocationCache.current = {
+        location: loc,
+        timestamp: now
+      };
+      
       const distance = getDistance(
         loc.coords.latitude,
         loc.coords.longitude,
@@ -464,13 +526,26 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
   };
   const reloadAll = async () => {
-    await Promise.all([loadTodaySchedule(), refreshLocation()]);
-    await fetchAttendance();
+    // ✅ Smart reload: Only fetch data if needed
+    try {
+      // Always refresh location
+      await refreshLocation();
+      
+      // ✅ Always fetch schedule (needed for UI display)
+      await loadTodaySchedule();
+      
+      // Only fetch attendance if not checked out for the day
+      if (attendanceStatus !== 'shift_completed') {
+        await fetchAttendance();
+      }
+    } catch (error) {
+      console.error("❌ Error in smart reload:", error);
+    }
   };
-  // ✅ Overall Auto Refresh: Consolidated interval every 2 minutes
+  // ✅ Overall Auto Refresh: Reduced interval to 5 minutes to decrease API load
   useEffect(() => {
     reloadAll();
-    const interval = setInterval(reloadAll, 1000 * 60 * 2); // Every 2 minutes for overall refresh
+    const interval = setInterval(reloadAll, 1000 * 60 * 5); // Every 5 minutes for overall refresh
     return () => clearInterval(interval);
   }, [userId, currentUser?.branch]);
   useEffect(() => {
@@ -484,6 +559,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     };
     fetchProfile();
   }, []);
+  
+  // ✅ Clear schedule cache on component mount for debugging
+  useEffect(() => {
+    clearScheduleCache();
+  }, []);
+  
   useEffect(() => {
     console.log("📌 todaySchedule updated:", todaySchedule);
   }, [todaySchedule]);
@@ -594,53 +675,159 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       null
     );
   };
+  
+  // ✅ Add manual schedule fetch function for debugging
+  const fetchScheduleManually = async () => {
+    console.log("🔍 Manually fetching schedule...");
+    setLoading(true);
+    await loadTodaySchedule();
+    setLoading(false);
+  };
+  
   const handleCheckIn = async () => {
     if (!todaySchedule) {
+      setShowCheckInLoading(false);
       showErrorToast(lang.noScheduleToday);
       return;
     }
+    
+    // ✅ Check if current time is past the scheduled end time
+    const tzDate =
+      todaySchedule.date?.split("T")[0] ??
+      new Date().toISOString().split("T")[0];
+  
+    try {
+      // Create schedule end datetime with proper date
+      let scheduleEndDateTime = new Date(
+        `${tzDate}T${todaySchedule.end_time}`
+      );
+      
+      // Create schedule start datetime for reference
+      let scheduleStartDateTime = new Date(
+        `${tzDate}T${todaySchedule.start_time}`
+      );
+      
+      // If the times don't include seconds, add ":00" to make valid ISO strings
+      if (!todaySchedule.end_time.includes(":") || todaySchedule.end_time.split(":").length < 3) {
+        const endTimeParts = todaySchedule.end_time.split(":");
+        if (endTimeParts.length === 2) {
+          scheduleEndDateTime = new Date(`${tzDate}T${todaySchedule.end_time}:00`);
+        }
+      }
+      
+      if (!todaySchedule.start_time.includes(":") || todaySchedule.start_time.split(":").length < 3) {
+        const startTimeParts = todaySchedule.start_time.split(":");
+        if (startTimeParts.length === 2) {
+          scheduleStartDateTime = new Date(`${tzDate}T${todaySchedule.start_time}:00`);
+        }
+      }
+      
+      const now = new Date();
+      
+      // Handle case where end time is next day (e.g., start 23:00, end 06:00)
+      if (scheduleEndDateTime < scheduleStartDateTime) {
+        scheduleEndDateTime.setDate(scheduleEndDateTime.getDate() + 1);
+      }
+      
+      // Prevent check-in if current time is past the scheduled end time
+      if (now > scheduleEndDateTime) {
+        setShowCheckInLoading(false);
+        showErrorToast(
+          `Cannot check in after scheduled end time ${todaySchedule.end_time}`
+        );
+        return;
+      }
+    } catch (dateError) {
+      console.error("Error parsing schedule dates:", dateError);
+      // If there's an error in date parsing, we'll skip the validation
+      // but log the error for debugging
+    }
+    
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
+        setShowCheckInLoading(false);
         showErrorToast("Location permission denied.");
         return;
       }
+      
       const loc = await Location.getCurrentPositionAsync({});
+      
       const branchId = getBranchIdFromSchedule();
       if (!branchId) {
+        setShowCheckInLoading(false);
         showErrorToast("Branch ID not available.");
         return;
       }
+      
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
         branchId,
       };
-      await startAttendance(payload);
-      showSuccessToast(lang.checkInSuccess);
-      await fetchAttendance(); // Refresh states from API
+      
+      // Show loading immediately
+      setShowCheckInLoading(true);
+      
+      const response = await startAttendance(payload);
+      
+      if (response && response.success) {
+        setShowCheckInLoading(false);
+        showSuccessToast(lang.checkInSuccess);
+        
+        // ✅ Use the success response from API instead of fetching attendance again
+        if (response.attendance) {
+          // Update the local state with the attendance data from the response
+          // Parse the datetime string and format it to HH:mm
+          const inMoment = moment(response.attendance.In, "YYYY-MM-DD HH:mm:ss");
+          setCheckInTime(inMoment.format("HH:mm"));
+          setCheckedIn(true);
+          setAttendanceStatus('checked_in');
+          setDuration("0h 0m"); // Reset duration
+        }
+        
+        // ✅ Show post check-in success loading page
+        setShowCheckInSuccessLoading(true);
+        
+        // ✅ Small delay to show the success loading page before refreshing
+        setTimeout(() => {
+          setShowCheckInSuccessLoading(false);
+        }, 100);
+      } else {
+        setShowCheckInLoading(false);
+        showErrorToast(lang.Check_in_failed);
+      }
     } catch (error: any) {
-      showErrorToast(lang.Check_in_failed);
+      setShowCheckInLoading(false); // ✅ Hide loading overlay on error
+      setShowCheckInSuccessLoading(false); // ✅ Hide success loading on error
+      console.error("Check-in error:", error);
+      
+      // Show only backend errors
+      showErrorToast(error.response?.data?.message || lang.Check_in_failed);
     }
   };
   const handleCheckOut = async () => {
     if (!checkInTime) {
+      setShowCheckOutLoading(false);
       showErrorToast(lang.notCheckedIn);
       return;
     }
     if (!todaySchedule) {
+      setShowCheckOutLoading(false);
       showErrorToast(lang.genericNoSchedule);
       return;
     }
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
+        setShowCheckOutLoading(false);
         showErrorToast("Location permission denied.");
         return;
       }
       const loc = await Location.getCurrentPositionAsync({});
       const branchId = getBranchIdFromSchedule();
       if (!branchId) {
+        setShowCheckOutLoading(false);
         showErrorToast("Branch ID not available.");
         return;
       }
@@ -649,12 +836,39 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         longitude: loc.coords.longitude.toString(),
         branchId,
       };
-      await endAttendance(payload);
-      showSuccessToast(lang.checkOutSuccess);
-      await fetchAttendance(); // Refresh states from API
+      
+      const response = await endAttendance(payload);
+      
+      if (response && response.success) {
+        setShowCheckOutLoading(false);
+        showSuccessToast(lang.checkOutSuccess);
+        
+        // ✅ Use the success response from API instead of fetching attendance again
+        if (response.attendance) {
+          // Update the local state with the attendance data from the response
+          // Parse the datetime strings and format them to HH:mm
+          const inMoment = moment(response.attendance.In, "YYYY-MM-DD HH:mm:ss");
+          const outMoment = moment(response.attendance.Out, "YYYY-MM-DD HH:mm:ss");
+          setCheckInTime(inMoment.format("HH:mm"));
+          setCheckOutTime(outMoment.format("HH:mm"));
+          setCheckedOut(true);
+          setCheckedIn(false);
+          setAttendanceStatus('shift_completed');
+          
+          // Calculate duration based on check-in and check-out times
+          const diff = moment.duration(outMoment.diff(inMoment));
+          const hrs = Math.floor(diff.asHours());
+          const mins = diff.minutes();
+          setDuration(`${hrs}h ${mins}m`);
+        }
+      } else {
+        setShowCheckOutLoading(false);
+        showErrorToast(lang.Check_out_failed);
+      }
     } catch (error: any) {
+      setShowCheckOutLoading(false); // ✅ Hide loading overlay on error
       console.error("Check-out error:", error);
-      showErrorToast(lang.Check_out_failed);
+      showErrorToast(error.response?.data?.message || lang.Check_out_failed);
     }
   };
   const getDistance = (
@@ -720,7 +934,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   };
   const onRefresh = async () => {
     setRefreshing(true);
-    await reloadAll();
+    // ✅ Force a full reload when user manually refreshes
+    // ✅ Clear cache to ensure fresh data
+    clearScheduleCache();
+    await Promise.all([loadTodaySchedule(), refreshLocation(), fetchAttendance()]);
     setRefreshing(false);
   };
   // ---------- JSX (return) ----------
@@ -743,6 +960,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   );
   return (
     <>
+      {/* ✅ Hidden debug button - uncomment for testing */}
+      {/* <Button1
+        text="Debug: Fetch Schedule"
+        onPress={fetchScheduleManually}
+        containerStyle={{ margin: 10, backgroundColor: 'red' }}
+      /> */}
       <Header
         backgroundColor={colors.secondary}
         position="relative"
@@ -848,7 +1071,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             )}
           </View>
         </CartBox>
-        {!(attendanceToday && attendanceToday.In) ? (
+        
+        {/* Simplified logic for showing appropriate buttons */}
+        {attendanceStatus === 'not_checked_in' ? (
           <>
             <View style={styles.middle}>
               <Image
@@ -886,7 +1111,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               containerStyle={styles.checkinBtn}
             />
           </>
-        ) : (
+        ) : attendanceStatus === 'checked_in' ? (
           <View style={{ width: "100%", alignItems: "flex-start" }}>
             <View style={styles.statusRow}>
               <Text
@@ -914,7 +1139,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                     fontWeight: fonts.weight.medium,
                   }}
                 >
-                  {offDuty ? lang.offDuty : lang.onDuty}
+                  {lang.onDuty}
                 </Text>
               </View>
             </View>
@@ -927,18 +1152,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                   </Text>
                 </View>
               )}
-              {checkOutTime && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>{lang.checkedOutAt}</Text>
-                  <Text style={styles.infoValue}>
-                    {/* check if it already has AM/PM */}
-                    {checkOutTime.toUpperCase().includes("AM") ||
-                    checkOutTime.toUpperCase().includes("PM")
-                      ? checkOutTime
-                      : formatTo12Hour(checkOutTime)}
-                  </Text>
-                </View>
-              )}
               {checkInTime && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>{lang.duration}</Text>
@@ -946,8 +1159,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                 </View>
               )}
             </View>
-            {/* ✅ Updated: Show checkout button only if canCheckOut */}
-            {checkInTime && !checkOutTime && canCheckOut && (
+            {/* Show checkout button only if canCheckOut */}
+            {canCheckOut && (
               <Button1
                 text={lang.checkOut}
                 backgroundColor={colors.primary}
@@ -955,7 +1168,14 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                   color: colors.secondary,
                 }}
                 containerStyle={styles.checkinBtn}
-                onPress={() => setShowCheckoutPopup(true)}
+                onPress={() => {
+                  // Show loading immediately when checkout button is pressed
+                  setShowCheckOutLoading(true);
+                  // Delay the actual checkout process slightly to allow UI to update
+                  setTimeout(() => {
+                    handleCheckOut();
+                  }, 100);
+                }}
               />
             )}
             <Popup
@@ -964,7 +1184,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               popupBorderColor={colors.primary}
               dismissOnOverlayPress={false}
               title={lang.confirmCheckOut}
-              titleStyle={{ color: colors.primary }} // ✅ Correct
+              titleStyle={{ color: colors.primary }}
             >
               <Text style={styles.popupText}>{lang.checkoutMessage}</Text>
               <View style={styles.popupBtnContainer}>
@@ -986,7 +1206,74 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               </View>
             </Popup>
           </View>
+        ) : (
+          // Shift completed - show completed status
+          <View style={{ width: "100%", alignItems: "flex-start" }}>
+            <View style={styles.statusRow}>
+              <Text
+                style={{
+                  fontWeight: "600",
+                  flex: 1,
+                  fontSize: fonts.size.l,
+                  marginRight: 20,
+                }}
+              >
+                {lang.currentStatus}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                  borderRadius: 20,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.secondary,
+                    fontSize: fonts.size.s,
+                    fontWeight: fonts.weight.medium,
+                  }}
+                >
+                  {lang.offDuty}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.infoBox}>
+              {checkInTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.checkedInAt}</Text>
+                  <Text style={styles.infoValue}>
+                    {formatTo12Hour(checkInTime)}
+                  </Text>
+                </View>
+              )}
+              {checkOutTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.checkedOutAt}</Text>
+                  <Text style={styles.infoValue}>
+                    {checkOutTime.toUpperCase().includes("AM") ||
+                    checkOutTime.toUpperCase().includes("PM")
+                      ? checkOutTime
+                      : formatTo12Hour(checkOutTime)}
+                  </Text>
+                </View>
+              )}
+              {checkInTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.duration}</Text>
+                  <Text style={styles.durationValue}>{duration}</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ width: "100%", alignItems: "center", marginTop: 20 }}>
+              <Text style={{ color: colors.subtext2, fontSize: fonts.size.m }}>
+                You have already completed your shift for today.
+              </Text>
+            </View>
+          </View>
         )}
+        
         <Popup
           visible={showPopup}
           onClose={() => setShowPopup(false)}
@@ -1005,8 +1292,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               backgroundColor={colors.primary}
               width="45%"
               onPress={() => {
-                handleCheckIn();
                 setShowPopup(false);
+                // Show popup loading page immediately after clicking Yes
+                setShowCheckInLoading(true);
+                // Delay the actual check-in process slightly to allow UI to update
+                setTimeout(() => {
+                  handleCheckIn();
+                }, 100);
               }}
             />
             <Button1
@@ -1017,12 +1309,54 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             />
           </View>
         </Popup>
+        
+        {/* ✅ Popup Loading Page - New implementation */}
+        <Popup
+          visible={showCheckInLoading}
+          onClose={() => setShowCheckInLoading(false)}
+          dismissOnOverlayPress={false}
+          title={lang.processingCheckIn}
+          titleStyle={{ color: colors.primary, textAlign: 'center' }}
+        >
+          <View style={styles.popupLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.popupLoadingText}>{lang.processingCheckIn}</Text>
+          </View>
+        </Popup>
+        
+        {/* ✅ Checkout Loading Page - New implementation */}
+        <Popup
+          visible={showCheckOutLoading}
+          onClose={() => setShowCheckOutLoading(false)}
+          dismissOnOverlayPress={false}
+          title={lang.checkOut}
+          titleStyle={{ color: colors.primary, textAlign: 'center' }}
+        >
+          <View style={styles.popupLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.popupLoadingText}>{lang.checkOut}</Text>
+          </View>
+        </Popup>
       </ScrollView>
+      
+      {/* ✅ Check-in Success Loading Page */}
+      {showCheckInSuccessLoading && (
+        <View style={styles.successLoadingPage}>
+          <View style={styles.successLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.successLoadingText}>{lang.checkInSuccess}</Text>
+            <Text style={styles.successLoadingSubtext}>{lang.redirecting}</Text>
+          </View>
+        </View>
+      )}
+      
       <Toast config={toastConfig} />
     </>
   );
 };
+
 export default C_Homescreen;
+
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -1156,5 +1490,48 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 20,
     marginTop: 10,
+  },
+  popupLoadingContainer: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  popupLoadingText: {
+    fontSize: fonts.size.m,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  
+  // ✅ New styles for check-in success loading page
+  successLoadingPage: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10000,
+  },
+  successLoadingContainer: {
+    backgroundColor: colors.secondary,
+    borderRadius: 10,
+    padding: 30,
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    width: '80%',
+  },
+  successLoadingText: {
+    marginTop: 15,
+    fontSize: fonts.size.l,
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  successLoadingSubtext: {
+    marginTop: 10,
+    fontSize: fonts.size.m,
+    color: colors.subtext2,
+    textAlign: 'center',
   },
 });
