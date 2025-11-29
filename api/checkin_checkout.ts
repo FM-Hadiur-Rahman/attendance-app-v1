@@ -5,7 +5,7 @@ import { ScheduleItem } from "./schedules";
 interface LocationPayload {
   latitude: string;
   longitude: string;
-  branchId: string;
+  branchId?: string; // Made branchId optional since it's no longer required
 }
 
 // ✅ Add cache for schedule data

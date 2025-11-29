@@ -499,12 +499,17 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         return;
       }
 
+      // ✅ Request high accuracy location with timeout to prevent hanging
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         console.log("❌ Location permission denied");
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({});
+      
+      // ✅ Use faster location acquisition
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced // Reduced accuracy for faster response
+      });
       
       // ✅ Cache the location
       lastLocationCache.current = {
@@ -523,6 +528,32 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       console.log("📏 Distance updated:", distance.toFixed(2), "meters");
     } catch (err) {
       console.log("❌ Error refreshing location:", err);
+      
+      // ✅ Fallback: try again with lower accuracy if high accuracy fails
+      try {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low // Low accuracy as fallback
+        });
+        
+        const now = Date.now();
+        // ✅ Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
+        
+        const distance = getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+        setDistance(distance);
+        setWithinRange(distance <= CHECKIN_RADIUS);
+        console.log("📏 Distance updated (fallback):", distance.toFixed(2), "meters");
+      } catch (fallbackErr) {
+        console.log("❌ Fallback location also failed:", fallbackErr);
+      }
     }
   };
   const reloadAll = async () => {
@@ -691,36 +722,18 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       return;
     }
     
-    // ✅ Check if current time is past the scheduled end time
-    const tzDate =
-      todaySchedule.date?.split("T")[0] ??
-      new Date().toISOString().split("T")[0];
-  
+    // ✅ Check if current time is past the scheduled end time (optimized)
     try {
-      // Create schedule end datetime with proper date
-      let scheduleEndDateTime = new Date(
-        `${tzDate}T${todaySchedule.end_time}`
-      );
+      // Create schedule end datetime with proper date (simplified)
+      const [endHours, endMinutes] = todaySchedule.end_time.split(":").map(Number);
+      const [startHours, startMinutes] = todaySchedule.start_time.split(":").map(Number);
       
-      // Create schedule start datetime for reference
-      let scheduleStartDateTime = new Date(
-        `${tzDate}T${todaySchedule.start_time}`
-      );
+      // Create date objects for today with the schedule times
+      const scheduleEndDateTime = new Date();
+      scheduleEndDateTime.setHours(endHours, endMinutes, 0, 0);
       
-      // If the times don't include seconds, add ":00" to make valid ISO strings
-      if (!todaySchedule.end_time.includes(":") || todaySchedule.end_time.split(":").length < 3) {
-        const endTimeParts = todaySchedule.end_time.split(":");
-        if (endTimeParts.length === 2) {
-          scheduleEndDateTime = new Date(`${tzDate}T${todaySchedule.end_time}:00`);
-        }
-      }
-      
-      if (!todaySchedule.start_time.includes(":") || todaySchedule.start_time.split(":").length < 3) {
-        const startTimeParts = todaySchedule.start_time.split(":");
-        if (startTimeParts.length === 2) {
-          scheduleStartDateTime = new Date(`${tzDate}T${todaySchedule.start_time}:00`);
-        }
-      }
+      const scheduleStartDateTime = new Date();
+      scheduleStartDateTime.setHours(startHours, startMinutes, 0, 0);
       
       const now = new Date();
       
@@ -744,30 +757,44 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
     
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setShowCheckInLoading(false);
-        showErrorToast("Location permission denied.");
-        return;
+      // ✅ Use cached location if available (check first before requesting permissions)
+      const now = Date.now();
+      let loc;
+      
+      // Check if we have a recent location cached
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data for check-in");
+        loc = lastLocationCache.current.location;
+      } else {
+        // Only request permissions if we don't have a recent cached location
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setShowCheckInLoading(false);
+          showErrorToast("Location permission denied.");
+          return;
+        }
+        
+        // Get fresh location
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        
+        // Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
       }
       
-      const loc = await Location.getCurrentPositionAsync({});
-      
-      const branchId = getBranchIdFromSchedule();
-      if (!branchId) {
-        setShowCheckInLoading(false);
-        showErrorToast("Branch ID not available.");
-        return;
-      }
+      // Show loading immediately after getting location
+      setShowCheckInLoading(true);
       
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branchId,
+        // Removed branchId since backend doesn't use it
       };
-      
-      // Show loading immediately
-      setShowCheckInLoading(true);
       
       const response = await startAttendance(payload);
       
@@ -786,13 +813,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           setDuration("0h 0m"); // Reset duration
         }
         
-        // ✅ Show post check-in success loading page
+        // ✅ Reduce delay for success loading page to improve UX
         setShowCheckInSuccessLoading(true);
         
-        // ✅ Small delay to show the success loading page before refreshing
+        // ✅ Shorter delay to show the success loading page before refreshing
         setTimeout(() => {
           setShowCheckInSuccessLoading(false);
-        }, 100);
+        }, 50); // Reduced from 100ms to 50ms
       } else {
         setShowCheckInLoading(false);
         showErrorToast(lang.Check_in_failed);
@@ -818,23 +845,43 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       return;
     }
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setShowCheckOutLoading(false);
-        showErrorToast("Location permission denied.");
-        return;
+      // ✅ Use cached location if available (check first before requesting permissions)
+      const now = Date.now();
+      let loc;
+      
+      // Check if we have a recent location cached
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data for check-out");
+        loc = lastLocationCache.current.location;
+      } else {
+        // Only request permissions if we don't have a recent cached location
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setShowCheckOutLoading(false);
+          showErrorToast("Location permission denied.");
+          return;
+        }
+        
+        // Get fresh location
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        
+        // Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
       }
-      const loc = await Location.getCurrentPositionAsync({});
-      const branchId = getBranchIdFromSchedule();
-      if (!branchId) {
-        setShowCheckOutLoading(false);
-        showErrorToast("Branch ID not available.");
-        return;
-      }
+      
+      // Show loading immediately after getting location
+      setShowCheckOutLoading(true);
+      
       const payload = {
         latitude: loc.coords.latitude.toString(),
         longitude: loc.coords.longitude.toString(),
-        branchId,
+        // Removed branchId since backend doesn't use it
       };
       
       const response = await endAttendance(payload);
@@ -894,7 +941,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") return;
-        const loc = await Location.getCurrentPositionAsync({});
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
         const distance = getDistance(
           loc.coords.latitude,
           loc.coords.longitude,
