@@ -294,7 +294,9 @@ useEffect(() => {
   useEffect(() => {
     const fetchDistances = async () => {
       try {
-        const pos = await Location.getCurrentPositionAsync({});
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
         const coords = pos?.coords;
         if (!coords) return;
 
