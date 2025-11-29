@@ -191,7 +191,7 @@
     "confirmCheckIn": "Confirm Check-In?",
     "confirmCheckOut": "Confirm Check-Out?",
     "checkInSuccess": "Check-in successful",
-    "checkOutSuccess": "Check-out successful",
+    "checkOutSuccess": "Check-out successful",
     "staffProfile": "Staff Profile",
     "personalInformation": "Personal Information",
     "fullname": "Full Name",
@@ -225,7 +225,7 @@
     "Enter_full_name": "Enter full name",
     "Fullname_updated_successfully": "Fullname updated successfully",
     "Fullname_cannot_be_empty": "Fullname cannot be empty",
-    "todaySchedule": "Today’s Schedule",
+    "todaySchedule": "Today's Schedule",
     "checkinTooEarly": "You can only check in 15 minutes before {time}.",
     "noScheduleToday": "No schedule found for today.",
     "notCheckedIn": "You haven't checked in yet!",
@@ -345,7 +345,10 @@
     "Type_hours_here": "Type hours here",
     "Edit_Position": "Edit Position",
     "Check_in_failed": "Check-in failed.",
-    "Check_out_failed": "Check-out failed."
+    "Check_out_failed": "Check-out failed.",
+    "processingCheckIn": "Processing check-in, please wait...",
+    "pleaseWait": "Please wait...",
+    "redirecting": "Redirecting, please wait..."
   },
   "de": {
     "profile": "Profil",
@@ -537,7 +540,7 @@
     "confirmCheckIn": "Check-In bestätigen?",
     "confirmCheckOut": "Check-Out bestätigen?",
     "checkInSuccess": "Check-in erfolgreich",
-    "checkOutSuccess": "Check-out erfolgreich",
+    "checkOutSuccess": "Check-out erfolgreich",
     "staffProfile": "Mitarbeiterprofil",
     "personalInformation": "Persönliche Informationen",
     "fullname": "Vollständiger Name",
@@ -691,6 +694,9 @@
     "Type_hours_here": "Geben Sie hier Stunden ein",
     "Edit_Position": "Position bearbeiten",
     "Check_in_failed": "Einchecken fehlgeschlagen",
-    "Check_out_failed": "Auschecken fehlgeschlagen"
+    "Check_out_failed": "Auschecken fehlgeschlagen",
+    "processingCheckIn": "Check-in wird verarbeitet, bitte warten...",
+    "pleaseWait": "Bitte warten...",
+    "redirecting": "Weiterleitung erfolgt, bitte warten..."
   }
 }

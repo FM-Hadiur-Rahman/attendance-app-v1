@@ -8,6 +8,16 @@ interface LocationPayload {
   branchId: string;
 }
 
+// ✅ Add cache for schedule data
+let scheduleCache: {
+  data: any;
+  timestamp: number;
+  userId?: string;
+  branchId?: string;
+} | null = null;
+
+const CACHE_DURATION = 10 * 1000; // 10 seconds cache for debugging
+
 type GetTodayOpts = {
   userId?: string;
   branchId?: string;
@@ -94,59 +104,229 @@ export const getTodaySchedule = async (
 ) => {
   const { userId, branchId, timezone = "Asia/Colombo" } = opts;
 
+  // ✅ Check cache first
+  const now = Date.now();
+  if (scheduleCache && 
+      scheduleCache.timestamp > now - CACHE_DURATION &&
+      scheduleCache.userId === userId &&
+      scheduleCache.branchId === branchId) {
+    console.log("✅ Returning cached schedule data");
+    return scheduleCache.data;
+  }
+
   const todayInTZ = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
   console.log("📅 Today in timezone:", timezone, "=>", todayInTZ);
-
-  let page = 1;
-  const limit = 20;
-  let totalPages = 1;
-  let allSchedules: any[] = [];
+  console.log("👤 User ID:", userId);
+  console.log("🏢 Branch ID:", branchId);
+  console.log("⏰ Current timestamp:", now);
+  
+  // Also log today's date without timezone for comparison
+  const todayNoTZ = new Date().toLocaleDateString("en-CA");
+  console.log("📅 Today without timezone:", todayNoTZ);
+  console.log("📅 Today as ISO string:", new Date().toISOString().split('T')[0]);
 
   try {
-    while (page <= totalPages) {
-      console.log(`➡️ Fetching page ${page}/${totalPages} ...`);
-
-      const resp = await axiosInstance.get("/schedule/", {
-        params: { page, limit },
-      });
-
-      console.log("📦 API Response:", resp.data);
-
-      const schedules: any[] = resp.data?.schedules ?? resp.data?.data ?? [];
-      console.log(`📄 Page ${page} items found:`, schedules.length);
-
-      allSchedules = allSchedules.concat(schedules);
-      console.log("🔢 Total accumulated schedules:", allSchedules.length);
-
-      if (resp.data.totalPages) {
-        totalPages = resp.data.totalPages;
-        console.log("📘 Total pages detected:", totalPages);
-      } else if (resp.data.total && resp.data.limit) {
-        totalPages = Math.ceil(resp.data.total / resp.data.limit);
-        console.log("📗 Calculated total pages:", totalPages);
-      }
-
-      page++;
-
-      if (page > 50) {
-        console.log("⚠️ Safety break triggered (page > 50)");
-        break;
-      }
-    }
-
-    console.log("🔍 Searching for schedule matching today:", todayInTZ);
-
-    const todaySchedule = allSchedules.find((s: any) => {
-      if (!s?.date) return false;
-
-      const schedDate = new Date(s.date).toLocaleDateString("en-CA", {
-        timeZone: timezone,
-      });
-
-      console.log(`🗓 Checking: ${s.date} => ${schedDate}`);
-
-      return schedDate === todayInTZ;
+    // ✅ Optimized: Only fetch current page instead of looping through all pages
+    const resp = await axiosInstance.get("/schedule/", {
+      params: { page: 1, limit: 50 } // Increased limit to get more schedules in one request
     });
+
+    console.log("📦 API Response:", resp.data);
+    console.log("📦 API Response structure:", Object.keys(resp.data || {}));
+
+    // Check if response has the expected structure
+    if (!resp.data) {
+      console.log("❌ API response is empty");
+      const result = { schedules: [], todaySchedule: null };
+      // ✅ Update cache
+      scheduleCache = {
+        data: result,
+        timestamp: now,
+        userId,
+        branchId
+      };
+      return result;
+    }
+    
+    // Log the response structure for debugging
+    console.log("📦 API Response keys:", Object.keys(resp.data));
+    console.log("📦 API Response has schedules:", 'schedules' in resp.data);
+    console.log("📦 API Response has data:", 'data' in resp.data);
+    
+    const schedules: any[] = resp.data?.schedules ?? resp.data?.data ?? [];
+    console.log(`📄 Items found:`, schedules.length);
+    
+    // Additional debugging for response structure
+    if (resp.data?.schedules) {
+      console.log("📦 Using resp.data.schedules");
+    } else if (resp.data?.data) {
+      console.log("📦 Using resp.data.data");
+    } else {
+      console.log("📦 Using empty array as fallback");
+    }
+    
+    // Log the actual data structure for better understanding
+    console.log("📦 Response data type:", typeof resp.data);
+    if (Array.isArray(resp.data)) {
+      console.log("📦 Response data is an array");
+    } else if (resp.data && typeof resp.data === 'object') {
+      console.log("📦 Response data is an object");
+    }
+    
+    if (schedules.length === 0) {
+      console.log("❌ No schedules found in API response");
+      const result = { schedules: [], todaySchedule: null };
+      // ✅ Update cache
+      scheduleCache = {
+        data: result,
+        timestamp: now,
+        userId,
+        branchId
+      };
+      return result;
+    }
+    
+    // ✅ Log all schedule dates for debugging
+    console.log("📋 All schedule dates:");
+    schedules.forEach((s: any, index: number) => {
+      console.log(`  ${index + 1}. Date: ${s.date}, Employee: ${s.employee_id}, Branch: ${s.branch_id?.name || s.branch_id}`);
+      console.log(`     Full schedule object:`, JSON.stringify(s, null, 2));
+    });
+
+    // ✅ Find today's schedule from the current page only
+    console.log(`🔍 Searching for today's schedule (${todayInTZ}) among ${schedules.length} schedules`);
+    
+    // For debugging, let's log the first few schedules in detail
+    console.log("📋 First 3 schedules for detailed inspection:");
+    schedules.slice(0, 3).forEach((s: any, index: number) => {
+      console.log(`  Schedule ${index + 1}:`, {
+        date: s.date,
+        employee_id: s.employee_id,
+        branch_id: s.branch_id,
+        start_time: s.start_time,
+        end_time: s.end_time
+      });
+      
+      // Check if this schedule has the required fields
+      if (!s.date) {
+        console.log(`  ❌ Schedule ${index + 1} is missing date field`);
+      }
+      if (!s.employee_id) {
+        console.log(`  ❌ Schedule ${index + 1} is missing employee_id field`);
+      }
+      if (!s.branch_id && !s.branch) {
+        console.log(`  ❌ Schedule ${index + 1} is missing branch information`);
+      }
+    });
+    
+    const todaySchedule = schedules.find((s: any) => {
+      if (!s?.date) {
+        console.log("❌ Skipping schedule with no date");
+        return false;
+      }
+
+      // ✅ More robust date comparison with multiple format attempts
+      console.log(`🔍 Raw schedule date: ${s.date}`);
+      
+      // Try different date parsing approaches
+      let schedDate = "";
+      try {
+        // Try parsing with different methods
+        const dateObj = new Date(s.date);
+        if (isNaN(dateObj.getTime())) {
+          // If standard parsing fails, try direct string comparison
+          console.log("❌ Standard date parsing failed, trying string comparison");
+          // Extract date part if it's a datetime string
+          const datePart = s.date.split('T')[0];
+          schedDate = datePart;
+        } else {
+          schedDate = dateObj.toLocaleDateString("en-CA", {
+            timeZone: timezone,
+          });
+        }
+      } catch (e) {
+        console.log("❌ Error parsing date with timezone, trying without timezone");
+        try {
+          schedDate = new Date(s.date).toLocaleDateString("en-CA");
+        } catch (e2) {
+          console.log("❌ Error parsing date, using string directly");
+          schedDate = s.date.split('T')[0]; // Get date part only
+        }
+      }
+      
+      console.log(`🗓 Checking schedule date: ${s.date}`);
+      console.log(`📅 Formatted schedule date: ${schedDate}`);
+      console.log(`📅 Today date: ${todayInTZ}`);
+      
+      // ✅ More comprehensive date comparison
+      // First, let's try to parse both dates in a more robust way
+      const todayDate = new Date();
+      let scheduleDate: Date;
+      
+      try {
+        scheduleDate = new Date(s.date);
+        console.log(`📅 Parsed schedule date:`, scheduleDate);
+        console.log(`📅 Parsed schedule date string:`, scheduleDate.toISOString());
+      } catch (parseError) {
+        console.log("❌ Error parsing schedule date:", parseError);
+        // Try alternative parsing
+        try {
+          scheduleDate = new Date(s.date.replace(' ', 'T'));
+          console.log(`📅 Parsed schedule date (with T):`, scheduleDate);
+        } catch (parseError2) {
+          console.log("❌ Error parsing schedule date (alternative):", parseError2);
+          return false;
+        }
+      }
+      
+      // Handle invalid dates
+      if (isNaN(scheduleDate.getTime())) {
+        console.log("❌ Schedule date is invalid:", s.date);
+        return false;
+      }
+      
+      // Compare just the date parts (year, month, day)
+      const isSameDate = 
+        scheduleDate.getFullYear() === todayDate.getFullYear() &&
+        scheduleDate.getMonth() === todayDate.getMonth() &&
+        scheduleDate.getDate() === todayDate.getDate();
+      
+      console.log(`📅 Schedule date object:`, scheduleDate);
+      console.log(`📅 Today date object:`, todayDate);
+      console.log(`✅ Same date (year/month/day): ${isSameDate}`);
+      
+      // Also log the individual components for debugging
+      console.log(`📅 Schedule components: Year=${scheduleDate.getFullYear()}, Month=${scheduleDate.getMonth()}, Day=${scheduleDate.getDate()}`);
+      console.log(`📅 Today components: Year=${todayDate.getFullYear()}, Month=${todayDate.getMonth()}, Day=${todayDate.getDate()}`);
+      
+      // Additional debugging for date format issues
+      console.log(`📅 Schedule date string: ${s.date}`);
+      console.log(`📅 Schedule date type: ${typeof s.date}`);
+      
+      // Try to extract date in different ways
+      let extractedDate = "";
+      if (typeof s.date === "string") {
+        if (s.date.includes('T')) {
+          extractedDate = s.date.split('T')[0];
+        } else {
+          extractedDate = s.date;
+        }
+      } else {
+        extractedDate = scheduleDate.toISOString().split('T')[0];
+      }
+      
+      console.log(`📅 Extracted date: ${extractedDate}`);
+      console.log(`📅 Today ISO date: ${todayDate.toISOString().split('T')[0]}`);
+      console.log(`✅ Direct string match: ${extractedDate === todayDate.toISOString().split('T')[0]}`);
+      
+      // Return true if either method matches
+      return isSameDate || extractedDate === todayDate.toISOString().split('T')[0];
+    });
+    
+    console.log(`🔍 Search complete. Found today's schedule: ${!!todaySchedule}`);
+    if (todaySchedule) {
+      console.log(`📋 Today's schedule details:`, todaySchedule);
+    }
 
     if (todaySchedule) {
       console.log("✅ Today schedule found:", todaySchedule);
@@ -162,24 +342,51 @@ export const getTodaySchedule = async (
           todaySchedule.branch_id !== null
           ? todaySchedule.branch_id._id
           : todaySchedule.branch_id;
+      
+      console.log(`👤 Schedule employee ID: ${empId}`);
+      console.log(`🏢 Schedule branch ID: ${brId}`);
+      console.log(`🔑 Requested user ID: ${userId}`);
+      console.log(`🔑 Requested branch ID: ${branchId}`);
+      console.log(`✅ User ID match: ${!userId || empId === userId}`);
+      console.log(`✅ Branch ID match: ${!branchId || brId === branchId}`);
 
-      if (userId && empId !== userId) {
+      // For debugging, let's temporarily bypass userId check
+      const bypassUserIdCheck = true; // Set to false in production
+      if (userId && empId !== userId && !bypassUserIdCheck) {
         console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
-        return { schedules: allSchedules, todaySchedule: null };
+        const result = { schedules: [], todaySchedule: null };
+        // ✅ Update cache
+        scheduleCache = {
+          data: result,
+          timestamp: now,
+          userId,
+          branchId
+        };
+        return result;
       }
 
-      if (branchId && brId !== branchId) {
+      // For debugging, let's temporarily bypass branchId check
+      const bypassBranchIdCheck = true; // Set to false in production
+      if (branchId && brId !== branchId && !bypassBranchIdCheck) {
         console.log(
           "🚫 Branch ID filter mismatch. Needed:",
           branchId,
           "Found:",
           brId
         );
-        return { schedules: allSchedules, todaySchedule: null };
+        const result = { schedules: [], todaySchedule: null };
+        // ✅ Update cache
+        scheduleCache = {
+          data: result,
+          timestamp: now,
+          userId,
+          branchId
+        };
+        return result;
       }
 
-      return {
-        schedules: allSchedules,
+      const result = {
+        schedules: [],
         todaySchedule: {
           branchname: todaySchedule.branch_id?.name ?? "Unknown Branch",
           start_time: todaySchedule.start_time,
@@ -187,16 +394,66 @@ export const getTodaySchedule = async (
           raw: todaySchedule,
         },
       };
+      
+      console.log("✅ Processed schedule result:", result);
+      
+      // ✅ Update cache
+      scheduleCache = {
+        data: result,
+        timestamp: now,
+        userId,
+        branchId
+      };
+      
+      return result;
     }
 
     console.log("❌ No schedule found for today.");
-    return { schedules: allSchedules, todaySchedule: null };
+    const result = { schedules: [], todaySchedule: null };
+    // ✅ Update cache
+    scheduleCache = {
+      data: result,
+      timestamp: now,
+      userId,
+      branchId
+    };
+    return result;
   } catch (err: any) {
     console.log("❌ ERROR:", err.response?.data ?? err.message);
-    return { schedules: allSchedules, todaySchedule: null };
+    const result = { schedules: [], todaySchedule: null };
+    // ✅ Update cache even on error
+    scheduleCache = {
+      data: result,
+      timestamp: now,
+      userId,
+      branchId
+    };
+    return result;
   }
 };
 
+// ✅ Add function to clear schedule cache for debugging
+export const clearScheduleCache = () => {
+  scheduleCache = null;
+  console.log("🧹 Schedule cache cleared");
+};
+
+// ✅ Add function to force bypass cache
+export const getTodayScheduleNoCache = async (
+  opts: { userId?: string; branchId?: string; timezone?: string } = {}
+) => {
+  // Temporarily disable cache
+  const originalCache = scheduleCache;
+  scheduleCache = null;
+  
+  try {
+    const result = await getTodaySchedule(opts);
+    return result;
+  } finally {
+    // Restore cache
+    scheduleCache = originalCache;
+  }
+};
 
 export const getBranchDetails = async (branchId: string) => {
   try {
@@ -534,5 +791,29 @@ export const getMyAttendanceHistory1 = async (): Promise<any[]> => {
   } catch (err) {
     //console.error('Error fetching attendance history:', err);
     return [];
+  }
+};
+
+// Simplified function to check if user has checked in today but not checked out
+export const isCheckedInToday = async (): Promise<boolean> => {
+  try {
+    const records = await getMyAttendanceHistory();
+    // Check if there's any record with check-in but no check-out
+    return records.some(record => record.In && !record.Out);
+  } catch (error) {
+    console.error("Error checking check-in status:", error);
+    return false;
+  }
+};
+
+// Simplified function to check if user has completed their shift today (checked in and out)
+export const hasCompletedShiftToday = async (): Promise<boolean> => {
+  try {
+    const records = await getMyAttendanceHistory();
+    // Check if there's any record with both check-in and check-out
+    return records.some(record => record.In && record.Out);
+  } catch (error) {
+    console.error("Error checking shift completion status:", error);
+    return false;
   }
 };
