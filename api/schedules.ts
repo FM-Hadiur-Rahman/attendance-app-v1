@@ -147,3 +147,20 @@ export const deleteSchedule = async (id: string) => {
     throw err?.response?.data || err;
   }
 };
+
+/**
+ * Get today's schedule for the logged-in user
+ * Uses the dedicated /schedule/today endpoint
+ */
+export const getTodaySchedule = async (): Promise<ScheduleItem | null> => {
+  try {
+    const res = await axiosInstance.get('/schedule/today');
+    if (res.data?.success && res.data?.schedule) {
+      return res.data.schedule as ScheduleItem;
+    }
+    return null;
+  } catch (err: any) {
+    console.error('getTodaySchedule error', err?.response?.data ?? err);
+    throw err?.response?.data || err;
+  }
+};

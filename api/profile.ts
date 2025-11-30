@@ -286,44 +286,20 @@ export const getBranchById = async (branchId: string): Promise<{ _id: string; na
   try {
     if (!branchId) throw new Error('getBranchById: missing branchId');
 
-    // Try several likely endpoints. Use axiosInstance so Authorization header is included.
-    const tryPaths = [
-      // common patterns
-      `/branch/${branchId}`,
-      `/branches/${branchId}`,
-      `/api.branch/${branchId}`,   // matches the URL you provided: https://api.mrbrbackpunkte.de/api.branch/(branchid)
-      // some APIs expose dot-style paths (rare) — as an absolute fallback use full URL
-      `https://api.mrbrbackpunkte.de/api.branch/${branchId}`,
-    ];
-
-    let lastErr: any = null;
-    for (const p of tryPaths) {
-      try {
-        // If p is absolute URL axiosInstance.get will still work.
-        const res = await axiosInstance.get(p);
-        const data = res?.data ?? null;
-
-        // Possible shapes:
-        // { data: { _id, name, ... } } OR { branch: { _id, name } } OR { _id, name }
-        const branch =
-          data?.data?.branch ??
-          data?.branch ??
-          data?.data ??
-          data;
-
-        const id = branch?._id ?? branch?.id ?? branchId;
-        const name = branch?.name ?? branch?.branch_name ?? branch?.title ?? null;
-
-        if (id) {
-          return { _id: String(id), name: String(name ?? id) };
-        }
-      } catch (err) {
-        lastErr = err;
-        // try the next candidate
-      }
+    // Use the correct backend endpoint for getting branch by ID
+    const res = await axiosInstance.get(`/branch/${branchId}`);
+    const data = res?.data ?? null;
+    
+    // Handle the response structure: { success: true, branch: { _id, name, ... } }
+    const branch = data?.branch ?? data?.data ?? data;
+    
+    const id = branch?._id ?? branch?.id ?? branchId;
+    const name = branch?.name ?? branch?.branch_name ?? branch?.title ?? null;
+    
+    if (id) {
+      return { _id: String(id), name: String(name ?? id) };
     }
-
-    console.warn('getBranchById: all attempts failed', lastErr);
+    
     return null;
   } catch (error: any) {
     console.error('getBranchById() failed:', error?.response ?? error);
@@ -394,55 +370,47 @@ export const getLoggedInUserBranch = async (
       console.warn("getLoggedInUserBranch: no logged-in user id available");
       return null;
     }
-    const tryPaths = [
-      `/user/${userId}`,
-      `/users/${userId}`,
-      `/api/user/${userId}`,
-      `/api.users/${userId}`,
-      // absolute fallback:
-      `https://api.mrbrbackpunkte.de/api/user/${userId}`,
-    ];
+    
+    // Use the correct backend endpoint for getting user by ID
+    try {
+      const res = await axiosInstance.get(`/users/${userId}`);
+      const data = res?.data ?? null;
+      const user = data?.data?.user ?? data?.user ?? data?.data ?? data;
 
-    let lastErr: any = null;
-    for (const p of tryPaths) {
-      try {
-        const res = await axiosInstance.get(p);
-        const data = res?.data ?? null;
-        const user =
-          data?.data?.user ?? data?.user ?? data?.data ?? data;
-
-        if (!user) continue;
-        const branchField = user.branch ?? user.branch_id ?? user.branchId ?? null;
-        let branchId: string | null = null;
-        if (!branchField) {
-          const nested = user.branch ?? null;
-          if (nested && (nested._id || nested.id)) {
-            branchId = String(nested._id ?? nested.id);
-          }
-        } else {
-          branchId =
-            typeof branchField === "string"
-              ? branchField
-              : branchField._id ?? branchField.id ?? null;
-        }
-
-        if (branchId) {
-          // cache it for next time
-          try {
-            await AsyncStorage.setItem(USER_BRANCH_KEY, String(branchId));
-            console.log("getLoggedInUserBranch: cached branch id:", branchId);
-          } catch (e) {
-            console.warn("getLoggedInUserBranch: failed to cache branch id", e);
-          }
-          return String(branchId);
-        }
-      } catch (err) {
-        lastErr = err;
-        // continue to next path
+      if (!user) {
+        console.warn("getLoggedInUserBranch: no user data found");
+        return null;
       }
+      
+      const branchField = user.branch ?? user.branch_id ?? user.branchId ?? null;
+      let branchId: string | null = null;
+      
+      if (!branchField) {
+        const nested = user.branch ?? null;
+        if (nested && (nested._id || nested.id)) {
+          branchId = String(nested._id ?? nested.id);
+        }
+      } else {
+        branchId =
+          typeof branchField === "string"
+            ? branchField
+            : branchField._id ?? branchField.id ?? null;
+      }
+
+      if (branchId) {
+        // cache it for next time
+        try {
+          await AsyncStorage.setItem(USER_BRANCH_KEY, String(branchId));
+          console.log("getLoggedInUserBranch: cached branch id:", branchId);
+        } catch (e) {
+          console.warn("getLoggedInUserBranch: failed to cache branch id", e);
+        }
+        return String(branchId);
+      }
+    } catch (err) {
+      console.warn("getLoggedInUserBranch: request failed", err);
     }
 
-    console.warn("getLoggedInUserBranch: all attempts failed", lastErr);
     return null;
   } catch (error: any) {
     console.error("getLoggedInUserBranch failed:", error?.response ?? error);
