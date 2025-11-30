@@ -369,8 +369,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       }
       
       // ⏱ Start & End times (safe)
-      const start_time = rawToday.start_time ?? "";
-      const end_time = rawToday.end_time ?? "";
+      const start_time = rawToday.start_time || "";
+      const end_time = rawToday.end_time || "";
       
       // ⏳ Duration calculation
       let duration = 0;
@@ -391,12 +391,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       
       // 🏢 Branch info - handle both string and object types for branch_id
       const branchName = 
-        typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
-          ? (rawToday.branch_id as { _id?: string; name?: string }).name ?? null
+        rawToday.branch_id && typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
+          ? (rawToday.branch_id as { _id?: string; name?: string }).name || null
           : null;
       const branchAddress = 
-        typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
-          ? (rawToday.branch_id as { _id?: string; name?: string; address?: string }).address ?? ""
+        rawToday.branch_id && typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
+          ? (rawToday.branch_id as { _id?: string; name?: string; address?: string }).address || ""
           : "";
       
       // 📦 Final Schedule Object
@@ -404,12 +404,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         start_time,
         end_time,
         duration,
-        date: rawToday.date ?? new Date().toISOString().split("T")[0],
+        date: rawToday.date || new Date().toISOString().split("T")[0],
         branch: branchName
           ? {
               name: branchName,
               address: branchAddress,
-              rawBranch: rawToday.branch_id ?? null,
+              rawBranch: rawToday.branch_id || null,
             }
           : null,
         raw: rawToday,
