@@ -267,26 +267,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       scheduleDateTime.getTime() - 15 * 60 * 1000
     );
     const now = new Date();
-    
-    // ✅ Check if current time is past the scheduled end time
-    const scheduleEndDate = new Date(
-      `${tzDate}T${todaySchedule.end_time}:00`
-    );
-    
-    // Handle case where end time is next day (e.g., start 23:00, end 06:00)
-    const scheduleStartDate = new Date(
-      `${tzDate}T${todaySchedule.start_time}:00`
-    );
-    if (scheduleEndDate < scheduleStartDate) {
-      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
-    }
-    
-    // ✅ Disable check-in if current time is past the scheduled end time
-    if (now > scheduleEndDate) {
-      setCanCheckIn(false);
-      return;
-    }
-    
     setCanCheckIn(now >= earliestCheckInTime);
   }, [todaySchedule]);
   // ✅ New: Live update canCheckIn every minute for button state
