@@ -59,7 +59,7 @@ export const getBranchId = async (): Promise<string | null> => {
 export const getProfile = async (): Promise<ProfileUser> => {
   try {
     const res = await axiosInstance.get('/profile');
-    if (!res?.data?.user) {
+    if (!res.data?.user) {
       throw new Error('Profile response missing user');
     }
 
@@ -108,7 +108,7 @@ export const updateProfile = async (
     const serverMsg =
       error?.response?.data?.message ??
       error?.response?.data ??
-      error?.response?.statusText;
+      error.response?.statusText;
     throw serverMsg || error?.message || 'Failed to update profile';
   }
 };
@@ -194,7 +194,7 @@ export const getUserAttendanceSummary = async (staffId: string): Promise<Attenda
   try {
     if (!staffId) throw new Error('getUserAttendanceSummary: missing staffId');
     const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}?period=month`);
-    const data = res?.data ?? null;
+    const data = res.data ?? null;
     return data as AttendanceSummary;
     
   } catch (error: any) {
@@ -211,7 +211,7 @@ export const getUserById = async (id: string): Promise<ProfileUser | null> => {
   try {
     if (!id) throw new Error('getUserById: missing id');
     const res = await axiosInstance.get(`/users/${id}`);
-    const user = res?.data?.user ?? res?.data ?? null;
+    const user = res.data?.user ?? res?.data ?? null;
     return user as ProfileUser | null;
   } catch (error: any) {
     console.error('getUserById() failed:', error?.response?.data ?? error);
@@ -219,10 +219,10 @@ export const getUserById = async (id: string): Promise<ProfileUser | null> => {
   }
 };
 
-export const getUsers = async (params: Record<string, any> = {}): Promise<ProfileUser[]> => {
+export const getUsers = async (params: Record<string, unknown> = {}): Promise<ProfileUser[]> => {
   try {
     const res = await axiosInstance.get('/users', { params });
-    const users = res?.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
+    const users = res.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
     return users as ProfileUser[];
   } catch (error: any) {
     console.error('getUsers() failed:', error?.response?.data ?? error);
@@ -237,7 +237,8 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
     const map: Record<string, string | undefined> = {};
 
     users.forEach((u) => {
-      if (!u || u.role !== 'admin') return;
+      // Remove the unnecessary !u check since u should always be a valid object in forEach
+      if (u.role !== 'admin') return;
 
       // determine branch id string safely
       let branchIdStr: string | undefined;
@@ -267,11 +268,11 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
 };
 
 
-export const deleteUser = async (staffId: string): Promise<any> => {
+export const deleteUser = async (staffId: string): Promise<unknown> => {
   try {
     if (!staffId) throw new Error('deleteUser: missing staffId');
     const res = await axiosInstance.delete(`/users/${staffId}`);
-    return res?.data ?? null;
+    return res.data ?? null;
   } catch (error: any) {
     console.error('deleteUser() failed:', error?.response?.data ?? error);
     throw (
@@ -316,7 +317,7 @@ export const postSchedulesBulk = async (
   try {
     // defensive: filter out any malformed items
     const bodySchedules = (schedules || []).filter(s =>
-      s && typeof s.date === 'string' && typeof s.day_of_week === 'string' &&
+      typeof s.date === 'string' && typeof s.day_of_week === 'string' &&
       typeof s.start_time === 'string' && typeof s.end_time === 'string'
     ).map(s => ({
       date: s.date,
@@ -327,7 +328,7 @@ export const postSchedulesBulk = async (
 
     const body = {
       employee_id: String(employeeId),
-      branch_id: String(branchId ?? ''),
+      branch_id: String(branchId),
       schedules: bodySchedules,
     };
 
