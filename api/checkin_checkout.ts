@@ -743,6 +743,69 @@ export const getAttendanceReport = async (
   }
 };
 
+// Enhanced function to get attendance history including relevant cross-day records
+export const getMyAttendanceHistoryEnhanced = async (): Promise<AttendanceRecord[]> => {
+  try {
+    const res = await axiosInstance.get('/attendance/my-history');
+    if (!res?.data) {
+      console.warn('⚠️ Attendance API returned empty response');
+      return [];
+    }
+    if (res.data.success && Array.isArray(res.data.data)) {
+      const allRecords = res.data.data;
+      
+      // 🔥 Get local date (correct)
+      const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+      
+      // Get yesterday's date
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+      
+      console.log("📅 Local Today:", today);
+      console.log("📅 Yesterday:", yesterdayYMD);
+      
+      // 🔥 Filter records for today and relevant yesterday's records (cross-day shifts)
+      const relevantRecords = allRecords.filter((record: any) => {
+        const createdDate = record.created_at?.split(" ")[0];
+        
+        // Always include today's records
+        if (createdDate === today) return true;
+        
+        // For yesterday's records, only include those that might be cross-day shifts
+        // (checked in after 6 PM and either no checkout or checked out today)
+        if (createdDate === yesterdayYMD) {
+          if (!record.In) return false;
+          
+          const inDateTime = new Date(record.In);
+          const inHour = inDateTime.getHours();
+          
+          // If checked in after 6 PM yesterday, it's likely a cross-day shift
+          if (inHour >= 18) {
+            // Include if not checked out (still ongoing shift)
+            if (!record.Out) return true;
+            
+            // Check if checkout was today
+            const outDate = new Date(record.Out).toLocaleDateString("en-CA");
+            return outDate === today;
+          }
+        }
+        
+        return false;
+      });
+      
+      // 🔥 Log relevant attendance records
+      console.log("📌 Relevant Attendance Records (including cross-day):", relevantRecords);
+      return relevantRecords;
+    }
+    console.warn('⚠️ Attendance API returned success=false or invalid data:', res.data);
+    return [];
+  } catch (err) {
+    //console.error('❌ Error fetching attendance history:', err);
+    return [];
+  }
+};
+
 export const getMyAttendanceHistory = async (): Promise<AttendanceRecord[]> => {
   try {
     const res = await axiosInstance.get('/attendance/my-history');
@@ -794,12 +857,69 @@ export const getMyAttendanceHistory1 = async (): Promise<any[]> => {
   }
 };
 
+// Function to get the user's last schedule details
+export const getLastSchedule = async (): Promise<any> => {
+  try {
+    // Get all schedules
+    const res = await axiosInstance.get('/schedule');
+    
+    if (!res?.data) {
+      console.warn('⚠️ Schedule API returned empty response');
+      return null;
+    }
+    
+    if (res.data.schedules && Array.isArray(res.data.schedules)) {
+      const allSchedules = res.data.schedules;
+      
+      // Sort schedules by date descending to get the most recent
+      const sortedSchedules = allSchedules.sort((a: any, b: any) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateB.getTime() - dateA.getTime();
+      });
+      
+      // Return the most recent schedule
+      return sortedSchedules[0] || null;
+    }
+    
+    console.warn('⚠️ Schedule API returned success=false or invalid data:', res.data);
+    return null;
+  } catch (err) {
+    console.error('❌ Error fetching last schedule:', err);
+    return null;
+  }
+};
+
 // Simplified function to check if user has checked in today but not checked out
+// Modified to also check for cross-day shifts (shifts that started yesterday but continue today)
 export const isCheckedInToday = async (): Promise<boolean> => {
   try {
-    const records = await getMyAttendanceHistory();
+    // Use enhanced history to include cross-day records
+    const records = await getMyAttendanceHistoryEnhanced();
+    
     // Check if there's any record with check-in but no check-out
-    return records.some(record => record.In && !record.Out);
+    const hasUncheckedRecord = records.some(record => record.In && !record.Out);
+    
+    // Also check if there's any record where checkout happened today but check-in was yesterday
+    // This handles the edge case where user checks out on the same day they open the app
+    const today = new Date().toLocaleDateString("en-CA");
+    const hasCrossDayCheckoutToday = records.some(record => {
+      if (!record.In || !record.Out) return false;
+      
+      // Check if checkout was today
+      const outDate = new Date(record.Out).toLocaleDateString("en-CA");
+      if (outDate !== today) return false;
+      
+      // Check if check-in was yesterday
+      const inDate = new Date(record.In).toLocaleDateString("en-CA");
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+      
+      return inDate === yesterdayYMD;
+    });
+    
+    return hasUncheckedRecord || hasCrossDayCheckoutToday;
   } catch (error) {
     console.error("Error checking check-in status:", error);
     return false;
@@ -807,11 +927,27 @@ export const isCheckedInToday = async (): Promise<boolean> => {
 };
 
 // Simplified function to check if user has completed their shift today (checked in and out)
+// Modified to properly handle cross-day shifts
 export const hasCompletedShiftToday = async (): Promise<boolean> => {
   try {
-    const records = await getMyAttendanceHistory();
-    // Check if there's any record with both check-in and check-out
-    return records.some(record => record.In && record.Out);
+    // Get all attendance records to properly check for completed shifts
+    const res = await axiosInstance.get('/attendance/my-history');
+    if (!res?.data?.success || !Array.isArray(res.data.data)) return false;
+    
+    const allRecords = res.data.data;
+    
+    // Get today's date
+    const today = new Date().toLocaleDateString("en-CA");
+    
+    // Check if there's any record with both check-in and check-out that was completed today
+    return allRecords.some((record: any) => {
+      // Record must have both check-in and check-out
+      if (!record.In || !record.Out) return false;
+      
+      // Check if checkout was today
+      const outDate = new Date(record.Out).toLocaleDateString("en-CA");
+      return outDate === today;
+    });
   } catch (error) {
     console.error("Error checking shift completion status:", error);
     return false;

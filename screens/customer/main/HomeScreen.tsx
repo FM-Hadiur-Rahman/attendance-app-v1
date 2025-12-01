@@ -30,6 +30,7 @@ import {
   endAttendance,
   getBranchDetails,
   getMyAttendanceHistory,
+  getMyAttendanceHistoryEnhanced,
   isCheckedInToday,
   hasCompletedShiftToday,
   clearScheduleCache,
@@ -358,7 +359,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setLoading(true);
       
       // ✅ Use the dedicated endpoint to get today's schedule for the logged-in user
-      const rawToday = await getTodaySchedule();
+      // Use no-cache version to ensure fresh data
+      const rawToday = await getTodayScheduleNoCache();
       
       // ❌ If no today schedule found — stop
       if (!rawToday) {
@@ -439,7 +441,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       }
       
       // Keep the existing detailed logic for displaying check-in/check-out times
-      const todayRecords = await getMyAttendanceHistory();
+      // Use enhanced history to include cross-day records
+      const todayRecords = await getMyAttendanceHistoryEnhanced();
       console.log("📌 Today Records from Helper:", todayRecords.length);
       console.log("📌 Today Records from Helper records:", todayRecords);
       
@@ -449,6 +452,14 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         setCheckInTime(null);
         setCheckOutTime(null);
         setDuration("0h 0m");
+        // For cross-day shifts, we might still be checked in from yesterday
+        // So we need to check specifically for that case
+        const isCheckedInCrossDay = await isCheckedInToday();
+        if (isCheckedInCrossDay) {
+          setAttendanceStatus('checked_in');
+          setCheckedIn(true);
+          setCanCheckOut(true);
+        }
         return;
       }
       
@@ -480,14 +491,23 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setCheckedIn(hasIn && !hasOut);
       setCheckedOut(hasOut);
       // 🔥 canCheckOut logic: use shift end time (primary, ignore duration for now)
+      // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
       let allowedToCheckOut = false;
-      if (hasIn && !hasOut && inMoment && todaySchedule?.end_time) {
-        const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-        let shiftEndMoment = inMoment
-          .clone()
-          .set({ hour: eh, minute: em, second: 0 });
-        if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
-        allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
+      if (hasIn && !hasOut && inMoment) {
+        // First try to use today's schedule if available
+        if (todaySchedule?.end_time) {
+          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+          let shiftEndMoment = inMoment
+            .clone()
+            .set({ hour: eh, minute: em, second: 0 });
+          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
+          allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
+        } 
+        // If no today's schedule (e.g., cross-day shift opened the next day), allow checkout
+        // since we know the user has checked in but not checked out
+        else {
+          allowedToCheckOut = true;
+        }
       }
       setCanCheckOut(allowedToCheckOut);
     } catch (err) {
@@ -588,10 +608,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // ✅ Always fetch schedule (needed for UI display)
       await loadTodaySchedule();
       
-      // Only fetch attendance if not checked out for the day
-      if (attendanceStatus !== 'shift_completed') {
-        await fetchAttendance();
-      }
+      // Always fetch attendance to properly handle cross-day shifts
+      await fetchAttendance();
     } catch (error) {
       console.error("❌ Error in smart reload:", error);
     }
@@ -623,16 +641,25 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     console.log("📌 todaySchedule updated:", todaySchedule);
   }, [todaySchedule]);
   useEffect(() => {
-    if (!checkedIn || !checkInTime || checkOutTime || !todaySchedule?.end_time) return;
-    const inMoment = moment(checkInTime, "HH:mm");
-    const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-    let allowed = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
-    if (allowed.isBefore(inMoment)) allowed.add(1, "day");
-    const timer = setInterval(() => {
-      setCanCheckOut(moment().isSameOrAfter(allowed));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [checkedIn, checkInTime, todaySchedule]);
+    if (!checkedIn || !checkInTime || checkOutTime) return;
+    
+    // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
+    // regardless of whether we have today's schedule
+    if (todaySchedule?.end_time) {
+      const inMoment = moment(checkInTime, "HH:mm");
+      const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+      let allowed = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+      if (allowed.isBefore(inMoment)) allowed.add(1, "day");
+      const timer = setInterval(() => {
+        setCanCheckOut(moment().isSameOrAfter(allowed));
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      // If no today's schedule (e.g., cross-day shift opened the next day), allow checkout
+      // since we know the user has checked in but not checked out
+      setCanCheckOut(true);
+    }
+  }, [checkedIn, checkInTime, todaySchedule, checkOutTime]);
   const formatTime12h = (input: Date | string) => {
     let date: Date;
     if (typeof input === "string") {
