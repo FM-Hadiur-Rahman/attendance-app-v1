@@ -33,10 +33,13 @@ import {
   getMyAttendanceHistoryEnhanced,
   isCheckedInToday,
   hasCompletedShiftToday,
+  hasOngoingCrossDayShift, // ✅ Import the new function
+  getLastSchedule, // ✅ Import the new function
+  getLastAttendanceRecord, // ✅ Import the new function
   clearScheduleCache,
   getTodayScheduleNoCache  // ✅ Import the no-cache function
 } from "../../../api/checkin_checkout";
-import { getTodaySchedule } from "../../../api/schedules";
+//import { getTodaySchedule } from "../../../api/schedules";
 // ✅ Define your navigation stack param list
 export type RootStackParamList = {
   Home: { userId: string; langId: string };
@@ -88,6 +91,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const todayDate = new Date().toISOString().split("T")[0];
   const [loading, setLoading] = useState(true);
   const [todaySchedule, setTodaySchedule] = useState<any>(null);
+  const [lastSchedule, setLastSchedule] = useState<any>(null);
   const hasSchedule = !!todaySchedule && !!todaySchedule.start_time;
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
@@ -428,11 +432,26 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   };
   const fetchAttendance = async () => {
     try {
+      // First, check if there's an ongoing cross-day shift
+      const hasOngoingCrossDay = await hasOngoingCrossDayShift();
+      
       // Simplified logic: just check the attendance status
-      const isCheckedIn = await isCheckedInToday();
+      const isCheckedIn = hasOngoingCrossDay || await isCheckedInToday();
       const isShiftCompleted = await hasCompletedShiftToday();
       
-      if (isShiftCompleted) {
+      console.log("🔍 hasOngoingCrossDay:", hasOngoingCrossDay);
+      console.log("🔍 isCheckedIn:", isCheckedIn);
+      console.log("🔍 isShiftCompleted:", isShiftCompleted);
+      
+      // Special handling for cross-day shifts
+      // If user has an ongoing cross-day shift, they should be able to check out
+      // but only after the schedule end time
+      if (hasOngoingCrossDay) {
+        setAttendanceStatus('checked_in');
+        setCheckedIn(true);
+        // Will be enabled at schedule end time by the useEffect
+        console.log("✅ Setting checked in for cross-day shift");
+      } else if (isShiftCompleted) {
         setAttendanceStatus('shift_completed');
       } else if (isCheckedIn) {
         setAttendanceStatus('checked_in');
@@ -452,13 +471,18 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         setCheckInTime(null);
         setCheckOutTime(null);
         setDuration("0h 0m");
+        
         // For cross-day shifts, we might still be checked in from yesterday
         // So we need to check specifically for that case
-        const isCheckedInCrossDay = await isCheckedInToday();
-        if (isCheckedInCrossDay) {
+        if (hasOngoingCrossDay || await isCheckedInToday()) {
           setAttendanceStatus('checked_in');
           setCheckedIn(true);
-          setCanCheckOut(true);
+          // Will be enabled at schedule end time by the useEffect
+          console.log("✅ Setting cross-day shift checkout availability");
+          
+          // Set last schedule for cross-day shifts
+          const lastScheduleData = await getLastSchedule();
+          setLastSchedule(lastScheduleData);
         }
         return;
       }
@@ -490,26 +514,52 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // derive checked states from actual data
       setCheckedIn(hasIn && !hasOut);
       setCheckedOut(hasOut);
-      // 🔥 canCheckOut logic: use shift end time (primary, ignore duration for now)
+      
       // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
-      let allowedToCheckOut = false;
-      if (hasIn && !hasOut && inMoment) {
-        // First try to use today's schedule if available
-        if (todaySchedule?.end_time) {
+      // regardless of whether we have today's schedule
+      if (hasOngoingCrossDay || (hasIn && !hasOut)) {
+        // If we have today's schedule and check-in time, enable checkout at schedule end time
+        if (todaySchedule?.end_time && inMoment) {
           const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-          let shiftEndMoment = inMoment
-            .clone()
-            .set({ hour: eh, minute: em, second: 0 });
-          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
-          allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
-        } 
-        // If no today's schedule (e.g., cross-day shift opened the next day), allow checkout
-        // since we know the user has checked in but not checked out
-        else {
-          allowedToCheckOut = true;
+          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+          
+          // Enable checkout starting from schedule end time
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          setCanCheckOut(shouldEnableCheckout);
+        } else {
+          // If no today's schedule (e.g., cross-day shift opened the next day), 
+          // don't enable checkout until we can determine the schedule end time
+          setCanCheckOut(false);
+          
+          // Set last schedule for cross-day shifts
+          const lastScheduleData = await getLastSchedule();
+          setLastSchedule(lastScheduleData);
         }
+        console.log("✅ Enabling checkout for ongoing shift");
+      } else {
+        // 🔥 canCheckOut logic: use shift end time (primary, ignore duration for now)
+        // Only apply time-based logic if we have a complete shift (both check-in and check-out)
+        let allowedToCheckOut = false;
+        if (hasIn && !hasOut && inMoment) {
+          // First try to use today's schedule if available
+          if (todaySchedule?.end_time) {
+            const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+            let shiftEndMoment = inMoment
+              .clone()
+              .set({ hour: eh, minute: em, second: 0 });
+            if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
+            allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
+          } 
+          // If no today's schedule (e.g., cross-day shift opened the next day), 
+          // don't enable checkout until we can determine the schedule end time
+          else {
+            allowedToCheckOut = false;
+          }
+        }
+        setCanCheckOut(allowedToCheckOut);
       }
-      setCanCheckOut(allowedToCheckOut);
     } catch (err) {
       console.error("❌ fetchAttendance error:", err);
       setAttendanceToday(null);
@@ -615,8 +665,67 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
   };
   // ✅ Overall Auto Refresh: Reduced interval to 5 minutes to decrease API load
+  // This also ensures cross-day shifts are properly detected when user opens app next day
   useEffect(() => {
-    reloadAll();
+    // Ensure we detect cross-day shifts on initial load
+    const initializeApp = async () => {
+      // First check for cross-day shifts
+      const hasOngoingCrossDay = await hasOngoingCrossDayShift();
+      if (hasOngoingCrossDay) {
+        // If there's an ongoing cross-day shift, make sure we show the checkout button
+        // at the appropriate time (schedule end time)
+        setAttendanceStatus('checked_in');
+        setCheckedIn(true);
+        
+        // For cross-day shifts, we want to show the checkout button immediately
+        // but only enable it after the schedule end time
+        setCanCheckOut(false); // Will be enabled at schedule end time
+        
+        // Set last schedule for cross-day shifts
+        const lastScheduleData = await getLastSchedule();
+        setLastSchedule(lastScheduleData);
+        
+        console.log("✅ Detected ongoing cross-day shift on initial load");
+      } else {
+        // Recheck with last schedule and attendance data if no ongoing cross-day shift
+        const lastSchedule = await getLastSchedule();
+        const lastAttendance = await getLastAttendanceRecord();
+        
+        // Set last schedule
+        setLastSchedule(lastSchedule);
+        
+        // If we have last schedule and attendance data, and the user is checked in but not checked out
+        if (lastSchedule && lastAttendance && lastAttendance.In && !lastAttendance.Out) {
+          // Check if the schedule end time has passed
+          const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
+          const [eh, em] = lastSchedule.end_time.split(":").map(Number);
+          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+          
+          // Enable checkout if schedule end time has passed
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          if (shouldEnableCheckout) {
+            setAttendanceStatus('checked_in');
+            setCheckedIn(true);
+            setCanCheckOut(true);
+            console.log("✅ Detected completed schedule with pending checkout");
+          } else {
+            // If schedule end time hasn't passed yet, still show that user is checked in
+            // but don't enable checkout until schedule end time
+            setAttendanceStatus('checked_in');
+            setCheckedIn(true);
+            setCanCheckOut(false);
+            console.log("✅ Detected ongoing schedule with pending checkout");
+          }
+        }
+      }
+      
+      // Then do the regular reload
+      reloadAll();
+    };
+    
+    initializeApp();
     const interval = setInterval(reloadAll, 1000 * 60 * 5); // Every 5 minutes for overall refresh
     return () => clearInterval(interval);
   }, [userId, currentUser?.branch]);
@@ -641,23 +750,69 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     console.log("📌 todaySchedule updated:", todaySchedule);
   }, [todaySchedule]);
   useEffect(() => {
-    if (!checkedIn || !checkInTime || checkOutTime) return;
+    // If we have a checkout time, don't allow checkout
+    if (checkOutTime) {
+      setCanCheckOut(false);
+      return;
+    }
     
     // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
     // regardless of whether we have today's schedule
-    if (todaySchedule?.end_time) {
-      const inMoment = moment(checkInTime, "HH:mm");
-      const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-      let allowed = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
-      if (allowed.isBefore(inMoment)) allowed.add(1, "day");
-      const timer = setInterval(() => {
-        setCanCheckOut(moment().isSameOrAfter(allowed));
-      }, 1000);
-      return () => clearInterval(timer);
-    } else {
-      // If no today's schedule (e.g., cross-day shift opened the next day), allow checkout
-      // since we know the user has checked in but not checked out
-      setCanCheckOut(true);
+    if (checkedIn && !checkOutTime) {
+      // First, try to use today's schedule if available
+      if (todaySchedule?.end_time && checkInTime) {
+        const inMoment = moment(checkInTime, "HH:mm");
+        const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+        let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+        if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+        
+        // Enable checkout starting from schedule end time
+        const now = moment();
+        const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+        setCanCheckOut(shouldEnableCheckout);
+        
+        // Update periodically to ensure accurate timing
+        const timer = setInterval(() => {
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          setCanCheckOut(shouldEnableCheckout);
+        }, 1000);
+        return () => clearInterval(timer);
+      } else {
+        // If no today's schedule (e.g., cross-day shift opened the next day), 
+        // recheck with last schedule data to determine when checkout should be enabled
+        const recheckCheckoutAvailability = async () => {
+          const lastSchedule = await getLastSchedule();
+          const lastAttendance = await getLastAttendanceRecord();
+          
+          // If we have last schedule and attendance data, use that to determine checkout time
+          if (lastSchedule && lastAttendance && lastAttendance.In && !lastAttendance.Out) {
+            const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
+            const [eh, em] = lastSchedule.end_time.split(":").map(Number);
+            let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+            if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+            
+            // Enable checkout starting from schedule end time
+            const now = moment();
+            const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+            setCanCheckOut(shouldEnableCheckout);
+            
+            // Update periodically to ensure accurate timing
+            const timer = setInterval(() => {
+              const now = moment();
+              const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+              setCanCheckOut(shouldEnableCheckout);
+            }, 1000);
+            return () => clearInterval(timer);
+          } else {
+            // Fallback: If we can't determine schedule end time, don't enable checkout
+            // This prevents accidental early checkout
+            setCanCheckOut(false);
+          }
+        };
+        
+        recheckCheckoutAvailability();
+      }
     }
   }, [checkedIn, checkInTime, todaySchedule, checkOutTime]);
   const formatTime12h = (input: Date | string) => {
@@ -1168,6 +1323,41 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                 </Text>
               </View>
             )}
+            
+            {/* 🟣 SCHEDULE DETAILS FOR CROSS-DAY SHIFTS */}
+            {checkedIn && !checkOutTime && todaySchedule && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Scheduled shift: {todaySchedule.date} {formatTime(todaySchedule.start_time)} - {formatTime(todaySchedule.end_time)}
+                </Text>
+              </View>
+            )}
+            
+            {/* 🟤 LAST SCHEDULE DETAILS FOR CROSS-DAY SHIFTS (when no today schedule) */}
+            {checkedIn && !checkOutTime && !todaySchedule && lastSchedule && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Scheduled shift: {lastSchedule.date} {formatTime(lastSchedule.start_time)} - {formatTime(lastSchedule.end_time)}
+                </Text>
+              </View>
+            )}
+            
+            {/* 🟠 SCHEDULE END TIME DISPLAY */}
+            {checkedIn && !checkOutTime && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Shift ends at: {' '}
+                  {todaySchedule?.end_time ? formatTime(todaySchedule.end_time) : 
+                   (lastSchedule?.end_time ? formatTime(lastSchedule.end_time) : '')}
+                </Text>
+              </View>
+            )}
           </View>
         </CartBox>
         
@@ -1184,6 +1374,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             <Button1
               text={lang.checkIn}
               onPress={() => {
+                // First check if there's an ongoing cross-day shift
+                // If so, prevent check-in and show checkout button instead
+                if (checkedIn) {
+                  showErrorToast("You are already checked in. Please check out first.");
+                  return;
+                }
+                
                 if (!todaySchedule || !branchInfo) {
                   showErrorToast(lang.noScheduleToday);
                   return;
@@ -1197,13 +1394,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                 }
               }}
               backgroundColor={
-                todaySchedule && branchInfo && withinRange && canCheckIn
+                todaySchedule && branchInfo && withinRange && canCheckIn && !checkedIn
                   ? colors.primary
                   : colors.button_background
               }
               textStyle={{
                 color:
-                  todaySchedule && branchInfo && withinRange && canCheckIn
+                  todaySchedule && branchInfo && withinRange && canCheckIn && !checkedIn
                     ? colors.button_background
                     : colors.subtext2,
               }}
@@ -1276,6 +1473,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                   }, 100);
                 }}
               />
+            )}
+            {!canCheckOut && checkedIn && !checkOutTime && (
+              <Text style={{ color: colors.subtext2, fontSize: fonts.size.s, marginTop: 5 }}>
+                Checkout available after scheduled end time{' '}
+                {todaySchedule?.end_time ? formatTime(todaySchedule.end_time) : 
+                 (lastSchedule?.end_time ? formatTime(lastSchedule.end_time) : '')}
+              </Text>
             )}
             <Popup
               visible={showCheckoutPopup}

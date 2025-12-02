@@ -18,9 +18,9 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile";
+import { fetchUsers, ProfileUser, getProfile, postSchedulesBulk } from "../../../../api/profile";
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk } from "../../../../api/schedules";
+import { getSchedulesByEmployee, getSchedules, ScheduleItem } from "../../../../api/schedules";
 import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
 import { db, addDoc, collection, serverTimestamp } from "../../../../api/notification/firebase";
 import Header from "../../../../components/Header";
@@ -698,7 +698,7 @@ export default function AddScheduleScreen(props: any) {
         const start = weekDates[0];
         const end = weekDates[weekDates.length - 1];
         console.log(`[DEBUG] fetchWeekForOffset offset=${offsetWeeks} start=${start} end=${end}`);
-        const resp = await getEmployeeSchedules(u.id, start, end);
+        const resp = await getSchedulesByEmployee(u.id, start, end);
         console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
         const rawArr = unwrapSchedules(resp) || [];
         // debug list: id, iso, localYmd
