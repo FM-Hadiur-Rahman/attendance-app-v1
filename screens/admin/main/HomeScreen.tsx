@@ -16,13 +16,10 @@ import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
-
-// API helpers
-import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
-import { getSchedulesForDate, getPendingCheckoutUsers, ScheduleItem, PendingCheckoutUser } from "../../../api/schedules";
-import { getAttendanceAllHistory, getCurrentShiftUsers, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+import { getUserById, getUsers } from "../../../api/profile";
+import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
+import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
 import { getBranchById } from "../../../api/Branchs";
-import { hasOngoingCrossDayShift, getLastSchedule } from "../../../api/checkin_checkout";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -84,13 +81,58 @@ const formatYMDDisplay = (ymd: string) => {
   return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
 };
 
+const formatYMD = (d: Date): string => {
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const todayDate = (() => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+})();
+
+const yesterdayDate = (() => {
+  const d = new Date(todayDate);
+  d.setDate(d.getDate() - 1);
+  return d;
+})();
+const yesterdayYMD = formatYMD(yesterdayDate);
+
+const parseAttendanceDatetime = (s: string | undefined | null): Date | null => {
+  if (!s) return null;
+  // Replace space with 'T' so Date can parse (ISO-like)
+  const iso = s.replace(' ', 'T');
+  const dt = new Date(iso);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 1);
+
+type CacheEntry<T> = { value: T; expiresAt: number };
+const simpleCache = new Map<string, CacheEntry<any>>();
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds (tweakable)
+const cacheGet = <T,>(key: string): T | undefined => {
+  const e = simpleCache.get(key);
+  if (!e) return undefined;
+  if (Date.now() > e.expiresAt) {
+    simpleCache.delete(key);
+    return undefined;
+  }
+  return e.value as T;
+};
+/** Set cache */
+const cacheSet = <T,>(key: string, value: T, ttlMs = CACHE_TTL_MS) => {
+  simpleCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+};
+
 interface ScreenProps {
-  userId?: string | null;
-  langId?: string;
+  userId: string;
+  langId: string;
   setLangId?: React.Dispatch<React.SetStateAction<string>>;
   routeRefresh?: boolean;
   onConsumedRefresh?: () => void;
-  toastMessage?: string | null;
+  toastMessage?: string;
   onConsumedToast?: () => void;
   branch?: any;
   createdUser?: any;
@@ -102,11 +144,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
+  const routeUserId = route.params?.userId;
+  const routeLangId = route.params?.langId;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const lang = (translations as any)[langId];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -116,13 +158,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const [version, setVersion] = useState<number>(0);
 
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
-  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
 
   const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
-  const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
-
-  const [totalStaff, setTotalStaff] = useState<number>(0);
-  const [loadingStaff, setLoadingStaff] = useState<boolean>(false);
 
   // schedules & users (previously used)
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
@@ -141,10 +178,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     }>
   >([]);
 
-  // New: users with pending checkouts
-  const [pendingCheckouts, setPendingCheckouts] = useState<PendingCheckoutUser[]>([]);
-  const [loadingPendingCheckouts, setLoadingPendingCheckouts] = useState<boolean>(false);
-
   const onRefresh = async () => {
     setRefreshing(true);
     await new Promise((r) => setTimeout(r, 800));
@@ -152,65 +185,63 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     setRefreshing(false);
   };
 
-  // fetch branch & total staff
-  const fetchBranchAndStaff = async () => {
-    try {
-      if (!userId && !passedBranchId) {
-        setTotalStaff(0);
-        return;
-      }
-      setLoadingStaff(true);
+  /**
+   * Load schedules for today + yesterday for the given branchId.
+   * Caches result briefly to reduce API calls while polling.
+   *
+   * - Uses getSchedulesForDate(dateYMD, { branchId })
+   * - Merges and deduplicates schedules by _id
+   */
+  const loadSchedulesForBranchWithCache = async (branchIdToUse: string | null): Promise<ScheduleItem[]> => {
+    if (!branchIdToUse) return [];
 
-      let branchIdToUse = passedBranchId ?? activeBranchId;
+    const cacheKey = `schedules:${branchIdToUse}:${todayYMD}:${yesterdayYMD}`;
+    const cached = cacheGet<ScheduleItem[]>(cacheKey);
+    if (cached) return cached;
 
-      if (!branchIdToUse && userId) {
-        try {
-          const u = await getUserById(userId);
-          const branchObj = u?.branch;
-          const branchIdFromUser = typeof branchObj === "string" ? branchObj : (branchObj && typeof branchObj === "object" ? (branchObj as { _id?: string })._id ?? null : null);
-          if (branchIdFromUser) {
-            branchIdToUse = branchIdFromUser;
-            setActiveBranchId(branchIdFromUser);
-            const branchNameMaybe = branchObj && typeof branchObj === "object" ? (branchObj as { name?: string }).name ?? null : null;
-            if (branchNameMaybe) setActiveBranchName(branchNameMaybe);
-          }
-        } catch (e) {
-          console.warn("Failed to fetch user to determine branch", e);
-        }
-      }
-      if (!branchIdToUse) {
-        setTotalStaff(0);
-        setLoadingStaff(false);
-        return;
-      }
+    // Fetch only the two dates we need. Backend should accept branchId filter.
+    const [todaySchedules, yesterdaySchedules] = await Promise.all([
+      getSchedulesForDate(todayYMD, { branchId: branchIdToUse }),
+      getSchedulesForDate(yesterdayYMD, { branchId: branchIdToUse }),
+    ]);
 
-      const res = await fetchUsers({ branchId: branchIdToUse, role: "user", limit: 1000, page: 1 });
-      const users = res?.users ?? [];
-      const count = users.filter((u: any) => (u.role ?? "user") === "user").length;
-      setTotalStaff(count);
-    } catch (err) {
-      console.error("fetchBranchAndStaff error", err);
-      setTotalStaff(0);
-    } finally {
-      setLoadingStaff(false);
-    }
+    const merged = [...(todaySchedules ?? []), ...(yesterdaySchedules ?? [])];
+
+    // dedupe by _id or id
+    const dedupe = new Map<string, ScheduleItem>();
+    merged.forEach((s) => {
+      const key = s._id;
+      dedupe.set(String(key), s);
+    });
+
+    const out = Array.from(dedupe.values());
+    cacheSet(cacheKey, out);
+    return out;
   };
 
-  // fetch schedules & users
-  const fetchShiftData = async (branchIdToUse: string | null) => {
+  /**
+   * fetchShiftData: sets schedulesState and usersState.
+   * - Keeps implementation small.
+   * - Ensures only needed data for branch is fetched.
+   */
+  const fetchShiftData = async (branchIdToUse: string | null): Promise<void> => {
     if (!branchIdToUse) {
       setSchedulesState([]);
       setUsersState([]);
       return;
     }
+
     setLoadingShiftData(true);
     try {
-      const schedArr = await getSchedulesForDate(todayYMD);
-      const usersArr = await getUsers({ limit: 1000 });
-      setSchedulesState(schedArr ?? []);
-      setUsersState(usersArr ?? []);
-    } catch (e) {
-      console.warn("fetchShiftData failed", e);
+      // getSchedulesForDate already handles pagination; pass branchId so backend can filter.
+      const [schedules, users] = await Promise.all([
+        loadSchedulesForBranchWithCache(branchIdToUse),
+        getUsers({ limit: 1000 }), // ideally backend supports branchId + limit, change if available
+      ]);
+      setSchedulesState(schedules);
+      setUsersState(users ?? []);
+    } catch (err) {
+      console.warn('fetchShiftData failed', err);
       setSchedulesState([]);
       setUsersState([]);
     } finally {
@@ -218,21 +249,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     }
   };
 
-  // helper to test if schedule belongs to a role:user
-  const scheduleIsUser = (s: any) => {
-    if (s.employee_id) {
-      const role = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id.role : undefined;
-      if (typeof role === "string") return role === "user";
-      const id = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id;
-      if (id) {
-        const found = usersState.find((u) => u._id === id || (u as any).id === id);
-        return found?.role === "user";
-      }
-    }
-    return false;
-  };
-
-  // Replaced: compute unique employee count for today's schedules in the active branch
+  //To calculate total staff count (For the current branch, Today date schedule)
   const TotalstaffCount = useMemo(() => {
     if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
 
@@ -251,7 +268,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       // branch id can be object or string
       let branchIdOfSchedule = null;
       if (s.branch_id && typeof s.branch_id === 'object' && '_id' in s.branch_id) {
-        branchIdOfSchedule = (s.branch_id as any)._id;
+        branchIdOfSchedule = (s.branch_id)._id;
       } else if (typeof s.branch_id === 'string') {
         branchIdOfSchedule = s.branch_id;
       }
@@ -260,7 +277,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         // employee_id may be object or string
         let empId = null;
         if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
-          empId = (s.employee_id as any)._id;
+          empId = (s.employee_id)._id;
         } else if (typeof s.employee_id === 'string') {
           empId = s.employee_id;
         }
@@ -274,126 +291,132 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   }, [schedulesState, todayYMD, activeBranchId]);
 
 
-  // fetch attendance and enrich (with branch-name logic)
-  const fetchAttendanceAndEnrich = async (branchIdToUse: string | null) => {
+  /**
+   * Enrich attendance records for display.
+   *
+   * Rules:
+   * - Include attendance that belongs to branchIdToUse
+   * - Include:
+   *    * check-ins from today (In YMD === todayYMD) where In <= now
+   *    * check-ins from yesterday (In YMD === yesterdayYMD) only when Out is missing (ongoing cross-day)
+   * - For schedule lookup: match schedule.date === the YMD of the In time (yesterday or today)
+   * - Cache attendance briefly to reduce repeated API calls during polling
+   */
+  const fetchAttendanceAndEnrich = async (branchIdToUse: string | null): Promise<void> => {
     if (!branchIdToUse) {
       setRecentCheckins([]);
       return;
     }
 
     try {
-      // Get users who are currently on shift (including cross-day shifts)
-      const all = await getCurrentShiftUsers();
-      const now = new Date();
-      const filtered = (all || []).filter((a) => {
-        const aBranchId = a.branch && typeof a.branch === 'object' && 'id' in a.branch ? (a.branch as { id?: string }).id : (typeof a.branch === 'string' ? a.branch : a.branch_id ?? null);
+      const cacheKey = `attendanceAll:${branchIdToUse}:${todayYMD}:${yesterdayYMD}`;
+      const cached = cacheGet<AttendanceHistoryItem[]>(cacheKey);
+      const all = cached ?? (await getAttendanceAllHistory());
+      if (!cached) cacheSet(cacheKey, all);
 
-        if (!aBranchId) return false;
-        if (String(aBranchId) !== String(branchIdToUse)) return false;
-        // For currently on shift users, we don't filter by today's date since it includes cross-day shifts
-        if (!a.In) return false;
-        return new Date(a.In.replace(' ', 'T')).getTime() <= now.getTime();
+      const now = new Date();
+
+      const filtered = (all || []).filter((record) => {
+        // branch id normalization
+        const recordBranchId = record.branch_id ?? null;
+
+        if (!recordBranchId) return false;
+        if (String(recordBranchId) !== String(branchIdToUse)) return false;
+        if (!record.In) return false;
+
+        const inDt = parseAttendanceDatetime(record.In);
+        if (!inDt) return false;
+
+        const inYMD = formatYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
+
+        // include today's check-ins (up to now)
+        if (inYMD === todayYMD) {
+          return inDt.getTime() <= now.getTime();
+        }
+        // include yesterday's check-ins only if Out is missing (ongoing cross-day)
+        if (inYMD === yesterdayYMD && !record.Out) {
+          return true;
+        }
+        return false;
       });
 
       filtered.sort((a, b) => (a.In < b.In ? 1 : -1));
 
       const enriched = await Promise.all(
         filtered.map(async (att) => {
-          const uid = att.user?.id ?? att.user;
-          let userProfile = usersState.find((u) => String(u._id) === String(uid) || String((u as any).id) === String(uid));
+          const uid = att.user.id;
+          let userProfile = usersState.find((u) => String((u)._id) === String(uid));
           if (!userProfile && uid) {
-            try { userProfile = await getUserById(uid); } catch (e) { userProfile = null; }
+            try {
+              userProfile = await getUserById(String(uid));
+            } catch {
+              userProfile = null;
+            }
           }
+
+          // choose schedule date based on In YMD (yesterday or today)
+          const inDt = parseAttendanceDatetime(att.In);
+          const inYMD = inDt ? formatYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate())) : todayYMD;
 
           const schedule = schedulesState.find((s) => {
-            let empId = null;
+            let empId: string | null = null;
             if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
-              empId = (s.employee_id as any)._id;
-            } else if (typeof s.employee_id === 'string') {
-              empId = s.employee_id;
-            }
-            if (!empId || !uid) return false;
-            const sDate = s.date ? toYMD(new Date(s.date)) : null;
-            return String(empId) === String(uid) && sDate === todayYMD;
+              empId = s.employee_id._id ?? null;
+            } else if (!empId || !uid) return false;
+            const sDate = s.date ? formatYMD(new Date(s.date)) : null;
+            return String(empId) === String(uid) && sDate === inYMD;
           }) ?? null;
 
-          // compute status (early/late/noschedule) same as before (based on schedule start_time)
-          let status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in" = "noschedule";
-          let diffText = "";
+          // compute duration & status (same logic, but safe)
+          let status: "early" | "late" | "ontime" | "noschedule" = "noschedule";
+          let diffText = formatMinutesDiff(0);
 
           try {
-            // duration between In and Out (or now if Out missing) -> shown as diffText in 00h 00m
-            const inDt = att.In ? new Date(att.In.replace(' ', 'T')) : null;
-            const outDt = att.Out ? new Date(att.Out.replace(' ', 'T')) : null;
-            const nowDt = new Date();
-
-            if (inDt) {
-              const endDt = outDt && !Number.isNaN(outDt.getTime()) ? outDt : nowDt;
-              const durationMins = Math.max(0, Math.round((endDt.getTime() - inDt.getTime()) / 60000));
+            const inDtLocal = parseAttendanceDatetime(att.In);
+            const outDtLocal = parseAttendanceDatetime(att.Out ?? undefined);
+            if (inDtLocal) {
+              const endDt = outDtLocal ?? new Date();
+              const durationMins = Math.max(0, Math.round((endDt.getTime() - inDtLocal.getTime()) / 60000));
               diffText = formatMinutesDiff(durationMins);
-            } else {
-              diffText = formatMinutesDiff(0);
             }
 
-            // status still uses schedule start_time vs "In" time (minutes from midnight)
             if (schedule && schedule.start_time && att.In) {
-              const schedMin = hhmmToMinutes(schedule.start_time);      // hh:mm -> minutes
-              const inMin = datetimeToMinutes(att.In);                  // "YYYY-MM-DD HH:MM:SS" -> minutes (ignores seconds)
-              if (Number.isNaN(schedMin) || Number.isNaN(inMin)) {
-                // If parsing fails, keep noschedule as a safe fallback
-                status = "noschedule";
-              } else {
-                const startDiff = inMin - schedMin; // positive => checked in after schedule start
-                if (startDiff > 0) {
-                  status = "late";
-                } else if (startDiff === 0) {
-                  // exactly same minute -> on time
-                  status = "ontime";
-                } else {
-                  status = "early";
-                }
+              const schedMin = hhmmToMinutes(schedule.start_time);
+              const inMin = datetimeToMinutes(att.In);
+              if (!Number.isNaN(schedMin) && !Number.isNaN(inMin)) {
+                const startDiff = inMin - schedMin;
+                if (startDiff > 0) status = "late";
+                else if (startDiff === 0) status = "ontime";
+                else status = "early";
               }
-            } else {
-              status = "noschedule";
             }
           } catch (err) {
-            console.warn("Error computing status/duration", err);
+            console.warn('compute status error', err);
             status = "noschedule";
-            diffText = formatMinutesDiff(0);
           }
 
-          // 🔍 Determine if the user belongs to a different branch
+          // branchNameToShow logic 
           let branchNameToShow: string | null = null;
-
           try {
             if (userProfile) {
-              // Extract user's actual branch info
-              let userBranchId = null;
-              if (typeof userProfile.branch === "string") {
-                userBranchId = userProfile.branch;
-              } else if (userProfile.branch && typeof userProfile.branch === "object" && '_id' in userProfile.branch) {
-                userBranchId = (userProfile.branch as { _id?: string })._id ?? null;
+              let userBranchId: string | null = null;
+              if (typeof userProfile.branch === 'string') userBranchId = userProfile.branch;
+              else if (userProfile.branch && typeof userProfile.branch === 'object' && '_id' in userProfile.branch) {
+                userBranchId = userProfile.branch._id ?? null;
               }
-              const userBranchName = userProfile.branch && typeof userProfile.branch === "object" ? (userProfile.branch as { name?: string }).name ?? null : null;
-
-
-              // Compare with current active branch
-              if (
-                userBranchId &&
-                String(userBranchId) !== String(branchIdToUse ?? activeBranchId)
-              ) {
+              const userBranchName = userProfile.branch && typeof userProfile.branch === 'object' ? userProfile.branch.name ?? null : null;
+              if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
                 branchNameToShow = userBranchName || (await getBranchById(userBranchId))?.name || null;
               }
             } else if (att.branch_id) {
-              // fallback if userProfile not loaded
               const b = await getBranchById(att.branch_id);
-              const userBranchId = (b as any)?._id;
+              const userBranchId = b._id;
               if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
                 branchNameToShow = b?.name ?? null;
               }
             }
           } catch (err) {
-            console.warn("branchNameToShow lookup failed", err);
+            console.warn('branchNameToShow lookup failed', err);
             branchNameToShow = null;
           }
 
@@ -409,52 +432,28 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       );
 
       setRecentCheckins(enriched);
-    } catch (e) {
-      console.warn("fetchAttendanceAndEnrich failed", e);
+    } catch (err) {
+      console.warn('fetchAttendanceAndEnrich failed', err);
       setRecentCheckins([]);
     }
   };
-
-  // fetch users with pending checkouts
-  const fetchPendingCheckouts = async (branchIdToUse: string | null) => {
-    if (!branchIdToUse) {
-      setPendingCheckouts([]);
-      return;
-    }
-
-    setLoadingPendingCheckouts(true);
-    try {
-      const pendingUsers = await getPendingCheckoutUsers(branchIdToUse);
-      setPendingCheckouts(pendingUsers);
-    } catch (e) {
-      console.warn("fetchPendingCheckouts failed", e);
-      setPendingCheckouts([]);
-    } finally {
-      setLoadingPendingCheckouts(false);
-    }
-  };
-
   const isFocused = useIsFocused();
 
   useEffect(() => {
     if (!activeBranchId || !isFocused) return;
-
     // immediate refresh when screen becomes focused
     fetchShiftData(activeBranchId);
     fetchAttendanceAndEnrich(activeBranchId);
-    fetchPendingCheckouts(activeBranchId);
 
     // poll attendance only (keeps UI live while screen open)
     const pollMs = 60 * 1000; // 60s - adjust as needed
     const interval = setInterval(() => {
       fetchAttendanceAndEnrich(activeBranchId);
-      fetchPendingCheckouts(activeBranchId);
     }, pollMs);
 
     return () => {
       clearInterval(interval);
     };
-    // note: we intentionally watch isFocused so polling starts/stops with screen focus
   }, [activeBranchId, isFocused, version]);
 
   // initial & deps
@@ -463,7 +462,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       console.log("No userId found in params");
       return;
     }
-    // don't overwrite if already set
+    // don’t overwrite if already set
     if (activeBranchId) {
       console.log("activeBranchId already set:", activeBranchId);
       return;
@@ -480,7 +479,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         const branchField = u.branch;
         const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? (branchField as { _id?: string })._id ?? null : null);
 
-
         const branchName = branchField && typeof branchField === "object" ? (branchField as { name?: string }).name ?? null : null;
 
         console.log("User branch data:", branchField);
@@ -489,7 +487,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
         if (branchId) {
           setActiveBranchId(String(branchId));
-          if (branchName) setActiveBranchName(branchName);
           console.log("activeBranchId set to:", branchId);
         } else {
           console.log("No branchId found for user");
@@ -505,19 +502,15 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
   useEffect(() => {
     fetchShiftData(activeBranchId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version]);
 
   useEffect(() => {
     fetchAttendanceAndEnrich(activeBranchId);
-    fetchPendingCheckouts(activeBranchId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version, schedulesState, usersState]);
 
   const handleNotificationPress = () => {
     console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
-    // use same param keys you expect in NotificationScreen
-    (navigation.navigate as any)("NotificationScreen", { userId, langId, branchId: activeBranchId });
+    (navigation.navigate)("NotificationScreen", { userId, langId, branchId: activeBranchId });
   };
 
   return (
@@ -542,7 +535,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
               <Image source={require("../../../assets/icons/totalstaff_b.png")} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            {/* <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text> */}
             <Text style={styles.total_count}>{loadingShiftData ? "..." : TotalstaffCount}</Text>
           </CartBox>
 
@@ -552,60 +544,12 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            {/* <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text> */}
             <Text style={styles.shift_count}>{loadingShiftData ? "..." : String(recentCheckins.length)}</Text>
 
           </CartBox>
         </View>
 
-        {/* Pending Checkouts Section */}
-        {(pendingCheckouts.length > 0 || loadingPendingCheckouts) && (
-          <>
-            <Text style={styles.heading}>Pending Check-Out</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: 15 }}
-            >
-              <View style={{ flexDirection: "row" }}>
-                {loadingPendingCheckouts ? (
-                  <View style={{ justifyContent: 'center', alignItems: 'center', marginHorizontal: 10 }}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  </View>
-                ) : (
-                  pendingCheckouts.map((user) => (
-                    <CartBox key={user.user.id} containerStyle={styles.pending_checkout_box}>
-                      <Text style={styles.pending_user_name} numberOfLines={1} ellipsizeMode="tail">
-                        {user.user.fullname || user.user.username}
-                      </Text>
-                      {user.schedule ? (
-                        <Text style={styles.pending_schedule_time}>
-                          {user.schedule.start_time} - {user.schedule.end_time}
-                        </Text>
-                      ) : (
-                        <Text style={styles.pending_cross_day}>Cross-day shift</Text>
-                      )}
-                      <Text style={styles.pending_branch_name} numberOfLines={1} ellipsizeMode="tail">
-                        {user.branch?.name || "Unknown Branch"}
-                      </Text>
-                    </CartBox>
-                  ))
-                )}
-              </View>
-            </ScrollView>
-          </>
-        )}
-
         <Text style={styles.heading}>{lang.recent_check_ins}</Text>
-        {recentCheckins.some(({ attendance }) => {
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayYMD = toYMD(yesterday);
-          const inDate = attendance.In.split(' ')[0];
-          return inDate === yesterdayYMD;
-        }) && (
-          <Text style={[styles.heading, { fontSize: fonts.size.s, color: colors.primary, marginTop: 10 }]}>Includes cross-day shifts from yesterday</Text>
-        )}
 
         <ScrollView
           style={{ marginBottom: '15%' }}
@@ -634,26 +578,12 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
             ) : (
               // Loaded and has data: show the check-ins
               recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
-                const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? 'Unknown';
+                const displayName = userProfile?.fullname ?? userProfile?.username ?? 'Unknown';
                 const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
                 const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
                 const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
 
                 const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
-
-                // Check if this is a cross-day shift
-                const isCrossDayShift = (() => {
-                  if (!attendance.In) return false;
-                  
-                  // Get yesterday's date
-                  const yesterday = new Date();
-                  yesterday.setDate(yesterday.getDate() - 1);
-                  const yesterdayYMD = toYMD(yesterday);
-                  
-                  // Check if check-in was yesterday
-                  const inDate = attendance.In.split(' ')[0];
-                  return inDate === yesterdayYMD;
-                })();
 
                 return (
                   <CartBox key={attendance.id} containerStyle={styles.detail_cartbox}>
@@ -678,11 +608,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
                           <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{timeStr}</Text>
                           <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{dateDisplay}</Text>
-                          {isCrossDayShift && (
-                            <Text style={[styles.time, { color: colors.primary, fontWeight: 'bold' }]} numberOfLines={1} ellipsizeMode="tail">
-                              Cross-day shift
-                            </Text>
-                          )}
                         </View>
 
                         <View style={styles.statusInline}>
@@ -696,7 +621,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                             <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
                           )}
 
-                          {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
+                          {status !== "noschedule" &&
+                            <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
                         </View>
                       </View>
                     </View>
@@ -748,7 +674,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
     textAlign: "center",
-    marginRight:8
+    marginRight: 8
   },
   status_late: {
     fontWeight: fonts.weight.regular,
@@ -759,7 +685,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_late_bg,
     borderRadius: 8,
     textAlign: "center",
-    marginRight:8
+    marginRight: 8
   },
   status_noschedule: {
     fontWeight: fonts.weight.regular,
@@ -850,45 +776,13 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     marginTop: 2,
     flexShrink: 0,
-    width:'45%',
+    width: '45%',
   },
   duration: {
     color: colors.primary,
     fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
     width: 70,
-  },
-  // Styles for pending checkouts
-  pending_checkout_box: {
-    width: 150,
-    borderRadius: 10,
-    padding: 12,
-    marginRight: 10,
-    backgroundColor: colors.status_late_bg,
-    borderWidth: 1,
-    borderColor: colors.status_late,
-  },
-  pending_user_name: {
-    fontSize: fonts.size.s,
-    fontWeight: fonts.weight.medium,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  pending_schedule_time: {
-    fontSize: fonts.size.xs,
-    color: colors.subtext,
-    marginBottom: 2,
-  },
-  pending_cross_day: {
-    fontSize: fonts.size.xs,
-    color: colors.primary,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  pending_branch_name: {
-    fontSize: fonts.size.xs,
-    color: colors.subtext,
-    fontStyle: 'italic',
   },
 });
 
