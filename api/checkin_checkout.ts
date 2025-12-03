@@ -1,6 +1,7 @@
 // src/api/check in_checkout.ts
 import axiosInstance from "./axiosInstance";
 import { ScheduleItem } from "./schedules";
+import * as Notifications from "expo-notifications";
 
 interface LocationPayload {
   latitude: string;
@@ -126,17 +127,14 @@ export const getTodaySchedule = async (
   console.log("📅 Today as ISO string:", new Date().toISOString().split('T')[0]);
 
   try {
-    // ✅ Optimized: Only fetch current page instead of looping through all pages
-    const resp = await axiosInstance.get("/schedule/", {
-      params: { page: 1, limit: 50 } // Increased limit to get more schedules in one request
-    });
-
-    console.log("📦 API Response:", resp.data);
-    console.log("📦 API Response structure:", Object.keys(resp.data || {}));
+    // ✅ Use the dedicated endpoint to get today's schedule for the logged-in user
+    const resp = await axiosInstance.get("/schedule/today");
+    
+    console.log("📦 API Response from /schedule/today:", resp.data);
 
     // Check if response has the expected structure
-    if (!resp.data) {
-      console.log("❌ API response is empty");
+    if (!resp.data || !resp.data.success) {
+      console.log("❌ API response is empty or not successful");
       const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
@@ -148,33 +146,10 @@ export const getTodaySchedule = async (
       return result;
     }
     
-    // Log the response structure for debugging
-    console.log("📦 API Response keys:", Object.keys(resp.data));
-    console.log("📦 API Response has schedules:", 'schedules' in resp.data);
-    console.log("📦 API Response has data:", 'data' in resp.data);
+    const todaySchedule = resp.data.schedule;
     
-    const schedules: any[] = resp.data?.schedules ?? resp.data?.data ?? [];
-    console.log(`📄 Items found:`, schedules.length);
-    
-    // Additional debugging for response structure
-    if (resp.data?.schedules) {
-      console.log("📦 Using resp.data.schedules");
-    } else if (resp.data?.data) {
-      console.log("📦 Using resp.data.data");
-    } else {
-      console.log("📦 Using empty array as fallback");
-    }
-    
-    // Log the actual data structure for better understanding
-    console.log("📦 Response data type:", typeof resp.data);
-    if (Array.isArray(resp.data)) {
-      console.log("📦 Response data is an array");
-    } else if (resp.data && typeof resp.data === 'object') {
-      console.log("📦 Response data is an object");
-    }
-    
-    if (schedules.length === 0) {
-      console.log("❌ No schedules found in API response");
+    if (!todaySchedule) {
+      console.log("❌ No schedule found in response");
       const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
@@ -185,218 +160,33 @@ export const getTodaySchedule = async (
       };
       return result;
     }
-    
-    // ✅ Log all schedule dates for debugging
-    console.log("📋 All schedule dates:");
-    schedules.forEach((s: any, index: number) => {
-      console.log(`  ${index + 1}. Date: ${s.date}, Employee: ${s.employee_id}, Branch: ${s.branch_id?.name || s.branch_id}`);
-      console.log(`     Full schedule object:`, JSON.stringify(s, null, 2));
-    });
 
-    // ✅ Find today's schedule from the current page only
-    console.log(`🔍 Searching for today's schedule (${todayInTZ}) among ${schedules.length} schedules`);
-    
-    // For debugging, let's log the first few schedules in detail
-    console.log("📋 First 3 schedules for detailed inspection:");
-    schedules.slice(0, 3).forEach((s: any, index: number) => {
-      console.log(`  Schedule ${index + 1}:`, {
-        date: s.date,
-        employee_id: s.employee_id,
-        branch_id: s.branch_id,
-        start_time: s.start_time,
-        end_time: s.end_time
-      });
-      
-      // Check if this schedule has the required fields
-      if (!s.date) {
-        console.log(`  ❌ Schedule ${index + 1} is missing date field`);
-      }
-      if (!s.employee_id) {
-        console.log(`  ❌ Schedule ${index + 1} is missing employee_id field`);
-      }
-      if (!s.branch_id && !s.branch) {
-        console.log(`  ❌ Schedule ${index + 1} is missing branch information`);
-      }
-    });
-    
-    const todaySchedule = schedules.find((s: any) => {
-      if (!s?.date) {
-        console.log("❌ Skipping schedule with no date");
-        return false;
-      }
+    console.log("✅ Today schedule found:", todaySchedule);
 
-      // ✅ More robust date comparison with multiple format attempts
-      console.log(`🔍 Raw schedule date: ${s.date}`);
-      
-      // Try different date parsing approaches
-      let schedDate = "";
-      try {
-        // Try parsing with different methods
-        const dateObj = new Date(s.date);
-        if (isNaN(dateObj.getTime())) {
-          // If standard parsing fails, try direct string comparison
-          console.log("❌ Standard date parsing failed, trying string comparison");
-          // Extract date part if it's a datetime string
-          const datePart = s.date.split('T')[0];
-          schedDate = datePart;
-        } else {
-          schedDate = dateObj.toLocaleDateString("en-CA", {
-            timeZone: timezone,
-          });
-        }
-      } catch (e) {
-        console.log("❌ Error parsing date with timezone, trying without timezone");
-        try {
-          schedDate = new Date(s.date).toLocaleDateString("en-CA");
-        } catch (e2) {
-          console.log("❌ Error parsing date, using string directly");
-          schedDate = s.date.split('T')[0]; // Get date part only
-        }
-      }
-      
-      console.log(`🗓 Checking schedule date: ${s.date}`);
-      console.log(`📅 Formatted schedule date: ${schedDate}`);
-      console.log(`📅 Today date: ${todayInTZ}`);
-      
-      // ✅ More comprehensive date comparison
-      // First, let's try to parse both dates in a more robust way
-      const todayDate = new Date();
-      let scheduleDate: Date;
-      
-      try {
-        scheduleDate = new Date(s.date);
-        console.log(`📅 Parsed schedule date:`, scheduleDate);
-        console.log(`📅 Parsed schedule date string:`, scheduleDate.toISOString());
-      } catch (parseError) {
-        console.log("❌ Error parsing schedule date:", parseError);
-        // Try alternative parsing
-        try {
-          scheduleDate = new Date(s.date.replace(' ', 'T'));
-          console.log(`📅 Parsed schedule date (with T):`, scheduleDate);
-        } catch (parseError2) {
-          console.log("❌ Error parsing schedule date (alternative):", parseError2);
-          return false;
-        }
-      }
-      
-      // Handle invalid dates
-      if (isNaN(scheduleDate.getTime())) {
-        console.log("❌ Schedule date is invalid:", s.date);
-        return false;
-      }
-      
-      // Compare just the date parts (year, month, day)
-      const isSameDate = 
-        scheduleDate.getFullYear() === todayDate.getFullYear() &&
-        scheduleDate.getMonth() === todayDate.getMonth() &&
-        scheduleDate.getDate() === todayDate.getDate();
-      
-      console.log(`📅 Schedule date object:`, scheduleDate);
-      console.log(`📅 Today date object:`, todayDate);
-      console.log(`✅ Same date (year/month/day): ${isSameDate}`);
-      
-      // Also log the individual components for debugging
-      console.log(`📅 Schedule components: Year=${scheduleDate.getFullYear()}, Month=${scheduleDate.getMonth()}, Day=${scheduleDate.getDate()}`);
-      console.log(`📅 Today components: Year=${todayDate.getFullYear()}, Month=${todayDate.getMonth()}, Day=${todayDate.getDate()}`);
-      
-      // Additional debugging for date format issues
-      console.log(`📅 Schedule date string: ${s.date}`);
-      console.log(`📅 Schedule date type: ${typeof s.date}`);
-      
-      // Try to extract date in different ways
-      let extractedDate = "";
-      if (typeof s.date === "string") {
-        if (s.date.includes('T')) {
-          extractedDate = s.date.split('T')[0];
-        } else {
-          extractedDate = s.date;
-        }
-      } else {
-        extractedDate = scheduleDate.toISOString().split('T')[0];
-      }
-      
-      console.log(`📅 Extracted date: ${extractedDate}`);
-      console.log(`📅 Today ISO date: ${todayDate.toISOString().split('T')[0]}`);
-      console.log(`✅ Direct string match: ${extractedDate === todayDate.toISOString().split('T')[0]}`);
-      
-      // Return true if either method matches
-      return isSameDate || extractedDate === todayDate.toISOString().split('T')[0];
-    });
-    
-    console.log(`🔍 Search complete. Found today's schedule: ${!!todaySchedule}`);
-    if (todaySchedule) {
-      console.log(`📋 Today's schedule details:`, todaySchedule);
-    }
+    const empId =
+      typeof todaySchedule.employee_id === "object" &&
+        todaySchedule.employee_id !== null
+        ? todaySchedule.employee_id._id
+        : todaySchedule.employee_id;
 
-    if (todaySchedule) {
-      console.log("✅ Today schedule found:", todaySchedule);
-
-      const empId =
-        typeof todaySchedule.employee_id === "object" &&
-          todaySchedule.employee_id !== null
-          ? todaySchedule.employee_id._id
-          : todaySchedule.employee_id;
-
-      const brId =
-        typeof todaySchedule.branch_id === "object" &&
-          todaySchedule.branch_id !== null
-          ? todaySchedule.branch_id._id
-          : todaySchedule.branch_id;
+    const brId =
+      typeof todaySchedule.branch_id === "object" &&
+        todaySchedule.branch_id !== null
+        ? todaySchedule.branch_id._id
+        : todaySchedule.branch_id;
       
-      console.log(`👤 Schedule employee ID: ${empId}`);
-      console.log(`🏢 Schedule branch ID: ${brId}`);
-      console.log(`🔑 Requested user ID: ${userId}`);
-      console.log(`🔑 Requested branch ID: ${branchId}`);
-      console.log(`✅ User ID match: ${!userId || empId === userId}`);
-      console.log(`✅ Branch ID match: ${!branchId || brId === branchId}`);
+    console.log(`👤 Schedule employee ID: ${empId}`);
+    console.log(`🏢 Schedule branch ID: ${brId}`);
+    console.log(`🔑 Requested user ID: ${userId}`);
+    console.log(`🔑 Requested branch ID: ${branchId}`);
+    console.log(`✅ User ID match: ${!userId || empId === userId}`);
+    console.log(`✅ Branch ID match: ${!branchId || brId === branchId}`);
 
-      // For debugging, let's temporarily bypass userId check
-      const bypassUserIdCheck = true; // Set to false in production
-      if (userId && empId !== userId && !bypassUserIdCheck) {
-        console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
-        const result = { schedules: [], todaySchedule: null };
-        // ✅ Update cache
-        scheduleCache = {
-          data: result,
-          timestamp: now,
-          userId,
-          branchId
-        };
-        return result;
-      }
-
-      // For debugging, let's temporarily bypass branchId check
-      const bypassBranchIdCheck = true; // Set to false in production
-      if (branchId && brId !== branchId && !bypassBranchIdCheck) {
-        console.log(
-          "🚫 Branch ID filter mismatch. Needed:",
-          branchId,
-          "Found:",
-          brId
-        );
-        const result = { schedules: [], todaySchedule: null };
-        // ✅ Update cache
-        scheduleCache = {
-          data: result,
-          timestamp: now,
-          userId,
-          branchId
-        };
-        return result;
-      }
-
-      const result = {
-        schedules: [],
-        todaySchedule: {
-          branchname: todaySchedule.branch_id?.name ?? "Unknown Branch",
-          start_time: todaySchedule.start_time,
-          end_time: todaySchedule.end_time,
-          raw: todaySchedule,
-        },
-      };
-      
-      console.log("✅ Processed schedule result:", result);
-      
+    // For debugging, let's temporarily bypass userId check
+    const bypassUserIdCheck = true; // Set to false in production
+    if (userId && empId !== userId && !bypassUserIdCheck) {
+      console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
+      const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
         data: result,
@@ -404,12 +194,43 @@ export const getTodaySchedule = async (
         userId,
         branchId
       };
-      
       return result;
     }
 
-    console.log("❌ No schedule found for today.");
-    const result = { schedules: [], todaySchedule: null };
+    // For debugging, let's temporarily bypass branchId check
+    const bypassBranchIdCheck = true; // Set to false in production
+    if (branchId && brId !== branchId && !bypassBranchIdCheck) {
+      console.log(
+        "🚫 Branch ID filter mismatch. Needed:",
+        branchId,
+        "Found:",
+        brId
+      );
+      const result = { schedules: [], todaySchedule: null };
+      // ✅ Update cache
+      scheduleCache = {
+        data: result,
+        timestamp: now,
+        userId,
+        branchId
+      };
+      return result;
+    }
+
+    const result = {
+      schedules: [],
+      todaySchedule: {
+        branchname: todaySchedule.branch_id?.name ?? "Unknown Branch",
+        start_time: todaySchedule.start_time,
+        end_time: todaySchedule.end_time,
+        date: todaySchedule.date,
+        branch_id: todaySchedule.branch_id,
+        raw: todaySchedule,
+      },
+    };
+    
+    console.log("✅ Processed schedule result:", result);
+    
     // ✅ Update cache
     scheduleCache = {
       data: result,
@@ -417,6 +238,7 @@ export const getTodaySchedule = async (
       userId,
       branchId
     };
+    
     return result;
   } catch (err: any) {
     console.log("❌ ERROR:", err.response?.data ?? err.message);
@@ -1119,5 +941,271 @@ export const getAllCurrentShiftUsers = async (): Promise<any[]> => {
   } catch (err) {
     console.error('❌ Error fetching current shift users:', err);
     return [];
+  }
+};
+
+// Function to schedule an alarm notification 2 minutes before schedule end time
+export const scheduleEndShiftAlarm = async (schedule: any, checkInTime: string): Promise<string | null> => {
+  try {
+    if (!schedule?.end_time) {
+      console.warn('⚠️ Cannot schedule alarm: missing schedule end time');
+      return null;
+    }
+
+    // Parse schedule end time
+    const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+    
+    // Create a date object for the schedule end time
+    const scheduleEndDate = new Date(checkInTime);
+    scheduleEndDate.setHours(endHours, endMinutes, 0, 0);
+    
+    // For cross-day shifts (end time before start time), adjust to next day
+    const [startHours] = schedule.start_time.split(':').map(Number);
+    if (endHours < startHours) {
+      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+    }
+    
+    // Schedule the alarm 2 minutes before the schedule end time
+    const alarmTime = new Date(scheduleEndDate.getTime() - 2 * 60 * 1000); // 2 minutes before
+    
+    // Don't schedule if the alarm time has already passed
+    const now = new Date();
+    if (alarmTime <= now) {
+      console.log('⚠️ Alarm time has already passed, not scheduling notification');
+      return null;
+    }
+    
+    // Schedule the notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Shift Ending Soon',
+        body: 'Your shift ends in 2 minutes. Please prepare to check out.',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        color: '#3b82f6', // blue color
+      },
+      trigger: { date: alarmTime, type: Notifications.SchedulableTriggerInputTypes.DATE }, // Pass the Date object with correct type
+    });
+    
+    console.log(`🔔 Alarm scheduled for ${alarmTime.toString()} with ID: ${notificationId}`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling end shift alarm:', error);
+    return null;
+  }
+};
+
+// Function to cancel a scheduled alarm notification
+export const cancelScheduledAlarm = async (notificationId: string): Promise<void> => {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    console.log(`🔕 Alarm with ID ${notificationId} cancelled`);
+  } catch (error) {
+    console.error('❌ Error cancelling scheduled alarm:', error);
+  }
+};
+
+// Function to schedule recurring checkout reminders
+// This implements the requirement: "Set an alarm/notification at the user's schedule end time. 
+// If the user has not checked out at that time, then send a reminder every 10 minutes until the user completes the check-out."
+export const scheduleRecurringCheckoutReminder = async (schedule: any, checkInTime: string): Promise<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null> => {
+  try {
+    if (!schedule?.end_time) {
+      console.warn('⚠️ Cannot schedule recurring checkout reminder: missing schedule end time');
+      return null;
+    }
+
+    // Parse schedule end time
+    const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+    
+    // Create a date object for the schedule end time
+    const scheduleEndDate = new Date(checkInTime);
+    scheduleEndDate.setHours(endHours, endMinutes, 0, 0);
+    
+    // For cross-day shifts (end time before start time), adjust to next day
+    const [startHours] = schedule.start_time.split(':').map(Number);
+    if (endHours < startHours) {
+      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+    }
+    
+    // Don't schedule if the schedule end time has already passed
+    const now = new Date();
+    if (scheduleEndDate <= now) {
+      console.log('⚠️ Schedule end time has already passed, not scheduling recurring checkout reminder');
+      return null;
+    }
+    
+    // Schedule the initial notification at the exact schedule end time
+    const initialNotificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Checkout Time',
+        body: 'It\'s time to check out. Please complete your checkout process.',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        color: '#3b82f6', // blue color
+      },
+      trigger: { 
+        date: scheduleEndDate,
+        type: Notifications.SchedulableTriggerInputTypes.DATE
+      },
+    });
+    
+    // Schedule recurring notifications every 10 minutes after schedule end time
+    // We'll set this to start 10 minutes after schedule end time and repeat every 10 minutes
+    const recurringNotificationDate = new Date(scheduleEndDate.getTime() + 10 * 60 * 1000); // 10 minutes after
+    
+    const recurringNotificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Checkout Reminder',
+        body: 'You haven\'t checked out yet. Please complete your checkout process.',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        color: '#3b82f6', // blue color
+      },
+      trigger: {
+        date: recurringNotificationDate,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        channelId: 'default' // For recurring notifications
+      },
+    });
+    
+    console.log("🔔 Initial checkout reminder scheduled for:", scheduleEndDate, "with ID:", initialNotificationId);
+    console.log("🔔 Recurring checkout reminders scheduled starting at:", recurringNotificationDate, "with ID:", recurringNotificationId);
+    return { initialNotificationId, recurringNotificationId };
+  } catch (error) {
+    console.error('❌ Error scheduling recurring checkout reminder:', error);
+    return null;
+  }
+};
+
+// Function to cancel all scheduled checkout reminders
+export const cancelAllScheduledCheckoutReminders = async (notificationIds: { initialNotificationId: string | null, recurringNotificationId: string | null }): Promise<void> => {
+  try {
+    const { initialNotificationId, recurringNotificationId } = notificationIds;
+    
+    // Cancel initial notification if it exists
+    if (initialNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(initialNotificationId);
+      console.log(`🔕 Initial checkout reminder with ID ${initialNotificationId} cancelled`);
+    }
+    
+    // Cancel recurring notification if it exists
+    if (recurringNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(recurringNotificationId);
+      console.log(`🔕 Recurring checkout reminders with ID ${recurringNotificationId} cancelled`);
+    }
+  } catch (error) {
+    console.error('❌ Error cancelling scheduled checkout reminders:', error);
+  }
+};
+
+// Function to schedule a custom alarm at a specific time
+export const scheduleCustomAlarm = async (
+  title: string,
+  body: string,
+  alarmTime: Date,
+  options?: {
+    sound?: boolean;
+    priority?: any;
+    color?: string;
+  }
+): Promise<string | null> => {
+  try {
+    // Don't schedule if the alarm time has already passed
+    const now = new Date();
+    if (alarmTime <= now) {
+      console.log('⚠️ Custom alarm time has already passed, not scheduling notification');
+      return null;
+    }
+
+    // Schedule the notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title || 'Custom Alarm',
+        body: body || 'This is your custom alarm',
+        sound: options?.sound !== false ? 'default' : undefined,
+        priority: options?.priority || Notifications.AndroidNotificationPriority.HIGH,
+        color: options?.color || '#3b82f6',
+      },
+      trigger: {
+        date: alarmTime,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+      },
+    });
+
+    console.log(`🔔 Custom alarm scheduled for ${alarmTime.toString()} with ID: ${notificationId}`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling custom alarm:', error);
+    return null;
+  }
+};
+
+// Function to schedule a recurring alarm
+export const scheduleRecurringAlarm = async (
+  title: string,
+  body: string,
+  startTime: Date,
+  intervalMinutes: number,
+  options?: {
+    sound?: boolean;
+    priority?: any;
+    color?: string;
+  }
+): Promise<string | null> => {
+  try {
+    // Schedule the recurring notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title || 'Recurring Alarm',
+        body: body || 'This is your recurring alarm',
+        sound: options?.sound !== false ? 'default' : undefined,
+        priority: options?.priority || Notifications.AndroidNotificationPriority.HIGH,
+        color: options?.color || '#3b82f6',
+      },
+      trigger: {
+        date: startTime,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        channelId: 'default',
+      },
+    });
+
+    console.log(`🔔 Recurring alarm scheduled starting at ${startTime.toString()} with ID: ${notificationId}`);
+    console.log(`🔔 Recurring interval: every ${intervalMinutes} minutes`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling recurring alarm:', error);
+    return null;
+  }
+};
+
+// Function to get all scheduled notifications
+export const getScheduledNotifications = async (): Promise<Notifications.NotificationRequest[]> => {
+  try {
+    const notifications = await Notifications.getAllScheduledNotificationsAsync();
+    return notifications;
+  } catch (error) {
+    console.error('❌ Error getting scheduled notifications:', error);
+    return [];
+  }
+};
+
+// Function to cancel a specific notification by ID
+export const cancelNotification = async (notificationId: string): Promise<void> => {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    console.log(`🔕 Notification with ID ${notificationId} cancelled`);
+  } catch (error) {
+    console.error('❌ Error cancelling notification:', error);
+  }
+};
+
+// Function to cancel all scheduled notifications
+export const cancelAllNotifications = async (): Promise<void> => {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('🔕 All scheduled notifications cancelled');
+  } catch (error) {
+    console.error('❌ Error cancelling all notifications:', error);
   }
 };

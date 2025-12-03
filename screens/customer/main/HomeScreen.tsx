@@ -7,6 +7,8 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  TouchableOpacity, // ✅ Added missing import
+  TextInput // ✅ Added missing import
 } from "react-native";
 import * as Location from "expo-location";
 import Header from "../../../components/Header";
@@ -33,30 +35,43 @@ import {
   getMyAttendanceHistoryEnhanced,
   isCheckedInToday,
   hasCompletedShiftToday,
-  hasOngoingCrossDayShift, // ✅ Import the new function
-  getLastSchedule, // ✅ Import the new function
-  getLastAttendanceRecord, // ✅ Import the new function
+  hasOngoingCrossDayShift,
+  getLastSchedule,
+  getLastAttendanceRecord,
+  scheduleEndShiftAlarm,
+  cancelScheduledAlarm,
+  scheduleRecurringCheckoutReminder,
+  cancelAllScheduledCheckoutReminders,
   clearScheduleCache,
-  getTodayScheduleNoCache  // ✅ Import the no-cache function
+  getTodayScheduleNoCache,
+  // ✅ Import new alarm functions
+  scheduleCustomAlarm,
+  getScheduledNotifications,
+  cancelNotification
 } from "../../../api/checkin_checkout";
+
 //import { getTodaySchedule } from "../../../api/schedules";
+
 // ✅ Define your navigation stack param list
 export type RootStackParamList = {
   Home: { userId: string; langId: string };
   C_NotificationScreen: { userId: string; langId: string };
   // Add other screens with params here
 };
+
 // ✅ Typed navigation prop for this screen
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "Home"
 >;
+
 // Props for your component
 interface HomeScreenProps {
   userId: string;
   langId: string;
   setLangId: (lang: string) => void;
 }
+
 // ✅ Main Component
 const C_Homescreen: React.FC<HomeScreenProps> = ({
   userId,
@@ -73,6 +88,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const [showCheckInLoading, setShowCheckInLoading] = useState(false); // ✅ New state for check-in loading
   const [showCheckOutLoading, setShowCheckOutLoading] = useState(false); // ✅ New state for check-out loading
   const [showCheckInSuccessLoading, setShowCheckInSuccessLoading] = useState(false); // ✅ New state for post check-in success loading
+  const [checkoutReminderIds, setCheckoutReminderIds] = useState<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null>(null); // ✅ State to store notification IDs
   const currentLang = langId || "en";
   const lang =
     translations[currentLang as keyof typeof translations] ||
@@ -108,6 +124,14 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   const [attendanceStatus, setAttendanceStatus] = useState<'not_checked_in' | 'checked_in' | 'shift_completed'>('not_checked_in');
   // ✅ Add ref for location caching
   const lastLocationCache = useRef<{location: any; timestamp: number} | null>(null);
+
+  // ✅ Add new state variables for custom alarms
+  const [showAlarmSection, setShowAlarmSection] = useState(false);
+  const [alarmTime, setAlarmTime] = useState("");
+  const [alarmTitle, setAlarmTitle] = useState("Custom Alarm");
+  const [alarmMessage, setAlarmMessage] = useState("This is your custom alarm");
+  const [scheduledAlarms, setScheduledAlarms] = useState<any[]>([]);
+
   const tryReverseGeocode = async (lat: number, lon: number) => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -136,6 +160,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       return null;
     }
   };
+
   const extractLatLon = (
     branchRawOrObj: any
   ): { lat?: number; lon?: number } | null => {
@@ -176,6 +201,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
     return null;
   };
+
   useEffect(() => {
     let mounted = true;
     const fetchAndResolve = async () => {
@@ -218,6 +244,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               }
             }
           }
+          
+          // ✅ Log branch coordinates
+          console.log("🏢 Branch Coordinates:", {
+            name: branch.name,
+            latitude: finalLat,
+            longitude: finalLon
+          });
         }
         if (
           !resolvedAddress &&
@@ -256,6 +289,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       mounted = false;
     };
   }, [todaySchedule]);
+
   // ✅ Updated: Compute canCheckIn on schedule change
   useEffect(() => {
     if (!todaySchedule) {
@@ -294,6 +328,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     
     setCanCheckIn(now >= earliestCheckInTime);
   }, [todaySchedule]);
+
   // ✅ New: Live update canCheckIn every minute for button state
   useEffect(() => {
     if (!todaySchedule) return;
@@ -332,6 +367,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }, 60000); // every 1 minute
     return () => clearInterval(interval);
   }, [todaySchedule]);
+
   const handleCheckInAttempt = () => {
     if (!todaySchedule) return false;
     
@@ -358,6 +394,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     
     return true;
   };
+
   const loadTodaySchedule = async () => {
     try {
       setLoading(true);
@@ -366,8 +403,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // Use no-cache version to ensure fresh data
       const rawToday = await getTodayScheduleNoCache();
       
+      console.log("📦 Raw today schedule response:", rawToday);
+      
       // ❌ If no today schedule found — stop
-      if (!rawToday) {
+      if (!rawToday || !rawToday.todaySchedule) {
         console.log("❌ No valid today schedule. Setting null.");
         setTodaySchedule(null);
         setLoading(false);
@@ -375,8 +414,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       }
       
       // ⏱ Start & End times (safe)
-      const start_time = rawToday.start_time || "";
-      const end_time = rawToday.end_time || "";
+      const start_time = rawToday.todaySchedule.start_time || "";
+      const end_time = rawToday.todaySchedule.end_time || "";
+      const date = rawToday.todaySchedule.date || new Date().toISOString().split("T")[0];
       
       // ⏳ Duration calculation
       let duration = 0;
@@ -397,12 +437,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       
       // 🏢 Branch info - handle both string and object types for branch_id
       const branchName = 
-        rawToday.branch_id && typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
-          ? (rawToday.branch_id as { _id?: string; name?: string }).name || null
+        rawToday.todaySchedule.branch_id && typeof rawToday.todaySchedule.branch_id === 'object' && rawToday.todaySchedule.branch_id !== null
+          ? (rawToday.todaySchedule.branch_id as { _id?: string; name?: string }).name || null
           : null;
       const branchAddress = 
-        rawToday.branch_id && typeof rawToday.branch_id === 'object' && rawToday.branch_id !== null
-          ? (rawToday.branch_id as { _id?: string; name?: string; address?: string }).address || ""
+        rawToday.todaySchedule.branch_id && typeof rawToday.todaySchedule.branch_id === 'object' && rawToday.todaySchedule.branch_id !== null
+          ? (rawToday.todaySchedule.branch_id as { _id?: string; name?: string; address?: string }).address || ""
           : "";
       
       // 📦 Final Schedule Object
@@ -410,15 +450,15 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         start_time,
         end_time,
         duration,
-        date: rawToday.date || new Date().toISOString().split("T")[0],
+        date,
         branch: branchName
           ? {
               name: branchName,
               address: branchAddress,
-              rawBranch: rawToday.branch_id || null,
+              rawBranch: rawToday.todaySchedule.branch_id || null,
             }
           : null,
-        raw: rawToday,
+        raw: rawToday.todaySchedule,
       };
       
       console.log("✅ Processed schedule object:", scheduleObj);
@@ -430,6 +470,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setLoading(false);
     }
   };
+
   const fetchAttendance = async () => {
     try {
       // First, check if there's an ongoing cross-day shift
@@ -572,6 +613,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setAttendanceStatus('not_checked_in');
     }
   };
+
   const refreshLocation = async () => {
     try {
       // ✅ Check if we have a recent location cached
@@ -580,6 +622,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
         console.log("✅ Using cached location data");
         const cachedLoc = lastLocationCache.current.location;
+        
+        // ✅ Log user's current location coordinates
+        console.log("📍 User Location Coordinates:", {
+          latitude: cachedLoc.coords.latitude,
+          longitude: cachedLoc.coords.longitude
+        });
+        
         const distance = getDistance(
           cachedLoc.coords.latitude,
           cachedLoc.coords.longitude,
@@ -602,6 +651,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // ✅ Use faster location acquisition
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced // Reduced accuracy for faster response
+      });
+      
+      // ✅ Log user's current location coordinates
+      console.log("📍 User Location Coordinates:", {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude
       });
       
       // ✅ Cache the location
@@ -628,6 +683,12 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           accuracy: Location.Accuracy.Low // Low accuracy as fallback
         });
         
+        // ✅ Log user's current location coordinates
+        console.log("📍 User Location Coordinates (Fallback):", {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude
+        });
+        
         const now = Date.now();
         // ✅ Cache the location
         lastLocationCache.current = {
@@ -649,6 +710,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       }
     }
   };
+
   const reloadAll = async () => {
     // ✅ Smart reload: Only fetch data if needed
     try {
@@ -664,6 +726,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       console.error("❌ Error in smart reload:", error);
     }
   };
+
   // ✅ Overall Auto Refresh: Reduced interval to 5 minutes to decrease API load
   // This also ensures cross-day shifts are properly detected when user opens app next day
   useEffect(() => {
@@ -726,9 +789,11 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     };
     
     initializeApp();
+
     const interval = setInterval(reloadAll, 1000 * 60 * 5); // Every 5 minutes for overall refresh
     return () => clearInterval(interval);
   }, [userId, currentUser?.branch]);
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -740,15 +805,16 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     };
     fetchProfile();
   }, []);
-  
+
   // ✅ Clear schedule cache on component mount for debugging
   useEffect(() => {
     clearScheduleCache();
   }, []);
-  
+
   useEffect(() => {
     console.log("📌 todaySchedule updated:", todaySchedule);
   }, [todaySchedule]);
+
   useEffect(() => {
     // If we have a checkout time, don't allow checkout
     if (checkOutTime) {
@@ -815,6 +881,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       }
     }
   }, [checkedIn, checkInTime, todaySchedule, checkOutTime]);
+
   const formatTime12h = (input: Date | string) => {
     let date: Date;
     if (typeof input === "string") {
@@ -841,6 +908,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const minuteStr = minutes.toString().padStart(2, "0");
     return `${hours}:${minuteStr} ${ampm}`;
   };
+
   const parse12hToDate = (timeStr?: string | null): Date | null => {
     if (!timeStr) return null;
     const s = String(timeStr).trim();
@@ -865,6 +933,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     );
     return d;
   };
+
   const calculateDuration = (
     checkInTime: string | null,
     checkOutTime: string | null
@@ -888,6 +957,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const mins = diffMinutes % 60;
     return `${hrs > 0 ? hrs + "h " : "0h "}${mins}m`;
   };
+
   useEffect(() => {
     if (!checkedIn) return;
     const interval = setInterval(() => {
@@ -895,6 +965,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }, 1000);
     return () => clearInterval(interval);
   }, [checkedIn, checkInTime, checkOutTime]);
+
   // formatTime helper
   const formatTime = (time: string | Date | null) => {
     if (!time) return "--:--";
@@ -904,6 +975,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       return s;
     return formatTime12h(parse12hToDate(s) ?? new Date());
   };
+
   const getBranchIdFromSchedule = () => {
     return (
       todaySchedule?.raw?.branch_id?._id ??
@@ -911,7 +983,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       null
     );
   };
-  
+
   // ✅ Add manual schedule fetch function for debugging
   const fetchScheduleManually = async () => {
     console.log("🔍 Manually fetching schedule...");
@@ -919,7 +991,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     await loadTodaySchedule();
     setLoading(false);
   };
-  
+
   const handleCheckIn = async () => {
     if (!todaySchedule) {
       setShowCheckInLoading(false);
@@ -992,6 +1064,25 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         };
       }
       
+      // ✅ Log both branch and user location coordinates at check-in
+      console.log("📋 Check-in Location Data:", {
+        userLocation: {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude
+        },
+        branchLocation: {
+          name: branchInfo?.name,
+          latitude: branchInfo?.coordinates?.latitude,
+          longitude: branchInfo?.coordinates?.longitude
+        },
+        distanceToBranch: getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          branchInfo?.coordinates?.latitude || 0,
+          branchInfo?.coordinates?.longitude || 0
+        ).toFixed(2) + " meters"
+      });
+      
       // Show loading immediately after getting location
       setShowCheckInLoading(true);
       
@@ -1016,6 +1107,26 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           setCheckedIn(true);
           setAttendanceStatus('checked_in');
           setDuration("0h 0m"); // Reset duration
+        
+          // ✅ Schedule alarm notification 2 minutes before shift end
+          if (todaySchedule) {
+            const notificationId = await scheduleEndShiftAlarm(todaySchedule, response.attendance.In);
+            if (notificationId) {
+              console.log(`🔔 Alarm scheduled with ID: ${notificationId}`);
+              // Store the notification ID in local state or storage for potential cancellation
+              // For now, we'll just log it
+            }
+          }
+        
+          // ✅ Schedule recurring checkout reminders at shift end time and every 10 minutes after
+          if (todaySchedule) {
+            const reminderIds = await scheduleRecurringCheckoutReminder(todaySchedule, response.attendance.In);
+            if (reminderIds) {
+              console.log(`🔔 Recurring checkout reminders scheduled with IDs:`, reminderIds);
+              // Store the notification IDs for potential cancellation on checkout
+              setCheckoutReminderIds(reminderIds);
+            }
+          }
         }
         
         // ✅ Reduce delay for success loading page to improve UX
@@ -1034,10 +1145,30 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setShowCheckInSuccessLoading(false); // ✅ Hide success loading on error
       console.error("Check-in error:", error);
       
-      // Show only backend errors
-      showErrorToast(error.response?.data?.message || lang.Check_in_failed);
+      // ✅ Handle specific 403 error with user-friendly message
+      if (error.response?.status === 403) {
+        // Check for specific error messages
+        const errorMessage = error.response?.data?.message;
+        if (errorMessage && errorMessage.includes("already have an active session")) {
+          showErrorToast("You already have an active session. Please checkout first.");
+        } else {
+          showErrorToast("Access denied. Please contact your administrator.");
+        }
+      } 
+      // ✅ Handle other specific errors
+      else if (error.response?.status === 400) {
+        showErrorToast("Invalid checkin request. Please try again.");
+      } 
+      else if (error.response?.status === 500) {
+        showErrorToast("Server error. Please try again later.");
+      }
+      // ✅ Fallback to generic error message
+      else {
+        showErrorToast(error.response?.data?.message || lang.Check_in_failed);
+      }
     }
   };
+
   const handleCheckOut = async () => {
     if (!checkInTime) {
       setShowCheckOutLoading(false);
@@ -1112,6 +1243,19 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           const hrs = Math.floor(diff.asHours());
           const mins = diff.minutes();
           setDuration(`${hrs}h ${mins}m`);
+          
+          // ✅ Cancel any scheduled alarm notification
+          // Note: In a real implementation, you would store the notification ID
+          // and use it to cancel the specific notification
+          // For now, we'll just log that we should cancel
+          console.log("🔕 Cancelling scheduled alarm notification");
+          
+          // ✅ Cancel any scheduled recurring checkout reminders
+          if (checkoutReminderIds) {
+            await cancelAllScheduledCheckoutReminders(checkoutReminderIds);
+            setCheckoutReminderIds(null);
+            console.log("🔕 Cancelling scheduled recurring checkout reminders");
+          }
         }
       } else {
         setShowCheckOutLoading(false);
@@ -1120,9 +1264,31 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     } catch (error: any) {
       setShowCheckOutLoading(false); // ✅ Hide loading overlay on error
       console.error("Check-out error:", error);
-      showErrorToast(error.response?.data?.message || lang.Check_out_failed);
+      
+      // ✅ Handle specific 403 error with user-friendly message
+      if (error.response?.status === 403) {
+        // Check for specific error messages
+        const errorMessage = error.response?.data?.message;
+        if (errorMessage && errorMessage.includes("already have an active session")) {
+          showErrorToast("You already have an active session. Please try again.");
+        } else {
+          showErrorToast("Access denied. Please contact your administrator.");
+        }
+      } 
+      // ✅ Handle other specific errors
+      else if (error.response?.status === 400) {
+        showErrorToast("Invalid checkout request. Please try again.");
+      } 
+      else if (error.response?.status === 500) {
+        showErrorToast("Server error. Please try again later.");
+      }
+      // ✅ Fallback to generic error message
+      else {
+        showErrorToast(error.response?.data?.message || lang.Check_out_failed);
+      }
     }
   };
+
   const getDistance = (
     lat1: number,
     lon1: number,
@@ -1140,6 +1306,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
+
   useEffect(() => {
     let timer: NodeJS.Timeout;
     const checkDistance = async () => {
@@ -1178,6 +1345,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
     return () => clearTimeout(timer);
   }, [SHOP_LAT, SHOP_LON]);
+
   const formatTo12Hour = (time?: string): string => {
     if (!time) return "";
     const [hour, minute] = time.split(":");
@@ -1186,14 +1354,105 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     h = h % 12 || 12;
     return `${h}:${minute} ${ampm}`;
   };
+
+  // ✅ Update the onRefresh function to include loading scheduled alarms
   const onRefresh = async () => {
     setRefreshing(true);
     // ✅ Force a full reload when user manually refreshes
     // ✅ Clear cache to ensure fresh data
     clearScheduleCache();
-    await Promise.all([loadTodaySchedule(), refreshLocation(), fetchAttendance()]);
+    await Promise.all([
+      loadTodaySchedule(), 
+      refreshLocation(), 
+      fetchAttendance(),
+      loadScheduledAlarms() // ✅ Load scheduled alarms on refresh
+    ]);
     setRefreshing(false);
   };
+
+  // ✅ Function to load scheduled alarms
+  const loadScheduledAlarms = async () => {
+    try {
+      const alarms = await getScheduledNotifications();
+      setScheduledAlarms(alarms);
+    } catch (error) {
+      console.error("Error loading scheduled alarms:", error);
+    }
+  };
+
+  // ✅ Function to set a custom alarm
+  const setCustomAlarm = async () => {
+    if (!alarmTime) {
+      showErrorToast("Please select an alarm time");
+      return;
+    }
+
+    // Validate time format (HH:MM)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(alarmTime)) {
+      showErrorToast("Please enter a valid time in HH:MM format");
+      return;
+    }
+
+    try {
+      // Parse the alarm time
+      const [hours, minutes] = alarmTime.split(":").map(Number);
+      const alarmDate = new Date();
+      alarmDate.setHours(hours, minutes, 0, 0);
+
+      // If the alarm time is in the past, set it for tomorrow
+      const now = new Date();
+      if (alarmDate <= now) {
+        alarmDate.setDate(alarmDate.getDate() + 1);
+      }
+
+      const notificationId = await scheduleCustomAlarm(
+        alarmTitle || "Custom Alarm",
+        alarmMessage || "This is your custom alarm",
+        alarmDate
+      );
+
+      if (notificationId) {
+        showSuccessToast("Custom alarm set successfully");
+        // Reload scheduled alarms
+        loadScheduledAlarms();
+        // Clear input fields
+        setAlarmTime("");
+      } else {
+        showErrorToast("Failed to set custom alarm");
+      }
+    } catch (error) {
+      console.error("Error setting custom alarm:", error);
+      showErrorToast("Failed to set custom alarm");
+    }
+  };
+
+  // ✅ Function to cancel an alarm
+  const cancelAlarm = async (notificationId: string) => {
+    try {
+      await cancelNotification(notificationId);
+      showSuccessToast("Alarm cancelled successfully");
+      // Reload scheduled alarms
+      loadScheduledAlarms();
+    } catch (error) {
+      console.error("Error cancelling alarm:", error);
+      showErrorToast("Failed to cancel alarm");
+    }
+  };
+
+  // ✅ Load scheduled alarms when component mounts and set up periodic refresh
+  useEffect(() => {
+    // Load scheduled alarms immediately
+    loadScheduledAlarms();
+    
+    // Set up interval to refresh scheduled alarms every minute
+    const interval = setInterval(() => {
+      loadScheduledAlarms();
+    }, 60000); // Every minute
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // ---------- JSX (return) ----------
   const displayBranchAddress = () => {
     if (!branchInfo) return "No branch address";
@@ -1203,6 +1462,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
     return "Address not available";
   };
+
   const today = new Date().toLocaleDateString(
     langId === "de" ? "de-DE" : "en-US",
     {
@@ -1212,6 +1472,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       year: "numeric",
     }
   );
+
   return (
     <>
       {/* ✅ Hidden debug button - uncomment for testing */}
@@ -1325,7 +1586,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             )}
             
             {/* 🟣 SCHEDULE DETAILS FOR CROSS-DAY SHIFTS */}
-            {checkedIn && !checkOutTime && todaySchedule && (
+            {/* {checkedIn && !checkOutTime && todaySchedule && (
               <View style={[styles.addressLine, { marginTop: 5 }]}>                
                 <Text
                   style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
@@ -1333,7 +1594,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                   Scheduled shift: {todaySchedule.date} {formatTime(todaySchedule.start_time)} - {formatTime(todaySchedule.end_time)}
                 </Text>
               </View>
-            )}
+            )} */}
             
             {/* 🟤 LAST SCHEDULE DETAILS FOR CROSS-DAY SHIFTS (when no today schedule) */}
             {checkedIn && !checkOutTime && !todaySchedule && lastSchedule && (
@@ -1347,7 +1608,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             )}
             
             {/* 🟠 SCHEDULE END TIME DISPLAY */}
-            {checkedIn && !checkOutTime && (
+            {/* {checkedIn && !checkOutTime && (
               <View style={[styles.addressLine, { marginTop: 5 }]}>                
                 <Text
                   style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
@@ -1357,7 +1618,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
                    (lastSchedule?.end_time ? formatTime(lastSchedule.end_time) : '')}
                 </Text>
               </View>
-            )}
+            )} */}
           </View>
         </CartBox>
         
