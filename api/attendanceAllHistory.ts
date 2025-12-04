@@ -91,3 +91,26 @@ export const getCurrentShiftUsers = async (): Promise<AttendanceHistoryItem[]> =
     throw err?.response?.data ?? err;
   }
 };
+
+/**
+ * POST /admin/attendance/force-checkout
+ * Force-checkout an attendance record (admin-only).
+ *
+ * @param attendanceId - id from /admin/attendance/all-history (attendance.id)
+ * @param checkoutTimestamp - optional ISO string (e.g. "2025-12-04T00:00:00.000Z")
+ * @returns the API response (attendance object) or throws
+ */
+export const forceCheckout = async (
+  attendanceId: string,
+  checkoutTimestamp?: string
+): Promise<any> => {
+  if (!attendanceId) throw new Error("attendanceId is required");
+  try {
+    const payload = { attendanceId, checkoutTimestamp };
+    const res = await axiosInstance.post('/admin/attendance/force-checkout', payload);
+    return res?.data ?? res;
+  } catch (err: any) {
+    console.error('forceCheckout error', err?.response?.data ?? err);
+    throw err?.response?.data ?? err;
+  }
+};
