@@ -13,14 +13,14 @@ import {
   findNodeHandle,
   UIManager,
   Dimensions,
-  LayoutChangeEvent,
+  LayoutChangeEvent, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile"; 
+import { fetchUsers, ProfileUser, getProfile, postSchedulesBulk } from "../../../../api/profile";
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk } from "../../../../api/schedules";
+import { getSchedulesByEmployee, getSchedules, ScheduleItem } from "../../../../api/schedules";
 import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
 import { db, addDoc, collection, serverTimestamp } from "../../../../api/notification/firebase";
 import Header from "../../../../components/Header";
@@ -105,14 +105,14 @@ export default function AddScheduleScreen(props: any) {
         branch_id = u.branch;
       } else if (u.branch && typeof u.branch === 'object') {
         if (u.branch && typeof u.branch === 'object' && ('_id' in u.branch)) branch_id = (u.branch as { _id?: string })._id ?? "";
-else if (u.branch && typeof u.branch === 'object' && ('id' in u.branch)) branch_id = (u.branch as { id?: string }).id ?? "";
+        else if (u.branch && typeof u.branch === 'object' && ('id' in u.branch)) branch_id = (u.branch as { id?: string }).id ?? "";
 
       }
       return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
     });
   };
   const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
-return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? (b as { _id?: string; id?: string }).id) ?? ""), name: (((b as { name?: string; branch_name?: string }).name ?? (b as { name?: string; branch_name?: string }).branch_name) ?? ""), raw: b }));
+    return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? (b as { _id?: string; id?: string }).id) ?? ""), name: (((b as { name?: string; branch_name?: string }).name ?? (b as { name?: string; branch_name?: string }).branch_name) ?? ""), raw: b }));
 
   };
   const normalizeSchedules = (schedules: ScheduleItem[] = []): any[] => {
@@ -157,6 +157,30 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
       } as any;
     });
   };
+
+  // track keyboard height (fix for Android modal being covered by keyboard)
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = (e: any) => {
+      const h = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(h);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+
   const loadInitialData = async () => {
     setLoading(true);
     // Clear staff selection and related UI
@@ -171,7 +195,7 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
       let branchToUse: string | undefined = screenBranchId || undefined;
       try {
         const profile = await getProfile();
-        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch?? undefined;
+        const profBranch = typeof profile.branch === 'string' ? profile.branch : profile.branch ?? undefined;
         if (!branchToUse && profBranch) branchToUse = profBranch;
         console.log("getProfile() returned branch:", profBranch);
       } catch (err) {
@@ -674,7 +698,7 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
         const start = weekDates[0];
         const end = weekDates[weekDates.length - 1];
         console.log(`[DEBUG] fetchWeekForOffset offset=${offsetWeeks} start=${start} end=${end}`);
-        const resp = await getEmployeeSchedules(u.id, start, end);
+        const resp = await getSchedulesByEmployee(u.id, start, end);
         console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
         const rawArr = unwrapSchedules(resp) || [];
         // debug list: id, iso, localYmd
@@ -1029,14 +1053,17 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
                         return;
                       }
 
-                      // day-level check: if this particular day already has a schedule for this staff (local OR initial), block this day
+                      // day-level check: if this particular day already has a schedule for this staff, block this day only when viewing current week
                       const daySchedulesArr = localSchedulesByDate[ymd] || [];
                       const staffScheduleForDay = selectedStaffId ? daySchedulesArr.find((s) => String(s.user_id) === String(selectedStaffId)) : null;
-                      if (staffScheduleForDay) {
+
+                      // allow editing when admin is explicitly viewing a previous week (template): only block duplicates on the current week
+                      if (staffScheduleForDay && !viewingPrevWeek) {
                         // different message for day-level duplicate
                         showErrorToast(lang.scheduleAlreadyAdded || "Schedule already added for this day");
                         return;
                       }
+
                       // allow opening modal only for non-expired days (expired checked at top)
                       openAddModalForDate(ymd, displayYmd);
                     }}
@@ -1071,143 +1098,166 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
       <View style={styles.footerButtonWrap}>
         <Button1 text={route.params?.id ? (lang.Save_Changes) : (lang.Add_Schedule)} width={"100%"} onPress={onFooterSaveAndBack} />
       </View>
-      <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}>
-        <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); setModalEditingId(null); }} pointerEvents="auto">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}> {lang.Add_Schedule}</Text>
-            <View>
-              <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                <View
-                  ref={(r) => { branchInputWrapperRef.current = r; }}
-                  onLayout={onBranchLayout}
-                >
-                  <InputBox
-                    ref={branchref}
-                    label={lang.Branch}
-                    placeholder={"Select branch"}
-                    value={selectedBranch}
-                    setValue={(v: string) => {
-                      setSelectedBranch(v);
-                      setSelectedBranchId(null);
-                      setBranchFilterOpen(true);
-                      setTimeout(() => {
-                        if (!branchInputLayout) {
-                          const handle = findNodeHandle(branchInputWrapperRef.current);
-                          if (handle) {
-                            UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                              setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                            });
-                          }
+      <Modal
+        animationType="slide"
+        transparent
+        visible={addScheduleModalVisible}
+        onRequestClose={() => { setAddScheduleModalVisible(false); setModalEditingId(null); }}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => { setAddScheduleModalVisible(true); setModalEditingId(null); }}
+          pointerEvents="auto"
+        >
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}> {lang.Add_Schedule}</Text>
+                <View>
+                  <ScrollView style={{ marginTop: 12, }} keyboardShouldPersistTaps="handled">
+                    <View
+                      ref={(r) => { branchInputWrapperRef.current = r; }}
+                      onLayout={onBranchLayout}
+                    >
+                      <InputBox
+                        ref={branchref}
+                        label={lang.Branch}
+                        placeholder={"Select branch"}
+                        value={selectedBranch}
+                        setValue={(v: string) => {
+                          setSelectedBranch(v);
+                          setSelectedBranchId(null);
+                          setBranchFilterOpen(true);
+                          setTimeout(() => {
+                            if (!branchInputLayout) {
+                              const handle = findNodeHandle(branchInputWrapperRef.current);
+                              if (handle) {
+                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                  setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                });
+                              }
+                            }
+                          }, 30);
+                        }}
+                        onPress={undefined}
+                        rightIcon={require("../../../../assets/icons/branch_b.png")}
+                        rightIconStyle={{ tintColor: colors.primary }}
+                        returnKeyType="next"
+                        onSubmitEditing={() => starttime.current?.focus()}
+                        onRightIconPress={() => {
+                          setSelectedBranch("");
+                          setBranchFilterOpen(true);
+                          setTimeout(() => {
+                            if (!branchInputLayout) {
+                              const handle = findNodeHandle(branchInputWrapperRef.current);
+                              if (handle) {
+                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                  setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                });
+                              }
+                            }
+                          }, 30);
+                        }}
+                        errorMessage={""}
+                      />
+                    </View>
+                    <InputBox
+                      ref={starttime}
+                      label={lang.Start_time}
+                      placeholder="HH:MM"
+                      value={timeFrom}
+                      setValue={(v: string) => {
+                        let digits = v.replace(/[^0-9]/g, "");
+                        let hh = "";
+                        let mm = "";
+                        if (digits.length > 0) {
+                          hh = digits.slice(0, 2);
+                          if (parseInt(hh) > 23) hh = "23"; // clamp to 24
                         }
-                      }, 30);
-                    }}
-                    onPress={undefined}
-                    rightIcon={require("../../../../assets/icons/branch_b.png")}
-                    rightIconStyle={{ tintColor: colors.primary }}
-                    returnKeyType="next"
-                    onSubmitEditing={() => starttime.current?.focus()}
-                    onRightIconPress={() => {
-                      setSelectedBranch("");
-                      setBranchFilterOpen(true);
-                      setTimeout(() => {
-                        if (!branchInputLayout) {
-                          const handle = findNodeHandle(branchInputWrapperRef.current);
-                          if (handle) {
-                            UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                              setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                            });
-                          }
+
+                        if (digits.length > 2) {
+                          mm = digits.slice(2, 4);
+                          if (parseInt(mm) > 59) mm = "59"; // clamp to 59
                         }
-                      }, 30);
-                    }}
-                    errorMessage={""}
-                  />
+
+                        const formatted = hh + (mm ? ":" + mm : "");
+                        setTimeFrom(formatted);
+
+                        // Full validation
+                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
+                        if (isValid) setTimeFromError("");
+                        else setTimeFromError("Invalid time");
+                      }}
+                      keyboardType="numeric"          // regular keyboard
+                      maxLength={5}                   // HH:MM
+                      rightIcon={require("../../../../assets/icons/clock_b.png")}
+                      errorMessage={timeFromError}
+                      rightIconStyle={{ tintColor: colors.primary }}
+                      returnKeyType="next"
+                      onSubmitEditing={() => duration.current?.focus()}
+                      onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
+                    />
+                    <InputBox
+                      ref={duration}
+                      label={lang.Duration}
+                      placeholder={lang.Type_hours_here}
+                      value={durationHours}
+                      setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
+                      errorMessage={durationError}
+                      keyboardType="numeric"
+                      returnKeyType="done"
+                      rightIconStyle={{ tintColor: colors.primary }}
+                    />
+                    <View style={{ height: 18 }} />
+                    <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
+                    <View style={{ height: 20 }} />
+                  </ScrollView>
+                  {branchFilterOpen && branchInputLayout && (
+                    <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
+                      <View
+                        style={[
+                          styles.overlayContainer,
+                          {
+                            left: Math.max(branchInputLayout.x),
+                            top: Math.max(branchInputLayout.y + branchInputLayout.height),
+                            width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
+                            maxHeight: 300,
+                          },
+                        ]}
+                      >
+                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                          {branchSuggestions.length === 0 ? (
+                            <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
+                          ) : (
+                            branchSuggestions.map((b) => (
+                              <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
+                                setSelectedBranch(b.name);
+                                setSelectedBranchId(b.id);
+                                setBranchFilterOpen(false);
+                              }}>
+                                <Text style={styles.suggestionText}>{b.name}</Text>
+                              </Pressable>
+                            ))
+                          )}
+                        </ScrollView>
+                      </View>
+                    </Pressable>
+                  )}
                 </View>
-                <InputBox
-                  ref={starttime}
-                  label={lang.Start_time}
-                  placeholder="HH:MM"
-                  value={timeFrom}
-                  setValue={(v: string) => {
-                    let digits = v.replace(/[^0-9]/g, "");
-                    let hh = "";
-                    let mm = "";
-                    if (digits.length > 0) {
-                      hh = digits.slice(0, 2);
-                      if (parseInt(hh) > 23) hh = "23"; // clamp to 24
-                    }
-
-                    if (digits.length > 2) {
-                      mm = digits.slice(2, 4);
-                      if (parseInt(mm) > 59) mm = "59"; // clamp to 59
-                    }
-
-                    const formatted = hh + (mm ? ":" + mm : "");
-                    setTimeFrom(formatted);
-
-                    // Full validation
-                    const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
-                    if (isValid) setTimeFromError("");
-                    else setTimeFromError("Invalid time");
-                  }}
-                  keyboardType="numeric"          // regular keyboard
-                  maxLength={5}                   // HH:MM
-                  rightIcon={require("../../../../assets/icons/clock_b.png")}
-                  errorMessage={timeFromError}
-                  rightIconStyle={{ tintColor: colors.primary }}
-                  returnKeyType="next"
-                  onSubmitEditing={() => duration.current?.focus()}
-                  onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
-                />
-                <InputBox
-                  ref={duration}
-                  label={lang.Duration}
-                  placeholder={"Eg: 8"}
-                  value={durationHours}
-                  setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
-                  errorMessage={durationError}
-                  keyboardType="numeric"
-                  returnKeyType="done"
-                  rightIconStyle={{ tintColor: colors.primary }}
-                />
-                <View style={{ height: 18 }} />
-                <Button1 text={lang.Add} width={"100%"} onPress={onAddSchedule} />
-                <View style={{ height: 20 }} />
-              </ScrollView>
-              {branchFilterOpen && branchInputLayout && (
-                <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
-                  <View
-                    style={[
-                      styles.overlayContainer,
-                      {
-                        left: Math.max(branchInputLayout.x),
-                        top: Math.max(branchInputLayout.y + branchInputLayout.height),
-                        width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
-                        maxHeight: 300,
-                      },
-                    ]}
-                  >
-                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {branchSuggestions.length === 0 ? (
-                        <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
-                      ) : (
-                        branchSuggestions.map((b) => (
-                          <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
-                            setSelectedBranch(b.name);
-                            setSelectedBranchId(b.id);
-                            setBranchFilterOpen(false);
-                          }}>
-                            <Text style={styles.suggestionText}>{b.name}</Text>
-                          </Pressable>
-                        ))
-                      )}
-                    </ScrollView>
-                  </View>
-                </Pressable>
-              )}
-            </View>
-          </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
       {showTimePicker && (
@@ -1429,7 +1479,7 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
 
                 // Helper to resolve employee object and original branch id (source)
                 const employeeObj = localUsers.find((u) => String(u.id) === String(employeeIdToUse)) || null;
-                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch: (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
+                const employeeBranchId = employeeObj?.branch_id ?? (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && '_id' in employeeObj.raw.branch ? employeeObj.raw.branch : (employeeObj?.raw?.branch && typeof employeeObj.raw.branch === 'object' && 'id' in employeeObj.raw.branch ? employeeObj.raw.branch : null)) ?? null;
                 const employeeName = employeeObj?.fullname || (employeeObj?.raw?.fullname ?? employeeIdToUse);
                 const schedulesPayload = schedulesToSave.map((s) => {
                   const dateYmd = s.date;
@@ -1513,7 +1563,7 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
 
                 // optional: inspect perRowResponses for debugging
                 console.log("[sched] per-row responses count:", perRowResponses.length);
-        
+
                 // --- REPLACED BLOCK: send admin / branch notifications only (no duplicate employee notification) ---
                 for (const s of schedulesToSave) {
                   try {
@@ -1657,7 +1707,7 @@ return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? 
       >
         <View style={{ flexDirection: 'row', justifyContent: 'center', width: '100%' }}>
           <Button1
-            text={lang.ok || "OK"}
+            text={lang.ok || "Ok"}
             onPress={() => {
               setCurrentWeekErrorPopup(false);
               navigation.navigate("Footer_A", {
@@ -1702,10 +1752,10 @@ const styles = StyleSheet.create({
   },
   alertpopup: {
     color: colors.subtext,
-    marginBottom: 20,
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular,
     textAlign: "center",
+    paddingBottom: 20
   },
   modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
   modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium, textAlign: "center", marginBottom: 8 },
@@ -1744,7 +1794,7 @@ const styles = StyleSheet.create({
   },
   suggestionText: { color: colors.text, fontSize: fonts.size.m },
   branch: {
-    width: 16, height: 16, marginRight: 4
+    width: 16, height: 16, marginRight: 4, alignSelf:'center'
   },
   branch_name: {
     fontSize: fonts.size.m,
@@ -1756,5 +1806,5 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular,
     color: colors.primary,
   },
-  clock: { width: 14, height: 14, marginRight: 4 },
+  clock: { width: 14, height: 14, marginRight: 4, alignSelf: 'center' },
 });

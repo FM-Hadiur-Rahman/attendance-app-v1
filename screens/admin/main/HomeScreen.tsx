@@ -9,6 +9,12 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard
 } from "react-native";
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
@@ -16,12 +22,15 @@ import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
-
-// API helpers
-import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
+import { getUserById, getUsers } from "../../../api/profile";
 import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
-import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+import { getAttendanceAllHistory, AttendanceHistoryItem, forceCheckout } from "../../../api/attendanceAllHistory";
 import { getBranchById } from "../../../api/Branchs";
+import Popup from "../../../components/Popup";
+import InputBox from "../../../components/InputBox";
+import { Button1 } from "../../../components/Button";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -76,6 +85,39 @@ const formatTime12 = (t: string) => {
   if (h12 === 0) h12 = 12;
   return `${h12}:${mm} ${ampm}`;
 };
+const timeStringToDate = (timeStr: string) => {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  if (!timeStr) return now;
+  const parts = timeStr.split(":").map((p) => parseInt(p, 10) || 0);
+  now.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+  return now;
+};
+
+// normalize a time string to "HH:MM" (handles "HH:MM:SS" or "H:M")
+const normalizeToHHMM = (t?: string) => {
+  if (!t) return "";
+  const parts = t.split(":").map(p => parseInt(p || "0", 10));
+  const hh = pad2(parts[0] ?? 0);
+  const mm = pad2(parts[1] ?? 0);
+  return `${hh}:${mm}`;
+};
+
+// build a local Date from "YYYY-MM-DD" and "HH:MM" then return its ISO (UTC) string
+const buildIsoFromDateAndHHMM = (ymd: string, hhmm: string) => {
+  const [y, m, d] = ymd.split("-").map(s => parseInt(s, 10));
+  const [hh, mm] = hhmm.split(":").map(s => parseInt(s || "0", 10));
+  // create local Date with components (year, monthIndex, day, hour, minute, second)
+  const local = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+  return local.toISOString();
+};
+
+// convert "HH:MM" to minutes-from-midnight
+const hhmmToMinutesStrict = (hhmm: string) => {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(":").map(x => parseInt(x || "0", 10));
+  return (h || 0) * 60 + (m || 0);
+};
 
 const formatYMDDisplay = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
@@ -83,16 +125,43 @@ const formatYMDDisplay = (ymd: string) => {
   return `${WEEKDAYS[dt.getDay()]}, ${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
 };
 
+const formatYMD = (d: Date): string => {
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const todayDate = (() => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+})();
+
+const yesterdayDate = (() => {
+  const d = new Date(todayDate);
+  d.setDate(d.getDate() - 1);
+  return d;
+})();
+const yesterdayYMD = formatYMD(yesterdayDate);
+
+const parseAttendanceDatetime = (s: string | undefined | null): Date | null => {
+  if (!s) return null;
+  const iso = s.replace(' ', 'T');
+  const dt = new Date(iso);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 1);
+
 interface ScreenProps {
-  userId?: string | null;
-  langId?: string;
+  userId: string;
+  langId: string;
   setLangId?: React.Dispatch<React.SetStateAction<string>>;
   routeRefresh?: boolean;
   onConsumedRefresh?: () => void;
-  toastMessage?: string | null;
+  toastMessage?: string;
   onConsumedToast?: () => void;
-  branch?: any;
-  createdUser?: any;
+  branch?: string;
+  createdUser?: string;
 }
 
 const HomeScreen_A: React.FC<ScreenProps> = (props) => {
@@ -101,11 +170,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
   const propUserId = props?.userId;
   const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
+  const routeUserId = route.params?.userId;
+  const routeLangId = route.params?.langId;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const lang = (translations as any)[langId];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -115,24 +184,149 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const [version, setVersion] = useState<number>(0);
 
   const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
-  const passedBranchName = route.params?.branch_name ?? route.params?.branchName ?? null;
 
   const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
-  const [activeBranchName, setActiveBranchName] = useState<string | null>(passedBranchName || null);
-
-  const [totalStaff, setTotalStaff] = useState<number>(0);
-  const [loadingStaff, setLoadingStaff] = useState<boolean>(false);
 
   // schedules & users (previously used)
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
   const [usersState, setUsersState] = useState<any[]>([]);
   const [loadingShiftData, setLoadingShiftData] = useState<boolean>(false);
 
-  // New: recent checkins from attendance API (already enriched)
+  // Modal / checkout state
+  const [forceCheckoutModalVisible, setForceCheckoutModalVisible] = useState<boolean>(false);
+  /**
+ * When opening the Force Checkout modal we store the attendance record
+ * plus the resolved user profile (if available) so the modal always
+ * has fullname/username regardless of the raw attendance.user shape.
+ */
+  type CheckoutTarget = AttendanceHistoryItem & {
+    userProfile?: { fullname?: string; username?: string };
+    schedule?: ScheduleItem | null;
+  };
+  const [checkoutTargetAttendance, setCheckoutTargetAttendance] = useState<CheckoutTarget | null>(null);
+
+  const [checkoutTime, setCheckoutTime] = useState<string>(""); // "HH:MM"
+  const [checkoutTimeError, setCheckoutTimeError] = useState<string>("");
+  const [confirmPopupVisible, setConfirmPopupVisible] = useState<boolean>(false);
+  const [confirmSubmitting, setConfirmSubmitting] = useState<boolean>(false);
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  const shouldShowForceCheckoutButton = (
+    attendance: AttendanceHistoryItem,
+    schedule?: ScheduleItem | null
+  ): boolean => {
+    if (!attendance || attendance.Out) return false;
+    if (!schedule || !schedule.date || !schedule.end_time) return false;
+
+    const schedDate = new Date(schedule.date);
+    const [eh, em] = schedule.end_time.split(':').map((x) => parseInt(x || '0', 10));
+    schedDate.setHours(eh, em, 0, 0);
+    return Date.now() >= schedDate.getTime();
+  };
+
+  const openForceCheckoutModal = (
+    attendance: AttendanceHistoryItem,
+    schedule?: ScheduleItem | null,
+    userProfile?: { fullname?: string; username?: string } | null
+  ) => {
+    // store schedule and userProfile with the attendance so modal validations can access schedule.end_time
+    const merged: CheckoutTarget = {
+      ...(attendance),
+      userProfile: userProfile ?? undefined,
+      schedule: schedule ?? null,
+    };
+
+    // set default checkout time to schedule end time (normalized to HH:MM) if available
+    const defaultTime = normalizeToHHMM(schedule?.end_time ?? "");
+    setCheckoutTargetAttendance(merged);
+    setCheckoutTime(defaultTime);
+    // set timeFrom for the native picker using "HH:MM:00"
+    setTimeFrom(defaultTime ? `${defaultTime}:00` : "");
+    setCheckoutTimeError("");
+    setForceCheckoutModalVisible(true);
+  };
+
+  const setCheckoutTimeSafe = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, "");
+    let hh = "";
+    let mm = "";
+    if (digits.length > 0) {
+      hh = digits.slice(0, 2);
+      if (hh && parseInt(hh, 10) > 23) hh = "23";
+    }
+    if (digits.length > 2) {
+      mm = digits.slice(2, 4);
+      if (mm && parseInt(mm, 10) > 59) mm = "59";
+    }
+    const formatted = hh + (mm ? ":" + mm : "");
+    setCheckoutTime(formatted);
+
+    const valid = /^([01]?\d|2[0-3]):([0-5]\d)$/.test(formatted);
+    setCheckoutTimeError(valid ? "" : lang.Invalid_time);
+  };
+
+  const handleSaveForceCheckout = async () => {
+    if (!checkoutTargetAttendance) return;
+
+    // guard — (should be already validated by showConfirmDialog, but keep safety)
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+      setCheckoutTimeError(lang.Invalid_time);
+      return;
+    }
+
+    setConfirmSubmitting(true);
+    try {
+      // Build local Date for the attendance In date + provided time
+      const inDatePart = checkoutTargetAttendance.In.split(" ")[0]; // "YYYY-MM-DD"
+      const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
+      const [hhStr, mmStr] = checkoutTime.split(":");
+      const ch = parseInt(hhStr || "0", 10);
+      const cm = parseInt(mmStr || "0", 10);
+      const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, ch, cm, 0, 0);
+
+      // Additional safety checks (schedule / check-in)
+      const scheduleEndHHMM = checkoutTargetAttendance.schedule ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "") : null;
+      if (scheduleEndHHMM) {
+        const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
+        const checkoutMin = hhmmToMinutesStrict(checkoutTime);
+        if (checkoutMin < schedMin) {
+          showErrorToast(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
+          setConfirmSubmitting(false);
+          return;
+        }
+      }
+      const checkinDt = parseAttendanceDatetime(checkoutTargetAttendance.In);
+      if (checkinDt && checkoutLocal.getTime() < checkinDt.getTime()) {
+        setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
+        setConfirmSubmitting(false);
+        return;
+      }
+
+      const checkoutIso = checkoutLocal.toISOString();
+
+      await forceCheckout(checkoutTargetAttendance.id ?? checkoutTargetAttendance._id, checkoutIso);
+      // success
+      setConfirmPopupVisible(false);
+      setForceCheckoutModalVisible(false);
+      setCheckoutTargetAttendance(null);
+      setCheckoutTime("");
+      await fetchAttendanceAndEnrich(activeBranchId);
+      await fetchShiftData(activeBranchId);
+
+      showSuccessToast(lang.Checked_out_successfully);
+    } catch (err) {
+      console.warn("force checkout failed", err);
+      showErrorToast(lang.Checkout_failed_Try_again);
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
+
+  // recent checkins from attendance API (already enriched)
   const [recentCheckins, setRecentCheckins] = useState<
     Array<{
       attendance: AttendanceHistoryItem;
-      userProfile: any | null;
+      userProfile: { fullname: string; username: string };
       schedule?: ScheduleItem | null;
       status: "early" | "late" | "ontime" | "noschedule";
       diffText: string;
@@ -147,87 +341,117 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     setRefreshing(false);
   };
 
-  // fetch branch & total staff
-  const fetchBranchAndStaff = async () => {
-    try {
-      if (!userId && !passedBranchId) {
-        setTotalStaff(0);
-        return;
-      }
-      setLoadingStaff(true);
+  /**
+   * Load schedules for today + yesterday for the given branchId.
+   * Caches result briefly to reduce API calls while polling.
+   *
+   * - Uses getSchedulesForDate(dateYMD, { branchId })
+   * - Merges and deduplicates schedules by _id
+   */
+  const loadSchedulesForBranchWithCache = async (branchIdToUse: string | null): Promise<ScheduleItem[]> => {
+    if (!branchIdToUse) return [];
 
-      let branchIdToUse = passedBranchId ?? activeBranchId;
+    // Fetch today's and yesterday's schedules fresh every time
+    const [todaySchedules, yesterdaySchedules] = await Promise.all([
+      getSchedulesForDate(todayYMD, { branchId: branchIdToUse }),
+      getSchedulesForDate(yesterdayYMD, { branchId: branchIdToUse }),
+    ]);
 
-      if (!branchIdToUse && userId) {
-        try {
-          const u = await getUserById(userId);
-          const branchObj = u?.branch;
-          const branchIdFromUser = typeof branchObj === "string" ? branchObj : (branchObj && typeof branchObj === "object" ? (branchObj as { _id?: string })._id ?? null : null);
-          if (branchIdFromUser) {
-            branchIdToUse = branchIdFromUser;
-            setActiveBranchId(branchIdFromUser);
-            const branchNameMaybe = branchObj && typeof branchObj === "object" ? (branchObj as { name?: string }).name ?? null : null;
-            if (branchNameMaybe) setActiveBranchName(branchNameMaybe);
-          }
-        } catch (e) {
-          console.warn("Failed to fetch user to determine branch", e);
-        }
-      }
-      if (!branchIdToUse) {
-        setTotalStaff(0);
-        setLoadingStaff(false);
-        return;
-      }
+    const merged = [...(todaySchedules ?? []), ...(yesterdaySchedules ?? [])];
 
-      const res = await fetchUsers({ branchId: branchIdToUse, role: "user", limit: 1000, page: 1 });
-      const users = res?.users ?? [];
-      const count = users.filter((u: any) => (u.role ?? "user") === "user").length;
-      setTotalStaff(count);
-    } catch (err) {
-      console.error("fetchBranchAndStaff error", err);
-      setTotalStaff(0);
-    } finally {
-      setLoadingStaff(false);
-    }
+    // dedupe by _id or id
+    const dedupe = new Map<string, ScheduleItem>();
+    merged.forEach((s) => {
+      const key = s._id;
+      dedupe.set(String(key), s);
+    });
+    return Array.from(dedupe.values());
   };
 
-  // fetch schedules & users
-  const fetchShiftData = async (branchIdToUse: string | null) => {
+  const fetchShiftData = async (branchIdToUse: string | null): Promise<void> => {
     if (!branchIdToUse) {
       setSchedulesState([]);
       setUsersState([]);
       return;
     }
+
     setLoadingShiftData(true);
     try {
-      const schedArr = await getSchedulesForDate(todayYMD);
-      const usersArr = await getUsers({ limit: 1000 });
-      setSchedulesState(schedArr ?? []);
-      setUsersState(usersArr ?? []);
-    } catch (e) {
-      console.warn("fetchShiftData failed", e);
+      const [schedules, users] = await Promise.all([
+        loadSchedulesForBranchWithCache(branchIdToUse),
+        getUsers({ limit: 1000 }),
+      ]);
+      setSchedulesState(schedules);
+      setUsersState(users ?? []);
+    } catch (err) {
+      console.warn('fetchShiftData failed', err);
       setSchedulesState([]);
       setUsersState([]);
     } finally {
       setLoadingShiftData(false);
     }
   };
-
-  // helper to test if schedule belongs to a role:user
-  const scheduleIsUser = (s: any) => {
-    if (s.employee_id) {
-      const role = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id.role : undefined;
-      if (typeof role === "string") return role === "user";
-      const id = typeof s.employee_id === 'object' && s.employee_id !== null ? s.employee_id._id : s.employee_id;
-      if (id) {
-        const found = usersState.find((u) => u._id === id || (u as any).id === id);
-        return found?.role === "user";
-      }
-    }
-    return false;
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timeFrom, setTimeFrom] = useState<string>("");
+  const onShowNativeTimePicker = () => setShowTimePicker(true);
+  const onNativeTimeChange = (event: any, selected?: Date) => {
+    setShowTimePicker(false);
+    if (!selected) return;
+    const hh = pad2(selected.getHours());
+    const mm = pad2(selected.getMinutes());
+    const formatted = `${hh}:${mm}`;
+    setCheckoutTime(formatted);
+    setTimeFrom(`${formatted}:00`);
   };
 
-  // Replaced: compute unique employee count for today's schedules in the active branch
+const showConfirmDialog = () => {
+  try {
+    if (!checkoutTargetAttendance) return;
+
+    // 1) basic format check
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+      setCheckoutTimeError(lang.Invalid_time);
+      return;
+    }
+
+    // 2) schedule end check (if schedule exists)
+    const scheduleEndHHMM = checkoutTargetAttendance.schedule
+      ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "")
+      : null;
+    if (scheduleEndHHMM) {
+      const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
+      const checkoutMin = hhmmToMinutesStrict(checkoutTime);
+      if (checkoutMin < schedMin) {
+        setCheckoutTimeError(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
+        return;
+      }
+    }
+
+    // 3) not before check-in
+    const inStr = checkoutTargetAttendance.In ?? "";
+    const checkinDt = parseAttendanceDatetime(inStr);
+    if (inStr && checkinDt) {
+      const inDatePart = inStr.split(" ")[0];
+      const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
+      const [hh, mm] = checkoutTime.split(":").map(s => parseInt(s || "0", 10));
+      const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+      if (checkoutLocal.getTime() < checkinDt.getTime()) {
+        setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
+        return;
+      }
+    }
+
+    // passed validation — clear error and show popup
+    setCheckoutTimeError("");
+    setForceCheckoutModalVisible(false);
+    setTimeout(() => setConfirmPopupVisible(true), 350);
+  } catch (err) {
+    console.warn("showConfirmDialog validation error", err);
+    setCheckoutTimeError(lang.Invalid_time);
+  }
+};
+
+  //To calculate total staff count (For the current branch, Today date schedule)
   const TotalstaffCount = useMemo(() => {
     if (!Array.isArray(schedulesState) || schedulesState.length === 0 || !activeBranchId) return 0;
 
@@ -246,7 +470,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       // branch id can be object or string
       let branchIdOfSchedule = null;
       if (s.branch_id && typeof s.branch_id === 'object' && '_id' in s.branch_id) {
-        branchIdOfSchedule = (s.branch_id as any)._id;
+        branchIdOfSchedule = (s.branch_id)._id;
       } else if (typeof s.branch_id === 'string') {
         branchIdOfSchedule = s.branch_id;
       }
@@ -255,7 +479,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         // employee_id may be object or string
         let empId = null;
         if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
-          empId = (s.employee_id as any)._id;
+          empId = (s.employee_id)._id;
         } else if (typeof s.employee_id === 'string') {
           empId = s.employee_id;
         }
@@ -268,128 +492,129 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     return count;
   }, [schedulesState, todayYMD, activeBranchId]);
 
-
-  // fetch attendance and enrich (with branch-name logic)
-  const fetchAttendanceAndEnrich = async (branchIdToUse: string | null) => {
+  /**
+   * Enrich attendance records for display.
+   *
+   * Rules:
+   * - Include attendance that belongs to branchIdToUse
+   * - Include:
+   *    * check-ins from today (In YMD === todayYMD) where In <= now
+   *    * check-ins from yesterday (In YMD === yesterdayYMD) only when Out is missing (ongoing cross-day)
+   * - For schedule lookup: match schedule.date === the YMD of the In time (yesterday or today)
+   * - Cache attendance briefly to reduce repeated API calls during polling
+   */
+  const fetchAttendanceAndEnrich = async (branchIdToUse: string | null): Promise<void> => {
     if (!branchIdToUse) {
       setRecentCheckins([]);
       return;
     }
-
     try {
       const all = await getAttendanceAllHistory();
-      const now = new Date();
-      const filtered = (all || []).filter((a) => {
-        const aBranchId = a.branch && typeof a.branch === 'object' && 'id' in a.branch ? (a.branch as { id?: string }).id : (typeof a.branch === 'string' ? a.branch : a.branch_id ?? null);
 
-        if (!aBranchId) return false;
-        if (String(aBranchId) !== String(branchIdToUse)) return false;
-        if (!a.In) return false;
-        const inDt = new Date(a.In.replace(' ', 'T'));
-        const inYMD = toYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
-        if (inYMD !== todayYMD) return false;
-        return inDt.getTime() <= now.getTime();
+      const now = new Date();
+
+      const filtered = (all || []).filter((record) => {
+        // branch id normalization
+        const recordBranchId = record.branch_id ?? null;
+
+        if (!recordBranchId) return false;
+        if (String(recordBranchId) !== String(branchIdToUse)) return false;
+        if (!record.In) return false;
+
+        const inDt = parseAttendanceDatetime(record.In);
+        if (!inDt) return false;
+
+        const inYMD = formatYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
+
+        // include today's check-ins (up to now)
+        if (inYMD === todayYMD) {
+          return inDt.getTime() <= now.getTime();
+        }
+        // include yesterday's check-ins only if Out is missing (ongoing cross-day)
+        if (inYMD === yesterdayYMD && !record.Out) {
+          return true;
+        }
+        return false;
       });
 
       filtered.sort((a, b) => (a.In < b.In ? 1 : -1));
 
       const enriched = await Promise.all(
         filtered.map(async (att) => {
-          const uid = att.user?.id ?? att.user;
-          let userProfile = usersState.find((u) => String(u._id) === String(uid) || String((u as any).id) === String(uid));
+          const uid = att.user.id;
+          let userProfile = usersState.find((u) => String((u)._id) === String(uid));
+
           if (!userProfile && uid) {
-            try { userProfile = await getUserById(uid); } catch (e) { userProfile = null; }
+            try {
+              userProfile = await getUserById(String(uid));
+            } catch {
+              userProfile = null;
+            }
           }
+
+          // choose schedule date based on In YMD (yesterday or today)
+          const inDt = parseAttendanceDatetime(att.In);
+          const inYMD = inDt ? formatYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate())) : todayYMD;
 
           const schedule = schedulesState.find((s) => {
-            let empId = null;
+            let empId: string | null = null;
             if (s.employee_id && typeof s.employee_id === 'object' && '_id' in s.employee_id) {
-              empId = (s.employee_id as any)._id;
-            } else if (typeof s.employee_id === 'string') {
-              empId = s.employee_id;
-            }
-            if (!empId || !uid) return false;
-            const sDate = s.date ? toYMD(new Date(s.date)) : null;
-            return String(empId) === String(uid) && sDate === todayYMD;
+              empId = s.employee_id._id ?? null;
+            } else if (!empId || !uid) return false;
+            const sDate = s.date ? formatYMD(new Date(s.date)) : null;
+            return String(empId) === String(uid) && sDate === inYMD;
           }) ?? null;
 
-          // compute status (early/late/noschedule) same as before (based on schedule start_time)
-          let status: "early" | "late" | "ontime" | "noschedule" | "not_checked_in" = "noschedule";
-          let diffText = "";
+          // compute duration & status (same logic, but safe)
+          let status: "early" | "late" | "ontime" | "noschedule" = "noschedule";
+          let diffText = formatMinutesDiff(0);
 
           try {
-            // duration between In and Out (or now if Out missing) -> shown as diffText in 00h 00m
-            const inDt = att.In ? new Date(att.In.replace(' ', 'T')) : null;
-            const outDt = att.Out ? new Date(att.Out.replace(' ', 'T')) : null;
-            const nowDt = new Date();
-
-            if (inDt) {
-              const endDt = outDt && !Number.isNaN(outDt.getTime()) ? outDt : nowDt;
-              const durationMins = Math.max(0, Math.round((endDt.getTime() - inDt.getTime()) / 60000));
+            const inDtLocal = parseAttendanceDatetime(att.In);
+            const outDtLocal = parseAttendanceDatetime(att.Out ?? undefined);
+            if (inDtLocal) {
+              const endDt = outDtLocal ?? new Date();
+              const durationMins = Math.max(0, Math.round((endDt.getTime() - inDtLocal.getTime()) / 60000));
               diffText = formatMinutesDiff(durationMins);
-            } else {
-              diffText = formatMinutesDiff(0);
             }
 
-            // status still uses schedule start_time vs "In" time (minutes from midnight)
             if (schedule && schedule.start_time && att.In) {
-              const schedMin = hhmmToMinutes(schedule.start_time);      // hh:mm -> minutes
-              const inMin = datetimeToMinutes(att.In);                  // "YYYY-MM-DD HH:MM:SS" -> minutes (ignores seconds)
-              if (Number.isNaN(schedMin) || Number.isNaN(inMin)) {
-                // If parsing fails, keep noschedule as a safe fallback
-                status = "noschedule";
-              } else {
-                const startDiff = inMin - schedMin; // positive => checked in after schedule start
-                if (startDiff > 0) {
-                  status = "late";
-                } else if (startDiff === 0) {
-                  // exactly same minute -> on time
-                  status = "ontime";
-                } else {
-                  status = "early";
-                }
+              const schedMin = hhmmToMinutes(schedule.start_time);
+              const inMin = datetimeToMinutes(att.In);
+              if (!Number.isNaN(schedMin) && !Number.isNaN(inMin)) {
+                const startDiff = inMin - schedMin;
+                if (startDiff > 0) status = "late";
+                else if (startDiff === 0) status = "ontime";
+                else status = "early";
               }
-            } else {
-              status = "noschedule";
             }
           } catch (err) {
-            console.warn("Error computing status/duration", err);
+            console.warn('compute status error', err);
             status = "noschedule";
-            diffText = formatMinutesDiff(0);
           }
 
-          // 🔍 Determine if the user belongs to a different branch
+          // branchNameToShow logic 
           let branchNameToShow: string | null = null;
-
           try {
             if (userProfile) {
-              // Extract user's actual branch info
-              let userBranchId = null;
-              if (typeof userProfile.branch === "string") {
-                userBranchId = userProfile.branch;
-              } else if (userProfile.branch && typeof userProfile.branch === "object" && '_id' in userProfile.branch) {
-                userBranchId = (userProfile.branch as { _id?: string })._id ?? null;
+              let userBranchId: string | null = null;
+              if (typeof userProfile.branch === 'string') userBranchId = userProfile.branch;
+              else if (userProfile.branch && typeof userProfile.branch === 'object' && '_id' in userProfile.branch) {
+                userBranchId = userProfile.branch._id ?? null;
               }
-              const userBranchName = userProfile.branch && typeof userProfile.branch === "object" ? (userProfile.branch as { name?: string }).name ?? null : null;
-
-
-              // Compare with current active branch
-              if (
-                userBranchId &&
-                String(userBranchId) !== String(branchIdToUse ?? activeBranchId)
-              ) {
+              const userBranchName = userProfile.branch && typeof userProfile.branch === 'object' ? userProfile.branch.name ?? null : null;
+              if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
                 branchNameToShow = userBranchName || (await getBranchById(userBranchId))?.name || null;
               }
             } else if (att.branch_id) {
-              // fallback if userProfile not loaded
               const b = await getBranchById(att.branch_id);
-              const userBranchId = (b as any)?._id;
+              const userBranchId = b._id;
               if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
                 branchNameToShow = b?.name ?? null;
               }
             }
           } catch (err) {
-            console.warn("branchNameToShow lookup failed", err);
+            console.warn('branchNameToShow lookup failed', err);
             branchNameToShow = null;
           }
 
@@ -405,16 +630,28 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       );
 
       setRecentCheckins(enriched);
-    } catch (e) {
-      console.warn("fetchAttendanceAndEnrich failed", e);
+    } catch (err) {
+      console.warn('fetchAttendanceAndEnrich failed', err);
       setRecentCheckins([]);
     }
   };
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    if (!activeBranchId || !isFocused) return;
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
+  useEffect(() => {
+    if (!activeBranchId || !isFocused) return;
     // immediate refresh when screen becomes focused
     fetchShiftData(activeBranchId);
     fetchAttendanceAndEnrich(activeBranchId);
@@ -428,7 +665,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     return () => {
       clearInterval(interval);
     };
-    // note: we intentionally watch isFocused so polling starts/stops with screen focus
   }, [activeBranchId, isFocused, version]);
 
   // initial & deps
@@ -452,10 +688,10 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           return;
         }
         const branchField = u.branch;
-        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? (branchField as { _id?: string })._id ?? null : null);
+        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? 
+          (branchField as { _id?: string })._id ?? null : null);
 
-
-        const branchName = branchField && typeof branchField === "object" ? (branchField as { name?: string }).name ?? null : null;
+        const branchName = branchField && typeof branchField === "object" ? (branchField as { name: string }).name ?? null : null;
 
         console.log("User branch data:", branchField);
         console.log("Extracted branchId:", branchId);
@@ -463,7 +699,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
         if (branchId) {
           setActiveBranchId(String(branchId));
-          if (branchName) setActiveBranchName(branchName);
           console.log("activeBranchId set to:", branchId);
         } else {
           console.log("No branchId found for user");
@@ -479,18 +714,15 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
   useEffect(() => {
     fetchShiftData(activeBranchId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version]);
 
   useEffect(() => {
     fetchAttendanceAndEnrich(activeBranchId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version, schedulesState, usersState]);
 
   const handleNotificationPress = () => {
     console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
-    // use same param keys you expect in NotificationScreen
-    (navigation.navigate as any)("NotificationScreen", { userId, langId, branchId: activeBranchId });
+    (navigation.navigate)("NotificationScreen", { userId, langId, branchId: activeBranchId });
   };
 
   return (
@@ -515,7 +747,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
               <Image source={require("../../../assets/icons/totalstaff_b.png")} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            {/* <Text style={styles.total_count}>{loadingStaff ? "..." : totalStaff}</Text> */}
             <Text style={styles.total_count}>{loadingShiftData ? "..." : TotalstaffCount}</Text>
           </CartBox>
 
@@ -525,7 +756,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
 
-            {/* <Text style={styles.shift_count}>{loadingShiftData ? "..." : staffOnShiftCount}</Text> */}
             <Text style={styles.shift_count}>{loadingShiftData ? "..." : String(recentCheckins.length)}</Text>
 
           </CartBox>
@@ -534,7 +764,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         <Text style={styles.heading}>{lang.recent_check_ins}</Text>
 
         <ScrollView
-          style={{ marginBottom: '15%' }}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: '15%' }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -546,21 +777,19 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         >
           <View style={styles.details}>
             {loadingShiftData ? (
-              // Loading state: show spinner centered
               <View style={{ justifyContent: 'center', alignItems: 'center', marginTop: "40%" }}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
             ) : recentCheckins.length === 0 ? (
-              // Loaded but empty: show "No recent check-ins"
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 20 * base }}>
                 <Text style={{ textAlign: 'center', color: colors.subtext }}>
-                  {lang.no_recent_checkins || 'No recent check-ins'}
+                  {lang.no_recent_checkins}
                 </Text>
               </View>
             ) : (
               // Loaded and has data: show the check-ins
               recentCheckins.map(({ attendance, userProfile, schedule, status, diffText, branchNameToShow }) => {
-                const displayName = userProfile?.fullname ?? userProfile?.username ?? attendance.user?.username ?? '—';
+                const displayName = userProfile?.fullname ?? userProfile?.username ?? 'Unknown';
                 const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
                 const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
                 const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
@@ -603,10 +832,20 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                             <Text style={styles.status_noschedule} numberOfLines={1} ellipsizeMode="tail">{lang.no_schedule}</Text>
                           )}
 
-                          {status !== "noschedule" && <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
+                          {status !== "noschedule" &&
+                            <Text style={styles.duration} numberOfLines={1} ellipsizeMode="tail">{diffText}</Text>}
                         </View>
                       </View>
                     </View>
+                    {shouldShowForceCheckoutButton(attendance, schedule) && (
+                      <Button1
+                        text={lang.Check_out}
+                        textStyle={{ color: colors.primary, paddingVertical: 10, fontSize: fonts.size.l, fontWeight: fonts.weight.medium }}
+                        backgroundColor={colors.secondary}
+                        containerStyle={{ borderColor: colors.primary, borderWidth: 1, borderRadius: 12, width: '100%', marginTop: 10 }}
+                        onPress={() => openForceCheckoutModal(attendance, schedule, userProfile)}
+                      />
+                    )}
                   </CartBox>
                 );
               })
@@ -614,6 +853,130 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           </View>
         </ScrollView>
       </View>
+      {/* Force checkout modal */}
+      <Modal
+        visible={forceCheckoutModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setForceCheckoutModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => { setForceCheckoutModalVisible(false); }}
+          pointerEvents="auto"
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>
+                  {lang.Check_out} - {checkoutTargetAttendance?.userProfile?.fullname ?? checkoutTargetAttendance?.user?.fullname}
+                </Text>
+
+                <Text style={[styles.name, { marginBottom: 16 }]}>
+                  {lang.Checked_in}:{" "}
+                  {checkoutTargetAttendance
+                    ? formatYMDDisplay(checkoutTargetAttendance.In.split(" ")[0])
+                    : ""}, {" "}
+                  {checkoutTargetAttendance
+                    ? formatTime12(checkoutTargetAttendance.In.split(" ")[1])
+                    : ""}
+                </Text>
+                <InputBox
+                  label={lang.Check_out_time}
+                  placeholder="HH:MM"
+                  value={checkoutTime}
+                  setValue={(v: string) => setCheckoutTimeSafe(v)}
+                  keyboardType="numeric"
+                  maxLength={5}
+                  rightIcon={require("../../../assets/icons/clock_b.png")}
+                  errorMessage={checkoutTimeError}
+                  onRightIconPress={onShowNativeTimePicker}
+                />
+                <View style={{ marginTop: 51 }}>
+                  <Button1
+                    text={lang.Confirm_check_out}
+                    backgroundColor={colors.primary}
+                    width={"100%"}
+                    textStyle={{ color: colors.secondary }}
+                    onPress={showConfirmDialog}
+                  />
+                </View>
+              </View>
+
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+      {/* Confirm popup */}
+      <Popup
+        visible={confirmPopupVisible}
+        onClose={() => setConfirmPopupVisible(false)}
+        popupBorderColor={colors.primary}
+        dismissOnOverlayPress={false}
+        title={`${lang.Confirm_checkout_for} ${checkoutTargetAttendance?.userProfile?.fullname} ? ${lang.This_action_will_be_recorded}`}
+        titleStyle={{ color: colors.primary, marginBottom: 20 }}
+      >
+        {/* Small loading indicator BETWEEN title and buttons */}
+        {confirmSubmitting && (
+          <View style={{ alignItems: "center", marginBottom: 12 }}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        )}
+
+        {/* Buttons row — guard onPress so disabled prop is not required */}
+        <View
+          style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}
+          // prevent touches while submitting (extra safety)
+          pointerEvents={confirmSubmitting ? "none" : "auto"}
+        >
+          <View style={{ width: "48%" }}>
+            <Button1
+              text={lang.yes}
+              backgroundColor={colors.primary}
+              width={"100%"}
+              textStyle={{ color: colors.secondary }}
+              onPress={() => {
+                if (confirmSubmitting) return; 
+                handleSaveForceCheckout();
+              }}
+            />
+          </View>
+
+          <View style={{ width: "48%" }}>
+            <Button1
+              text={lang.no}
+              onPress={() => {
+                if (confirmSubmitting) return;
+                setConfirmPopupVisible(false);
+              }}
+              backgroundColor={colors.error_text}
+              width={"100%"}
+              textStyle={{ color: colors.secondary }}
+            />
+          </View>
+        </View>
+      </Popup>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={timeStringToDate(timeFrom)}
+          mode="time"
+          is24Hour={true}
+          display={Platform.OS === "ios" ? "spinner" : "clock"}
+          onChange={onNativeTimeChange}
+        />
+      )}
+      <Toast config={toastConfig} />
     </View>
   );
 };
@@ -621,9 +984,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
   body: {
+    flex: 1,
     marginTop: 20,
     marginHorizontal: 20,
-    flex: 1,
   },
   boxes: {
     flexDirection: "row",
@@ -642,9 +1005,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "flex-start",
   },
-  profileImage: { width: 38, height: 38, borderRadius: 20, resizeMode: "cover" },
+  profileImage: { width: 38 * base, height: 38, borderRadius: 20, resizeMode: "cover" },
   name_position: { marginLeft: 10, width: "55%", },
-  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text },
+  name: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, color: colors.text, },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 8, fontWeight: fonts.weight.regular, },
   status_early: {
     fontWeight: fonts.weight.regular,
@@ -655,6 +1018,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_early_bg,
     borderRadius: 10,
     textAlign: "center",
+    marginRight: 8
   },
   status_late: {
     fontWeight: fonts.weight.regular,
@@ -665,6 +1029,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status_late_bg,
     borderRadius: 8,
     textAlign: "center",
+    marginRight: 8
   },
   status_noschedule: {
     fontWeight: fonts.weight.regular,
@@ -673,7 +1038,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 12,
     borderRadius: 10,
-    marginRight: 7,
+    marginRight: 8,
     textAlign: "center",
     width: 55 * base,
   },
@@ -727,12 +1092,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
-    width: '90%'
+    width: '90%',
   },
   branchIcon: {
     width: 16,
     height: 16,
     marginRight: 6,
+    alignSelf: "center",
   },
   branchName: {
     fontSize: fonts.size.m,
@@ -746,23 +1112,49 @@ const styles = StyleSheet.create({
   middleRightContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    flex: 1,
-    marginLeft: 10,
+    flex: 1
   },
   statusInline: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    marginLeft: 8,
     marginTop: 2,
     flexShrink: 0,
+    width: '45%',
   },
   duration: {
     color: colors.primary,
     fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
-    marginLeft: 8,
-    width: 64 * base,
+    width: 70,
+  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalContainer: {
+    backgroundColor: colors.secondary,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 70,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHandle: {
+    width: 40,
+    height: 6,
+    backgroundColor: colors.modal_line,
+    borderRadius: 10,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: fonts.size.l,
+    fontWeight: fonts.weight.medium,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });
 

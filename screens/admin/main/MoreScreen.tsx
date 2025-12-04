@@ -10,6 +10,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Platform,
+  Keyboard,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { RefreshControl } from "react-native";
@@ -165,23 +169,23 @@ export default function MoreScreen(props: any) {
       setUser(profile);
       setFullName(profile.fullname ?? "");
       setFullnameInput(profile.fullname ?? "");
-          const profileBranchId =
-      typeof profile.branch === "string"
-        ? profile.branch
-        : profile.branch ?? null;
+      const profileBranchId =
+        typeof profile.branch === "string"
+          ? profile.branch
+          : profile.branch ?? null;
 
-    if (profileBranchId) {
-      setBranchId(String(profileBranchId));
-      console.log("ProfileScreen: branchId from profile =", profileBranchId);
-    } else {
-      const stored = await getBranchId();
-      if (stored) {
-        setBranchId(stored);
-        console.log("ProfileScreen: branchId from storage =", stored);
+      if (profileBranchId) {
+        setBranchId(String(profileBranchId));
+        console.log("ProfileScreen: branchId from profile =", profileBranchId);
       } else {
-        console.log("ProfileScreen: no branchId found");
+        const stored = await getBranchId();
+        if (stored) {
+          setBranchId(stored);
+          console.log("ProfileScreen: branchId from storage =", stored);
+        } else {
+          console.log("ProfileScreen: no branchId found");
+        }
       }
-    }
       // If your API returns an image field, setProfileImage(profile.image) here
     } catch (err: any) {
       console.error("loadProfile error", err);
@@ -228,6 +232,28 @@ export default function MoreScreen(props: any) {
       setModalVisible(false);
     }
   };
+
+  // track keyboard height (fix for Android modal being covered by keyboard)
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = (e: any) => {
+      const h = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(h);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // open gallery
   const openGallery = async () => {
@@ -350,7 +376,7 @@ export default function MoreScreen(props: any) {
                         userId: userId,
                         branchId: branchId,
                         langId: selectedLanguage, // pass langId
-                        email:user?.email
+                        email: user?.email
                       });
                     } else {
                       console.log(item.label);
@@ -472,52 +498,66 @@ export default function MoreScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setFullnameModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{lang.Edit_Fullname}</Text>
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>{lang.Edit_Fullname}</Text>
 
-            <InputBox
-              label={lang.input_fullname}
-              value={fullnameInput}
-              setValue={setFullnameInput}
-              placeholder={lang.Enter_full_name}
-              inputStyle={{ marginTop: 0 }}
-            />
+                <InputBox
+                  label={lang.input_fullname}
+                  value={fullnameInput}
+                  setValue={setFullnameInput}
+                  placeholder={lang.Enter_full_name}
+                  inputStyle={{ marginTop: 0 }}
+                />
 
-            <Button1
-              text={lang.save}
-              width={"100%"}
-              onPress={async () => {
-                const newName = fullnameInput.trim();
-                if (!newName) {
-                  //setFullnameModalVisible(false);
-                  showErrorToast(lang.Fullname_cannot_be_empty);
-                  return;
-                }
-                try {
-                  // Pass user._id if available; updateProfile will fallback to stored userId if not
-                  const idToUpdate = user?._id || userId;
-                  const updated = await updateProfile(
-                    { fullname: newName },
-                    idToUpdate
-                  );
-                  // update local UI
-                  setFullName(updated.fullname ?? newName);
-                  setUser((prev) => ({ ...(prev ?? {}), ...updated }));
-                  setFullnameModalVisible(false);
-                  showSuccessToast(lang.Fullname_updated_successfully);
+                <Button1
+                  text={lang.save}
+                  width={"100%"}
+                  onPress={async () => {
+                    const newName = fullnameInput.trim();
+                    if (!newName) {
+                      //setFullnameModalVisible(false);
+                      showErrorToast(lang.Fullname_cannot_be_empty);
+                      return;
+                    }
+                    try {
+                      // Pass user._id if available; updateProfile will fallback to stored userId if not
+                      const idToUpdate = user?._id || userId;
+                      const updated = await updateProfile(
+                        { fullname: newName },
+                        idToUpdate
+                      );
+                      // update local UI
+                      setFullName(updated.fullname ?? newName);
+                      setUser((prev) => ({ ...(prev ?? {}), ...updated }));
+                      setFullnameModalVisible(false);
+                      showSuccessToast(lang.Fullname_updated_successfully);
 
-                  // Optionally refresh to be safe:
-                  // await loadProfile(false);
-                } catch (err: any) {
-                  console.error("Failed to update fullname", err);
-                  //Alert.alert('Update failed', err?.toString?.() ?? 'Could not update fullname');
-                  showErrorToast(err?.message ?? "Could not update fullname");
-                }
-              }}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
+                      // Optionally refresh to be safe:
+                      // await loadProfile(false);
+                    } catch (err: any) {
+                      console.error("Failed to update fullname", err);
+                      //Alert.alert('Update failed', err?.toString?.() ?? 'Could not update fullname');
+                      showErrorToast(err?.message ?? "Could not update fullname");
+                    }
+                  }}
+                  containerStyle={{ alignSelf: "center", marginTop: 10 }}
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -656,11 +696,11 @@ const styles = StyleSheet.create({
   itemText: {
     fontSize: fonts.size.m,
     color: colors.text,
-    fontWeight: fonts.weight.medium ,
+    fontWeight: fonts.weight.medium,
     fontFamily: fonts.family.regular,
   },
   logout: { flexDirection: "row" },
-  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" },
+  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain", alignSelf: 'center' },
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
@@ -673,7 +713,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 50,
+    paddingBottom: 70,
     shadowColor: colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
@@ -720,14 +760,14 @@ const styles = StyleSheet.create({
     marginTop: 5,
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     fontFamily: fonts.family.regular,
     lineHeight: 16,
   },
   popupsubtext: {
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
     marginBottom: 30,
     alignSelf: "center",
   },

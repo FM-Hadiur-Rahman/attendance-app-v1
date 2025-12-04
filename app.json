@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E90FF"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
@@ -18,8 +18,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1E90FF"
+        "foregroundImage": "",
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.yourcompany.timetrack",
       "edgeToEdgeEnabled": true,
@@ -27,6 +27,14 @@
     },
     "web": {
       "favicon": "./assets/icon.png"
+    },
+    "cli": {
+      "appVersionSource": "local"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "90bd73b6-b79d-40c0-9ed6-cb5e199f3655"
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 // screens/admin/main/more/EditScheduleScreen.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
     View,
     Text,
@@ -14,14 +14,16 @@ import {
     UIManager,
     Dimensions,
     LayoutChangeEvent,
+    KeyboardAvoidingView,
+    Keyboard,
+    TouchableWithoutFeedback
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile";
+import { fetchUsers, ProfileUser, getProfile, postSchedulesBulk } from "../../../../api/profile";
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk, updateSchedule, createSchedule, deleteSchedule } from "../../../../api/schedules";
-
+import { getSchedulesByEmployee, getSchedules, ScheduleItem, createSchedule, updateSchedule, deleteSchedule } from "../../../../api/schedules";
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
 import CartBox from "../../../../components/CartBox";
@@ -32,7 +34,7 @@ import translations from "../../../../assets/translations.json";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../../components/Toast";
 import Popup from "../../../../components/Popup";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../../api/attendanceAllHistory";
-
+import { useFocusEffect } from "@react-navigation/native";
 type Branch = {
     _id?: string;
     id?: string;
@@ -50,7 +52,6 @@ type LocalBranch = {
     name: string;
     raw?: ApiBranch;
 };
-
 export default function EditScheduleScreen(props: any) {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
@@ -100,7 +101,6 @@ export default function EditScheduleScreen(props: any) {
     const [weekOffset, setWeekOffset] = useState<number>(0);
     const [checkedInMap, setCheckedInMap] = useState<Record<string, Set<string>>>({});
     const [loadingAttendance, setLoadingAttendance] = useState(false);
-
     const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
         return users.map((u) => {
             const id = (u as any)._id ?? (u as any).id ?? "";
@@ -132,14 +132,12 @@ export default function EditScheduleScreen(props: any) {
             dt.setTime(dt.getTime() + Math.round((dur || 0) * 3600 * 1000));
             return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
         };
-
         const toLocalYmd = (iso?: string) => {
             if (!iso) return "";
             const d = new Date(iso);
             if (isNaN(d.getTime())) return "";
             return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; // local Y-M-D
         };
-
         return schedules.map((s) => {
             const id = (s as any)._id ?? (s as any).id ?? (s as any).schedule_id ?? '';
             const rawEmployee = (s as any).employee_id ?? (s as any).user_id ?? (s as any).employee ?? null;
@@ -148,11 +146,9 @@ export default function EditScheduleScreen(props: any) {
             const branch_id = typeof branch_raw === 'string' ? branch_raw : (branch_raw && (branch_raw._id ?? branch_raw.id)) ?? '';
             const start_time = (s as any).start_time ?? (s as any).start ?? (s as any).from_time ?? '';
             const duration = (s as any).duration ?? (s as any).hours ?? (s as any).dur ?? 0;
-
             const apiEnd = (s as any).end_time ?? (s as any).end ?? '';
             const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
             const dateYmd = toLocalYmd((s as any).date ?? (s as any).day ?? '');
-
             return {
                 id: String(id),
                 user_id: String(user_id || ''),
@@ -165,6 +161,23 @@ export default function EditScheduleScreen(props: any) {
             } as any;
         });
     };
+
+    // 30000 auto reaload 
+    const autoRefreshRunningRef = useRef(false);
+
+    useEffect(() => {
+        const intervalMs = 30000; // 30s - change as needed
+        const id = setInterval(() => {
+            if (!autoRefreshRunningRef.current) {
+                autoRefreshRunningRef.current = true;
+                onRefresh().finally(() => {
+                    autoRefreshRunningRef.current = false;
+                });
+            }
+        }, intervalMs);
+
+        return () => clearInterval(id);
+    }, [screenBranchId]); // restart interval when branch changes
 
     const inStringToYmd = (inStr?: string) => {
         if (!inStr) return "";
@@ -182,13 +195,11 @@ export default function EditScheduleScreen(props: any) {
         });
         return map;
     };
-
     const userHasCheckedInOn = (userId?: string | null, ymd?: string | null) => {
         if (!userId || !ymd) return false;
         const s = checkedInMap[String(userId)];
         return !!(s && s.has(ymd));
     };
-
     const loadInitialData = async () => {
         setLoading(true);
         try {
@@ -241,11 +252,9 @@ export default function EditScheduleScreen(props: any) {
             setLoading(false);
         }
     };
-
     useEffect(() => {
         loadInitialData();
     }, [screenBranchId]);
-
     useEffect(() => {
         if (!localSchedules?.length) {
             setLocalSchedulesByDate({});
@@ -260,7 +269,6 @@ export default function EditScheduleScreen(props: any) {
         });
         setLocalSchedulesByDate(map);
     }, [localSchedules]);
-
     const onRefresh = async () => {
         setLoading(true);
         try {
@@ -273,7 +281,6 @@ export default function EditScheduleScreen(props: any) {
             setLoading(false);
         }
     };
-
     const formatTime12 = (time: string) => {
         if (!time) return "";
         const [hh, mm] = time.split(":").map(Number);
@@ -281,7 +288,6 @@ export default function EditScheduleScreen(props: any) {
         const hour12 = hh % 12 || 12;
         return `${hour12}:${mm.toString().padStart(2, "0")} ${period}`;
     };
-
     const timeStringToDate = (timeStr: string) => {
         const now = new Date();
         now.setSeconds(0, 0);
@@ -311,7 +317,6 @@ export default function EditScheduleScreen(props: any) {
     };
     const weekDates = getWeekDates(weekOffset);
     const displayWeekDates = getWeekDates(0);
-
     const buildMapFromList = (list: any[]) => {
         const map: Record<string, any[]> = {};
         (list || []).forEach((s) => {
@@ -322,7 +327,6 @@ export default function EditScheduleScreen(props: any) {
         });
         return map;
     };
-
     const computeEndTime = (startHHMMSS: string, durationHrs: number) => {
         if (!startHHMMSS) return "";
         const parts = startHHMMSS.split(":").map((p) => parseInt(p, 10) || 0);
@@ -335,7 +339,6 @@ export default function EditScheduleScreen(props: any) {
         const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
         return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
     };
-
     // return "HH:MM" trimmed (input may be "HH:MM:SS" or "HH:MM")
     const timeToHHMM = (t: string) => {
         if (!t) return "";
@@ -343,7 +346,6 @@ export default function EditScheduleScreen(props: any) {
         if (parts.length >= 2) return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
         return t;
     };
-
     const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const dayOfWeekFromYmd = (ymd: string) => {
         try {
@@ -354,6 +356,29 @@ export default function EditScheduleScreen(props: any) {
             return "";
         }
     };
+
+    // added this for android keyboard avoiding view 
+    const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+        const onShow = (e: any) => {
+            const h = e?.endCoordinates?.height ?? 0;
+            setKeyboardHeight(h);
+        };
+        const onHide = () => setKeyboardHeight(0);
+
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
     const computeDurationFromStartEnd = (start: string, end: string): number => {
         if (!start || !end) return 0;
         const toSeconds = (t: string) => {
@@ -380,7 +405,6 @@ export default function EditScheduleScreen(props: any) {
     };
     const onAddSchedule = async () => {
         let hasError = false;
-
         if (!selectedStaffId) {
             setStaffError(lang.Select_staff || "Please select staff");
             showErrorToast(lang.Please_select_staff || "Select staff");
@@ -400,32 +424,24 @@ export default function EditScheduleScreen(props: any) {
             showErrorToast(lang.Please_enter_start_time || "Enter start time");
             hasError = true;
         }
-
         const dur = parseFloat(durationHours || "0");
-
         if (hasError) return;
-
         const targetDate = selectedDayYmd || selectedDisplayYmd;
         if (!targetDate) {
             showErrorToast("No valid date selected for schedule (abort)");
             return;
         }
-
         const scheduleDate = String(targetDate).split("T")[0];
         const endTime = computeEndTime(timeFrom, dur);
-
         try {
             setLoading(true);
-
             let backendSchedule: any;
-
             if (modalEditingId) {
                 // ✅ Update or delete existing schedule
                 if (isNaN(dur) || dur <= 0) {
                     // ➖ Delete schedule if duration is 0 or invalid
                     await deleteSchedule(modalEditingId); // call your API
                     showSuccessToast("Schedule deleted because duration is 0");
-
                     // Remove from local state
                     setLocalSchedules((prev = []) => {
                         const filtered = prev.filter((s) => s._id !== modalEditingId);
@@ -439,18 +455,15 @@ export default function EditScheduleScreen(props: any) {
                         setLocalSchedulesByDate(map);
                         return filtered;
                     });
-
                     setModalEditingId(null);
                     setAddScheduleModalVisible(false);
                     return;
                 }
-
                 // Otherwise update normally
                 if (!selectedStaffId || !selectedBranchId) {
                     showErrorToast("Please select both staff and branch");
                     return;
                 }
-
                 const payload = {
                     employee_id: selectedStaffId,
                     branch_id: selectedBranchId,
@@ -459,22 +472,18 @@ export default function EditScheduleScreen(props: any) {
                     duration: durationHours,
                     day_of_week: WEEKDAYS[new Date(scheduleDate).getDay()],
                 };
-
                 backendSchedule = await updateSchedule(modalEditingId, payload);
                 showSuccessToast("Schedule updated successfully");
-
             } else {
                 // ➕ Create new schedule
                 if (isNaN(dur) || dur <= 0) {
                     showErrorToast("Cannot create schedule with duration 0");
                     return;
                 }
-
                 if (!selectedStaffId || !selectedBranchId) {
                     showErrorToast("Please select both staff and branch");
                     return;
                 }
-
                 const payload = {
                     employee_id: selectedStaffId,
                     branch_id: selectedBranchId,
@@ -484,34 +493,28 @@ export default function EditScheduleScreen(props: any) {
                     duration: durationHours,
                     day_of_week: WEEKDAYS[new Date(scheduleDate).getDay()],
                 };
-
                 backendSchedule = await createSchedule(payload);
                 showSuccessToast("Schedule created successfully");
                 setModalEditingId(backendSchedule._id);
             }
-
             // Normalize backend date
             const normalizedSchedule = {
                 ...backendSchedule,
                 date: String(backendSchedule.date).split("T")[0],
             };
-
             // Update local schedules state
             setLocalSchedules((prev = []) => {
                 const copy = [...prev];
-
                 const idx = copy.findIndex(
                     (s) =>
                         s._id === normalizedSchedule._id ||
                         (s.employee_id === normalizedSchedule.employee_id && s.date === normalizedSchedule.date)
                 );
-
                 if (Number(normalizedSchedule.duration) <= 0) {
                     // 🗑️ Delete schedule if duration <= 0
                     if (idx !== -1) {
                         const deletedSchedule = copy[idx];
                         copy.splice(idx, 1);
-
                         // Add to changeLog as delete
                         setChangeLog((prev = []) => [
                             ...prev,
@@ -543,12 +546,10 @@ export default function EditScheduleScreen(props: any) {
                     map[s.date].push(s);
                 });
                 setLocalSchedulesByDate(map);
-
                 return copy;
             });
             setAddScheduleModalVisible(false);
             await onRefresh();
-
         } catch (err) {
             console.error("onAddSchedule error:", err);
             showErrorToast("Failed to save schedule");
@@ -556,7 +557,6 @@ export default function EditScheduleScreen(props: any) {
             setLoading(false);
         }
     };
-
     const measureStaffInput = () => {
         const handle = findNodeHandle(staffInputWrapperRef.current);
         if (!handle) return;
@@ -568,13 +568,11 @@ export default function EditScheduleScreen(props: any) {
         const { x, y, width, height } = e.nativeEvent.layout;
         setBranchInputLayout({ x, y, width, height });
     };
-
     useEffect(() => {
         if (staffFilterOpen) {
             setTimeout(measureStaffInput, 40);
         }
     }, [staffFilterOpen, selectedStaff]);
-
     useEffect(() => {
         if (branchFilterOpen) {
             setTimeout(() => {
@@ -589,11 +587,9 @@ export default function EditScheduleScreen(props: any) {
             }, 40);
         }
     }, [branchFilterOpen, selectedBranch, addScheduleModalVisible]);
-
     const openAddModalForDate = (dataYmd: string, displayYmd?: string) => {
         const uiYmd = displayYmd || dataYmd;
         if (isBeforeToday(uiYmd)) return;
-
         if (!selectedStaffId) {
             setStaffError(lang.Select_staff || "Please select staff first");
             showErrorToast(lang.Please_select_staff || "Select staff first");
@@ -608,12 +604,10 @@ export default function EditScheduleScreen(props: any) {
         }
         const daySchedules = localSchedulesByDate[dataYmd] || [];
         const staffSchedule = daySchedules.find((s) => s.user_id === selectedStaffId) || null;
-
-        setSelectedDayYmd(dataYmd);        // template origin
-        setSelectedDisplayYmd(uiYmd);      // date we want to actually create/edit
+        setSelectedDayYmd(dataYmd); // template origin
+        setSelectedDisplayYmd(uiYmd); // date we want to actually create/edit
         setDurationError("");
         setTimeFromError("");
-
         if (staffSchedule) {
             // Prefill fields from template (previous-week schedule)
             setTimeFrom(staffSchedule.start_time || "");
@@ -662,7 +656,6 @@ export default function EditScheduleScreen(props: any) {
         }
         setAddScheduleModalVisible(true);
     };
-
     useEffect(() => {
         if (!route.params?.id) return;
         const editingId: string | undefined = route.params?.id;
@@ -689,7 +682,6 @@ export default function EditScheduleScreen(props: any) {
         }
         setModalEditingId(editingId || null);
     }, [route.params?.id, localSchedules, localUsers, localBranches]);
-
     const handleStaffPick = async (u: LocalUser) => {
         try {
             setSelectedStaff(u.fullname);
@@ -697,7 +689,6 @@ export default function EditScheduleScreen(props: any) {
             setStaffError("");
             setStaffFilterOpen(false);
             setStaffInputLayout(null);
-
             const br = localBranches.find((b) => b.id === u.branch_id);
             if (br) {
                 setSelectedBranch(br.name);
@@ -707,7 +698,6 @@ export default function EditScheduleScreen(props: any) {
                 setSelectedBranchId(null);
             }
             if (!u.id) return;
-
             // unwrap various API shapes
             const unwrapSchedules = (resp: any): any[] => {
                 if (!resp) return [];
@@ -716,7 +706,6 @@ export default function EditScheduleScreen(props: any) {
                 if (resp.data && Array.isArray(resp.data.schedules)) return resp.data.schedules;
                 return [];
             };
-
             const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
             const toLocalYmdFromIso = (iso?: string) => {
                 if (!iso) return "";
@@ -730,10 +719,8 @@ export default function EditScheduleScreen(props: any) {
                 const start = weekDates[0];
                 const end = weekDates[weekDates.length - 1];
                 console.log(`[DEBUG] fetchWeekForOffset offset=${offsetWeeks} start=${start} end=${end}`);
-
-                const resp = await getEmployeeSchedules(u.id, start, end);
+                const resp = await getSchedulesByEmployee(u.id, start, end);
                 console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
-
                 const rawArr = unwrapSchedules(resp) || [];
                 // debug list: id, iso, localYmd
                 const debugList = rawArr.map((r: any) => {
@@ -741,7 +728,6 @@ export default function EditScheduleScreen(props: any) {
                     return { id: r?._id ?? r?.id, iso, localYmd: toLocalYmdFromIso(iso) };
                 });
                 console.log(`[DEBUG] raw items (id, iso, localYmd) for offset=${offsetWeeks}`, debugList);
-
                 // filter raw arr by localYmd inside [start..end]
                 const filtered = rawArr.filter((r: any) => {
                     const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
@@ -769,12 +755,10 @@ export default function EditScheduleScreen(props: any) {
                 console.info(`[INFO] Showing current week schedules for ${u.id} (from local state)`);
                 return;
             }
-
             // search current then older weeks
             let found = false;
             let chosenOffset = 0;
             let finalSchedulesNormalized: any[] = [];
-
             try {
                 const cur = await fetchWeekForOffset(0);
                 if (cur.length > 0) {
@@ -839,7 +823,6 @@ export default function EditScheduleScreen(props: any) {
             console.error("[ERROR] handleStaffPick unexpected error", err);
         }
     };
-
     const onFooterSaveAndBack = () => {
         // 1️⃣ Block if modal open
         if (addScheduleModalVisible) {
@@ -864,15 +847,13 @@ export default function EditScheduleScreen(props: any) {
         }
         // 4️ Otherwise show confirmation popup
         setSaveConfirmVisible(true);
-        //  Optional: debug
+        // Optional: debug
         console.log("📝 changeLog before save:", changeLog);
     };
-
     const screenH = Dimensions.get("window").height;
     const screenW = Dimensions.get("window").width;
     const employeeList = localUsers.filter((u) => {
         const role = (u.role || "").toLowerCase();
-
         const staffRoles = new Set(["employee", "user", "staff", "cashier", "worker", "clerk", "attendant"]);
         if (!staffRoles.has(role)) return false;
         if (effectiveBranchId) {
@@ -880,7 +861,6 @@ export default function EditScheduleScreen(props: any) {
         }
         return true;
     });
-
     const staffSuggestions = employeeList.filter((u) => {
         const q = (selectedStaff || "").toLowerCase();
         if (!q) return true;
@@ -890,12 +870,10 @@ export default function EditScheduleScreen(props: any) {
             (u.branch_id || "").toLowerCase().includes(q)
         );
     });
-
     const branchSuggestions = localBranches.filter((b) =>
         b.name.toLowerCase().includes((selectedBranch || "").toLowerCase()) ||
         b.id.toLowerCase().includes((selectedBranch || "").toLowerCase())
     );
-
     const onShowNativeTimePicker = () => setShowTimePicker(true);
     const onNativeTimeChange = (event: any, selected?: Date) => {
         setShowTimePicker(false);
@@ -906,7 +884,6 @@ export default function EditScheduleScreen(props: any) {
         setTimeFrom(`${hh}:${mm}:${ss}`);
         setTimeFromError("");
     };
-
     const computeDuration = (startTime: string, endTime: string) => {
         if (!startTime || !endTime) return 0;
         const [startH, startM] = startTime.split(":").map(Number);
@@ -916,7 +893,6 @@ export default function EditScheduleScreen(props: any) {
         const diffMins = end - start;
         return diffMins > 0 ? diffMins / 60 : 0;
     };
-
     return (
         <View style={styles.container}>
             <Header
@@ -944,7 +920,6 @@ export default function EditScheduleScreen(props: any) {
                         <Text style={styles.groupTitle}>{lang.Schedule_details}</Text>
                         <Text style={styles.groupSubtitle}>{lang.Create_new_work_schedule}</Text>
                     </View>
-
                     {/* Staff input */}
                     <View
                         ref={(r) => {
@@ -968,21 +943,20 @@ export default function EditScheduleScreen(props: any) {
                                     setTimeout(measureStaffInput, 20);
                                 }
                             }}
-                            editable={!route.params?.userId} //  disable if userId already given
+                            editable={!route.params?.userId} // disable if userId already given
                             onPress={undefined}
                             rightIcon={require("../../../../assets/icons/a_staffrecord_b.png")}
                             rightIconStyle={{ tintColor: colors.primary }}
                             onRightIconPress={undefined}
                             errorMessage={staffError}
                         />
-
                     </View>
                     <View style={{ marginTop: 0 }}>
                         {Array.from({ length: 7 }).map((_, idx) => {
                             const displayD = displayWeekDates[idx]; // current-week date for showing number & weekday
-                            const dataD = weekDates[idx];           // schedule lookup date (may be offset week)
+                            const dataD = weekDates[idx]; // schedule lookup date (may be offset week)
                             const displayYmd = dateToYMD(displayD); // for UI/expired logic
-                            const ymd = dateToYMD(dataD);           // for schedule lookup
+                            const ymd = dateToYMD(dataD); // for schedule lookup
                             const dateNum = displayD.getDate();
                             const wk = WEEKDAYS[displayD.getDay()];
                             const daySchedules = localSchedulesByDate[ymd] || []; // 查找 schedule by data-week ymd
@@ -995,9 +969,7 @@ export default function EditScheduleScreen(props: any) {
                                     computeEndTime(staffSchedule.start_time, parseFloat(staffSchedule.duration || "0"))
                                 )}`
                                 : null;
-
-                            const userObj = localUsers.find((uu) => uu.id === selectedStaffId) || null;
-                            const branchNameForSchedule = hasScheduleForStaff && userObj && staffSchedule.branch_id && (staffSchedule.branch_id !== userObj.branch_id)
+                            const branchNameForSchedule = hasScheduleForStaff && staffSchedule.branch_id && (staffSchedule.branch_id !== effectiveBranchId)
                                 ? (localBranches.find((b) => b.id === staffSchedule.branch_id)?.name ?? "")
                                 : "";
                             return (
@@ -1069,143 +1041,147 @@ export default function EditScheduleScreen(props: any) {
             </View>
             <Modal animationType="slide" transparent visible={addScheduleModalVisible} onRequestClose={() => { setAddScheduleModalVisible(false); }}>
                 <Pressable style={styles.modalOverlay} onPress={() => { setAddScheduleModalVisible(true); }} pointerEvents="auto">
-
-                    <View style={styles.modalContainer}>
-                        <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
-                        <View>
-                            <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-                                <View
-                                    ref={(r) => { branchInputWrapperRef.current = r; }}
-                                    onLayout={onBranchLayout}
-                                >
-                                    <InputBox
-                                        label={lang.Branch}
-                                        placeholder={"Select branch"}
-                                        value={selectedBranch}
-                                        setValue={(v: string) => {
-                                            setSelectedBranch(v);
-                                            setSelectedBranchId(null);
-                                            setBranchFilterOpen(true);
-                                            setTimeout(() => {
-                                                if (!branchInputLayout) {
-                                                    const handle = findNodeHandle(branchInputWrapperRef.current);
-                                                    if (handle) {
-                                                        UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                                                            setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                                                        });
-                                                    }
+                    {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                        style={{ flex: 1, justifyContent: "flex-end" }}
+                        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+                    >
+                        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                            <View
+                                style={[
+                                    styles.modalContainer,
+                                    Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                                ]}
+                            >
+                                <View style={styles.modalHandle} />
+                                <Text style={styles.modalTitle}>{lang.Edit_Schedule} </Text>
+                                <View>
+                                    <ScrollView style={{ marginTop: 8, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+                                        <View
+                                            ref={(r) => { branchInputWrapperRef.current = r; }}
+                                            onLayout={onBranchLayout}
+                                        >
+                                            <InputBox
+                                                label={lang.Branch}
+                                                placeholder={"Select branch"}
+                                                value={selectedBranch}
+                                                setValue={(v: string) => {
+                                                    setSelectedBranch(v);
+                                                    setSelectedBranchId(null);
+                                                    setBranchFilterOpen(true);
+                                                    setTimeout(() => {
+                                                        if (!branchInputLayout) {
+                                                            const handle = findNodeHandle(branchInputWrapperRef.current);
+                                                            if (handle) {
+                                                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                                                    setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                                                });
+                                                            }
+                                                        }
+                                                    }, 30);
+                                                }}
+                                                onPress={undefined}
+                                                rightIcon={require("../../../../assets/icons/branch_b.png")}
+                                                rightIconStyle={{ tintColor: colors.primary }}
+                                                onRightIconPress={() => {
+                                                    setSelectedBranch("");
+                                                    setBranchFilterOpen(true);
+                                                    setTimeout(() => {
+                                                        if (!branchInputLayout) {
+                                                            const handle = findNodeHandle(branchInputWrapperRef.current);
+                                                            if (handle) {
+                                                                UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
+                                                                    setBranchInputLayout({ x: pageX, y: pageY, width, height });
+                                                                });
+                                                            }
+                                                        }
+                                                    }, 30);
+                                                }}
+                                                errorMessage={""}
+                                            />
+                                        </View>
+                                        <InputBox
+                                            label={lang.Start_time}
+                                            placeholder="HH:MM"
+                                            value={timeFrom}
+                                            setValue={(v: string) => {
+                                                // Remove non-digits
+                                                let digits = v.replace(/[^0-9]/g, "");
+                                                let hh = "";
+                                                let mm = "";
+                                                if (digits.length > 0) {
+                                                    // Hours (max 2 digits)
+                                                    hh = digits.slice(0, 2);
+                                                    if (parseInt(hh) > 23) hh = "23"; // clamp to 24
                                                 }
-                                            }, 30);
-                                        }}
-                                        onPress={undefined}
-                                        rightIcon={require("../../../../assets/icons/branch_b.png")}
-                                        rightIconStyle={{ tintColor: colors.primary }}
-                                        onRightIconPress={() => {
-                                            setSelectedBranch("");
-                                            setBranchFilterOpen(true);
-                                            setTimeout(() => {
-                                                if (!branchInputLayout) {
-                                                    const handle = findNodeHandle(branchInputWrapperRef.current);
-                                                    if (handle) {
-                                                        UIManager.measure(handle, (x, y, width, height, pageX, pageY) => {
-                                                            setBranchInputLayout({ x: pageX, y: pageY, width, height });
-                                                        });
-                                                    }
+                                                if (digits.length > 2) {
+                                                    // Minutes (max 2 digits)
+                                                    mm = digits.slice(2, 4);
+                                                    if (parseInt(mm) > 59) mm = "59"; // clamp to 59
                                                 }
-                                            }, 30);
-                                        }}
-                                        errorMessage={""}
-                                    />
+                                                const formatted = hh + (mm ? ":" + mm : "");
+                                                setTimeFrom(formatted);
+                                                // Full validation
+                                                const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
+                                                if (isValid) setTimeFromError("");
+                                                else setTimeFromError("Invalid time format (00 00)");
+                                            }}
+                                            keyboardType="numeric" // regular keyboard
+                                            maxLength={5} // HH:MM
+                                            rightIcon={require("../../../../assets/icons/clock_b.png")}
+                                            errorMessage={timeFromError}
+                                            rightIconStyle={{ tintColor: colors.primary }}
+                                            onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
+                                        />
+                                        <InputBox
+                                            label={lang.Duration}
+                                            placeholder={"Eg: 8"}
+                                            value={durationHours}
+                                            setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
+                                            errorMessage={durationError}
+                                            rightIconStyle={{ tintColor: colors.primary }}
+                                            keyboardType="numeric"
+                                        />
+                                        <View style={{ height: 18 }} />
+                                        <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
+                                        <View style={{ height: 20 }} />
+                                    </ScrollView>
+                                    {branchFilterOpen && branchInputLayout && (
+                                        <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
+                                            <View
+                                                style={[
+                                                    styles.overlayContainer,
+                                                    {
+                                                        left: Math.max(branchInputLayout.x),
+                                                        top: Math.max(branchInputLayout.y + branchInputLayout.height),
+                                                        width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
+                                                        maxHeight: 300,
+                                                    },
+                                                ]}
+                                            >
+                                                <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                                    {branchSuggestions.length === 0 ? (
+                                                        <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
+                                                    ) : (
+                                                        branchSuggestions.map((b) => (
+                                                            <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
+                                                                setSelectedBranch(b.name);
+                                                                setSelectedBranchId(b.id);
+                                                                setBranchFilterOpen(false);
+                                                            }}>
+                                                                <Text style={styles.suggestionText}>{b.name}</Text>
+                                                            </Pressable>
+                                                        ))
+                                                    )}
+                                                </ScrollView>
+                                            </View>
+                                        </Pressable>
+                                    )}
                                 </View>
-
-                                <InputBox
-                                    label={lang.Start_time}
-                                    placeholder="HH:MM"
-                                    value={timeFrom}
-                                    setValue={(v: string) => {
-                                        // Remove non-digits
-                                        let digits = v.replace(/[^0-9]/g, "");
-
-                                        let hh = "";
-                                        let mm = "";
-
-                                        if (digits.length > 0) {
-                                            // Hours (max 2 digits)
-                                            hh = digits.slice(0, 2);
-                                            if (parseInt(hh) > 23) hh = "23"; // clamp to 24
-                                        }
-
-                                        if (digits.length > 2) {
-                                            // Minutes (max 2 digits)
-                                            mm = digits.slice(2, 4);
-                                            if (parseInt(mm) > 59) mm = "59"; // clamp to 59
-                                        }
-
-                                        const formatted = hh + (mm ? ":" + mm : "");
-                                        setTimeFrom(formatted);
-
-                                        // Full validation
-                                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
-                                        if (isValid) setTimeFromError("");
-                                        else setTimeFromError("Invalid time format (00 00)");
-                                    }}
-                                    keyboardType="numeric"          // regular keyboard
-                                    maxLength={5}                   // HH:MM
-                                    rightIcon={require("../../../../assets/icons/clock_b.png")}
-                                    errorMessage={timeFromError}
-                                    rightIconStyle={{ tintColor: colors.primary }}
-                                    onRightIconPress={onShowNativeTimePicker} // clock icon opens native time picker
-                                />
-
-                                <InputBox
-                                    label={lang.Duration}
-                                    placeholder={"Eg: 8"}
-                                    value={durationHours}
-                                    setValue={(v: string) => { setDurationHours(v.replace(/[^0-9.]/g, "")); setDurationError(""); }}
-                                    errorMessage={durationError}
-                                    rightIconStyle={{ tintColor: colors.primary }}
-                                    keyboardType="numeric"
-                                />
-
-                                <View style={{ height: 18 }} />
-                                <Button1 text={modalEditingId ? lang.save : lang.Add} width={"100%"} onPress={onAddSchedule} />
-                                <View style={{ height: 20 }} />
-                            </ScrollView>
-
-                            {branchFilterOpen && branchInputLayout && (
-                                <Pressable style={[styles.modalOverlayAbsolute]} onPress={() => setBranchFilterOpen(false)}>
-                                    <View
-                                        style={[
-                                            styles.overlayContainer,
-                                            {
-                                                left: Math.max(branchInputLayout.x),
-                                                top: Math.max(branchInputLayout.y + branchInputLayout.height),
-                                                width: Math.min(branchInputLayout.width, Dimensions.get("window").width - 32),
-                                                maxHeight: 300,
-                                            },
-                                        ]}
-                                    >
-                                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                                            {branchSuggestions.length === 0 ? (
-                                                <Text style={{ textAlign: "center", color: colors.text, padding: 12 }}>No matches</Text>
-                                            ) : (
-                                                branchSuggestions.map((b) => (
-                                                    <Pressable key={b.id} style={styles.suggestionItemInline} onPress={() => {
-                                                        setSelectedBranch(b.name);
-                                                        setSelectedBranchId(b.id);
-                                                        setBranchFilterOpen(false);
-                                                    }}>
-                                                        <Text style={styles.suggestionText}>{b.name}</Text>
-                                                    </Pressable>
-                                                ))
-                                            )}
-                                        </ScrollView>
-                                    </View>
-                                </Pressable>
-                            )}
-                        </View>
-                    </View>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </KeyboardAvoidingView>
                 </Pressable>
             </Modal>
             {showTimePicker && (
@@ -1268,32 +1244,27 @@ export default function EditScheduleScreen(props: any) {
                         onPress={async () => {
                             setSaveConfirmVisible(false);
                             setLoading(true);
-
                             try {
                                 // 1️⃣ Gather user changes (add / update / delete)
                                 const userChanges = (changeLog || [])
                                     .filter(c => c.type === "add" || c.type === "update" || c.type === "delete")
                                     .map(c => ({ ...JSON.parse(JSON.stringify(c.schedule)), _action: c.type }));
-
                                 if (userChanges.length === 0) {
                                     showErrorToast(lang.no_changes_to_save || "No changes to save");
                                     return;
                                 }
-
                                 // 2️⃣ Consider only current week schedules
                                 const currentWeekYMDs = displayWeekDates.map(d => dateToYMD(d));
                                 const currentWeekSchedules = Object.entries(localSchedulesByDate)
                                     .filter(([ymd]) => currentWeekYMDs.includes(ymd))
                                     .flatMap(([, schedules]) => schedules)
                                     .map(s => ({ ...JSON.parse(JSON.stringify(s)) }));
-
                                 // 3️⃣ Merge add/update changes
                                 const scheduleMap = new Map<string, any>();
                                 currentWeekSchedules.forEach(s => {
                                     const key = `${s.user_id}-${s.date}-${s.branch_id || ""}`;
                                     scheduleMap.set(key, s);
                                 });
-
                                 userChanges.forEach(s => {
                                     const key = `${s.user_id}-${s.date}-${s.branch_id || ""}`;
                                     if (s._action === "delete") {
@@ -1302,7 +1273,6 @@ export default function EditScheduleScreen(props: any) {
                                         scheduleMap.set(key, s); // add/update
                                     }
                                 });
-
                                 // 4️⃣ Normalize
                                 const normalize = (s: any) => {
                                     const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
@@ -1317,9 +1287,7 @@ export default function EditScheduleScreen(props: any) {
                                         _dedupeKey: `${s.user_id}-${s.date}-${start}-${end}-${s.branch_id || ""}`,
                                     };
                                 };
-
                                 const normalizedList = Array.from(scheduleMap.values()).map(normalize);
-
                                 // 5️⃣ Deduplicate
                                 const seen = new Set<string>();
                                 const deduped = normalizedList.filter(s => {
@@ -1327,19 +1295,15 @@ export default function EditScheduleScreen(props: any) {
                                     seen.add(s._dedupeKey);
                                     return true;
                                 });
-
                                 const schedulesToSave = deduped.map(s => {
                                     const copy = { ...s };
                                     delete copy._dedupeKey;
                                     return copy;
                                 });
-
                                 // 6️⃣ Split add/update
                                 const schedulesToUpdate = schedulesToSave.filter(s => s._id || s.id);
                                 const schedulesToCreate = schedulesToSave.filter(s => !s._id && !s.id);
-
                                 showSuccessToast(lang.schedule_updated || "Schedule updated successfully");
-
                                 // 7️⃣ Always navigate (even for deletes)
                                 navigation.navigate("Footer_A", {
                                     selectedTab: "WorkSchedule",
@@ -1347,7 +1311,6 @@ export default function EditScheduleScreen(props: any) {
                                     langId,
                                     toastMessage: "Schedules saved successfully",
                                 });
-
                             } catch (err) {
                                 console.error("❌ Failed to save schedules:", err);
                                 showErrorToast(lang.failed_to_save || "Failed to save schedules");
@@ -1379,7 +1342,6 @@ const styles = StyleSheet.create({
     group1: { marginBottom: 20 },
     groupTitle: { color: colors.text, fontWeight: fonts.weight.regular, fontSize: fonts.size.m },
     groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular, fontSize: fonts.size.s, marginTop: 6 },
-
     /* modal styles reused from your other screens */
     modalOverlay: { flex: 1, justifyContent: "flex-end", },
     modalOverlayAbsolute: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, },
@@ -1398,7 +1360,6 @@ const styles = StyleSheet.create({
     },
     modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
     modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium, textAlign: "center", marginBottom: 8 },
-
     footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 0, paddingTop: 10, paddingBottom: 30, backgroundColor: colors.secondary },
     each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center", },
     day: { borderColor: colors.primary, borderWidth: 1, borderRadius: 12, backgroundColor: colors.secondary, marginRight: 10, paddingTop: 11, paddingBottom: 11, width: 52, alignItems: "center" },
@@ -1434,7 +1395,7 @@ const styles = StyleSheet.create({
     },
     suggestionText: { color: colors.text, fontSize: fonts.size.m },
     branch: {
-        width: 16, height: 16, marginRight: 4
+        width: 16, height: 16, marginRight: 4, alignSelf: 'center'
     },
     branch_name: {
         fontSize: fonts.size.m,
@@ -1446,5 +1407,5 @@ const styles = StyleSheet.create({
         fontWeight: fonts.weight.regular,
         color: colors.primary,
     },
-    clock: { width: 14, height: 14, marginRight: 4 },
+    clock: { width: 14, height: 14, marginRight: 4, alignSelf: 'center' },
 });

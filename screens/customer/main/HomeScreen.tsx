@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   Image,
   ScrollView,
   RefreshControl,
+  ActivityIndicator,
+  TouchableOpacity, // ✅ Added missing import
+  TextInput // ✅ Added missing import
 } from "react-native";
 import * as Location from "expo-location";
 import Header from "../../../components/Header";
@@ -14,23 +17,44 @@ import { Button1 } from "../../../components/Button";
 import Popup from "../../../components/Popup";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
-import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
+import Toast, {
+  showErrorToast,
+  showSuccessToast,
+  toastConfig,
+} from "../../../components/Toast";
 import CartBox from "../../../components/CartBox";
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
-import moment from 'moment';
-import { getProfile, ProfileUser } from '../../../api/profile';
+import moment from "moment";
+import { getProfile, ProfileUser } from "../../../api/profile";
 import {
   startAttendance,
   endAttendance,
-  getTodaySchedule,
   getBranchDetails,
   getMyAttendanceHistory,
-} from '../../../api/checkin_checkout';
+  getMyAttendanceHistoryEnhanced,
+  isCheckedInToday,
+  hasCompletedShiftToday,
+  hasOngoingCrossDayShift,
+  getLastSchedule,
+  getLastAttendanceRecord,
+  scheduleEndShiftAlarm,
+  cancelScheduledAlarm,
+  scheduleRecurringCheckoutReminder,
+  cancelAllScheduledCheckoutReminders,
+  clearScheduleCache,
+  getTodayScheduleNoCache,
+  // ✅ Import new alarm functions
+  scheduleCustomAlarm,
+  getScheduledNotifications,
+  cancelNotification
+} from "../../../api/checkin_checkout";
+
+//import { getTodaySchedule } from "../../../api/schedules";
 
 // ✅ Define your navigation stack param list
 export type RootStackParamList = {
-  Home: undefined;
+  Home: { userId: string; langId: string };
   C_NotificationScreen: { userId: string; langId: string };
   // Add other screens with params here
 };
@@ -38,7 +62,7 @@ export type RootStackParamList = {
 // ✅ Typed navigation prop for this screen
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'Home'
+  "Home"
 >;
 
 // Props for your component
@@ -48,19 +72,12 @@ interface HomeScreenProps {
   setLangId: (lang: string) => void;
 }
 
-// Optional: WorkHour interface
-interface WorkHour {
-  id: string;
-  user_id: string;
-  check_in: string; // "HH:MM:SS"
-  check_out: string; // "HH:MM:SS" or empty
-  date: string; // YYYY-MM-DD
-  createDate: string;
-  updateDate: string;
-}
-
 // ✅ Main Component
-const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) => {
+const C_Homescreen: React.FC<HomeScreenProps> = ({
+  userId,
+  langId,
+  setLangId,
+}) => {
   // useNavigation with proper typing
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [withinRange, setWithinRange] = useState(false);
@@ -68,10 +85,15 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [showPopup, setShowPopup] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showCheckoutPopup, setShowCheckoutPopup] = useState(false);
+  const [showCheckInLoading, setShowCheckInLoading] = useState(false); // ✅ New state for check-in loading
+  const [showCheckOutLoading, setShowCheckOutLoading] = useState(false); // ✅ New state for check-out loading
+  const [showCheckInSuccessLoading, setShowCheckInSuccessLoading] = useState(false); // ✅ New state for post check-in success loading
+  const [checkoutReminderIds, setCheckoutReminderIds] = useState<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null>(null); // ✅ State to store notification IDs
   const currentLang = langId || "en";
-  const lang = translations[currentLang as keyof typeof translations] || translations['en'];
+  const lang =
+    translations[currentLang as keyof typeof translations] ||
+    translations["en"];
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
-
   // branchInfo will always contain a displayable string in `.address`
   const [branchInfo, setBranchInfo] = useState<{
     name?: string;
@@ -79,17 +101,14 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     coordinates?: { latitude: number; longitude: number } | null;
     raw?: any;
   } | null>(null);
-
-  // derive shop coords from branchInfo (no dummy getBranchById)
+  // derive shop coords from branchInfo
   const SHOP_LAT = branchInfo?.coordinates?.latitude ?? 0;
   const SHOP_LON = branchInfo?.coordinates?.longitude ?? 0;
-
-  const [branchAddress, setBranchAddress] = useState<string | null>(null);
   const todayDate = new Date().toISOString().split("T")[0];
   const [loading, setLoading] = useState(true);
   const [todaySchedule, setTodaySchedule] = useState<any>(null);
+  const [lastSchedule, setLastSchedule] = useState<any>(null);
   const hasSchedule = !!todaySchedule && !!todaySchedule.start_time;
-
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkOutTime, setCheckOutTime] = useState<string | null>(null);
@@ -98,12 +117,20 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
   const [checkedOut, setCheckedOut] = useState<boolean>(false);
   const [canCheckOut, setCanCheckOut] = useState<boolean>(false);
   const offDuty = !checkedIn || checkedOut;
-  const [allSchedules, setAllSchedules] = useState<any[]>([]); // for schedules from API
+  const CHECKIN_RADIUS = 150; // keep radius same (meters)
+  // ✅ New state for check-in time eligibility
+  const [canCheckIn, setCanCheckIn] = useState(false);
+  // Simplified state for attendance status
+  const [attendanceStatus, setAttendanceStatus] = useState<'not_checked_in' | 'checked_in' | 'shift_completed'>('not_checked_in');
+  // ✅ Add ref for location caching
+  const lastLocationCache = useRef<{location: any; timestamp: number} | null>(null);
 
-  // local work hours store (replaces dummy workHours)
-  const [localWorkHours, setLocalWorkHours] = useState<WorkHour[]>([]);
-
-  const CHECKIN_RADIUS = 10000000; // keep radius same (meters)
+  // ✅ Add new state variables for custom alarms
+  const [showAlarmSection, setShowAlarmSection] = useState(false);
+  const [alarmTime, setAlarmTime] = useState("");
+  const [alarmTitle, setAlarmTitle] = useState("Custom Alarm");
+  const [alarmMessage, setAlarmMessage] = useState("This is your custom alarm");
+  const [scheduledAlarms, setScheduledAlarms] = useState<any[]>([]);
 
   const tryReverseGeocode = async (lat: number, lon: number) => {
     try {
@@ -111,8 +138,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
       if (status !== "granted") {
         return `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`;
       }
-
-      const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+      const places = await Location.reverseGeocodeAsync({
+        latitude: lat,
+        longitude: lon,
+      });
       if (places && places.length > 0) {
         const p = places[0];
         const parts = [
@@ -131,7 +160,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
       return null;
     }
   };
-  const extractLatLon = (branchRawOrObj: any): { lat?: number; lon?: number } | null => {
+
+  const extractLatLon = (
+    branchRawOrObj: any
+  ): { lat?: number; lon?: number } | null => {
     if (!branchRawOrObj) return null;
     const candidates = [
       branchRawOrObj.location?.coordinates,
@@ -141,12 +173,25 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
       branchRawOrObj.coordinates,
     ];
     for (const c of candidates) {
-      if (Array.isArray(c) && c.length >= 2 && typeof c[0] === "number" && typeof c[1] === "number") {
-        const a = c[0], b = c[1];
+      if (
+        Array.isArray(c) &&
+        c.length >= 2 &&
+        typeof c[0] === "number" &&
+        typeof c[1] === "number"
+      ) {
+        const a = c[0],
+          b = c[1];
         if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-          const latIfA = a, lonIfA = b;
-          const latIfB = b, lonIfB = a;
-          if (Math.abs(latIfA) <= 90 && Math.abs(lonIfA) <= 180 && Math.abs(latIfB) <= 90 && Math.abs(lonIfB) <= 180) {
+          const latIfA = a,
+            lonIfA = b;
+          const latIfB = b,
+            lonIfB = a;
+          if (
+            Math.abs(latIfA) <= 90 &&
+            Math.abs(lonIfA) <= 180 &&
+            Math.abs(latIfB) <= 90 &&
+            Math.abs(lonIfB) <= 180
+          ) {
             // assume GeoJSON [lon,lat]
             return { lat: b, lon: a };
           }
@@ -159,7 +204,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
 
   useEffect(() => {
     let mounted = true;
-
     const fetchAndResolve = async () => {
       const branchId =
         todaySchedule?.raw?.branch_id?._id ??
@@ -167,26 +211,24 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
         todaySchedule?.branch_id?._id ??
         todaySchedule?.branch?.id ??
         null;
-
       if (!branchId) return;
-
       try {
         const branch = await getBranchDetails(branchId);
         if (!branch) return;
-
-        const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
+        const coords =
+          extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
         let resolvedAddress: string | null = null;
         let finalLat: number | undefined;
         let finalLon: number | undefined;
-
-        if (typeof branch.address === "string" && branch.address.trim().length > 0) {
+        if (
+          typeof branch.address === "string" &&
+          branch.address.trim().length > 0
+        ) {
           resolvedAddress = branch.address;
         }
-
         if (coords) {
           finalLat = coords.lat;
           finalLon = coords.lon;
-
           // ✅ Only call if finalLat and finalLon are numbers
           if (typeof finalLat === "number" && typeof finalLon === "number") {
             const firstTry = await tryReverseGeocode(finalLat, finalLon);
@@ -202,16 +244,24 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               }
             }
           }
+          
+          // ✅ Log branch coordinates
+          console.log("🏢 Branch Coordinates:", {
+            name: branch.name,
+            latitude: finalLat,
+            longitude: finalLon
+          });
         }
-
-        if (!resolvedAddress && typeof finalLat === "number" && typeof finalLon === "number") {
+        if (
+          !resolvedAddress &&
+          typeof finalLat === "number" &&
+          typeof finalLon === "number"
+        ) {
           resolvedAddress = `Lat: ${finalLat.toFixed(6)}, Lon: ${finalLon.toFixed(6)}`;
         }
-
         if (!resolvedAddress) {
           resolvedAddress = branch.name ?? "Address not available";
         }
-
         if (mounted) {
           setBranchInfo({
             name: branch.name ?? branch.id ?? "Branch",
@@ -234,177 +284,513 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
         }
       }
     };
-
     fetchAndResolve();
     return () => {
       mounted = false;
     };
   }, [todaySchedule]);
 
-
+  // ✅ Updated: Compute canCheckIn on schedule change
   useEffect(() => {
-    if (todaySchedule?.raw?.branch_id?._id) {
-      getBranchDetails(todaySchedule.raw.branch_id._id)
-        .then((branch) => {
-          if (!branch) return;
-
-          // Extract coordinates from branch or branch.raw
-          const coords = extractLatLon(branch) ?? extractLatLon(branch.raw) ?? null;
-          let finalLat: number | undefined;
-          let finalLon: number | undefined;
-
-          if (coords) {
-            finalLat = coords.lat;
-            finalLon = coords.lon;
-          }
-
-          setBranchInfo(prev => prev ?? {
-            name: branch.name,
-            address: branch.address ?? undefined,
-            coordinates: (typeof finalLat === "number" && typeof finalLon === "number")
-              ? { latitude: finalLat, longitude: finalLon }
-              : null,
-            raw: branch.raw ?? branch,
-          });
-        })
-        .catch((err) => console.error("❌ Branch info fetch failed:", err));
+    if (!todaySchedule) {
+      setCanCheckIn(false);
+      return;
     }
+    const tzDate =
+      todaySchedule.date?.split("T")[0] ??
+      new Date().toISOString().split("T")[0];
+    const scheduleDateTime = new Date(
+      `${tzDate}T${todaySchedule.start_time}:00`
+    );
+    const earliestCheckInTime = new Date(
+      scheduleDateTime.getTime() - 15 * 60 * 1000
+    );
+    const now = new Date();
+    
+    // ✅ Check if current time is past the scheduled end time
+    const scheduleEndDate = new Date(
+      `${tzDate}T${todaySchedule.end_time}:00`
+    );
+    
+    // Handle case where end time is next day (e.g., start 23:00, end 06:00)
+    const scheduleStartDate = new Date(
+      `${tzDate}T${todaySchedule.start_time}:00`
+    );
+    if (scheduleEndDate < scheduleStartDate) {
+      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+    }
+    
+    // ✅ Disable check-in if current time is past the scheduled end time
+    if (now > scheduleEndDate) {
+      setCanCheckIn(false);
+      return;
+    }
+    
+    setCanCheckIn(now >= earliestCheckInTime);
   }, [todaySchedule]);
 
+  // ✅ New: Live update canCheckIn every minute for button state
+  useEffect(() => {
+    if (!todaySchedule) return;
+    const interval = setInterval(() => {
+      const tzDate =
+        todaySchedule.date?.split("T")[0] ??
+        new Date().toISOString().split("T")[0];
+      const scheduleDateTime = new Date(
+        `${tzDate}T${todaySchedule.start_time}:00`
+      );
+      const earliestCheckInTime = new Date(
+        scheduleDateTime.getTime() - 15 * 60 * 1000
+      );
+      const now = new Date();
+      
+      // ✅ Check if current time is past the scheduled end time
+      const scheduleEndDate = new Date(
+        `${tzDate}T${todaySchedule.end_time}:00`
+      );
+      
+      // Handle case where end time is next day (e.g., start 23:00, end 06:00)
+      const scheduleStartDate = new Date(
+        `${tzDate}T${todaySchedule.start_time}:00`
+      );
+      if (scheduleEndDate < scheduleStartDate) {
+        scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+      }
+      
+      // ✅ Disable check-in if current time is past the scheduled end time
+      if (now > scheduleEndDate) {
+        setCanCheckIn(false);
+        return;
+      }
+      
+      setCanCheckIn(now >= earliestCheckInTime);
+    }, 60000); // every 1 minute
+    return () => clearInterval(interval);
+  }, [todaySchedule]);
 
   const handleCheckInAttempt = () => {
-    if (!todaySchedule) return;
-
-    const tzDate = todaySchedule.date?.split("T")[0] ?? new Date().toISOString().split("T")[0];
-    const scheduleDateTime = new Date(`${tzDate}T${todaySchedule.start_time}:00`);
-    const earliestCheckInTime = new Date(scheduleDateTime.getTime() - 15 * 60 * 1000);
-
+    if (!todaySchedule) return false;
+    
+    const tzDate =
+      todaySchedule.date?.split("T")[0] ??
+      new Date().toISOString().split("T")[0];
+    
+    const scheduleStartDateTime = new Date(
+      `${tzDate}T${todaySchedule.start_time}:00`
+    );
+    
+    const earliestCheckInTime = new Date(
+      scheduleStartDateTime.getTime() - 15 * 60 * 1000
+    );
+    
     const now = new Date();
+    
     if (now < earliestCheckInTime) {
-      showErrorToast(`⚠️ You can only check in 15 minutes before ${todaySchedule.start_time}`);
+      showErrorToast(
+        `You can only check in 15 minutes before ${todaySchedule.start_time}`
+      );
       return false;
     }
+    
     return true;
   };
 
   const loadTodaySchedule = async () => {
     try {
       setLoading(true);
-
-    // Extract branch ID properly from the branch object or string
-    const branchId = typeof currentUser?.branch === 'string' 
-      ? currentUser.branch 
-      :  undefined;
-
-      const resp = await getTodaySchedule({
-        userId,
-        branchId,
-        timezone: "Asia/Colombo",
-      });
-
-      const schedules = resp?.schedules ?? [];
-      const rawToday = resp?.todaySchedule ?? resp ?? null;
-
-      console.log("📌 Today schedule:", rawToday);
-      console.log("📦 Total schedules fetched:", schedules.length);
-
-      if (!rawToday || !("start_time" in rawToday)) {
-        // rawToday is either null or doesn't have schedule info
+      
+      // ✅ Use the dedicated endpoint to get today's schedule for the logged-in user
+      // Use no-cache version to ensure fresh data
+      const rawToday = await getTodayScheduleNoCache();
+      
+      console.log("📦 Raw today schedule response:", rawToday);
+      
+      // ❌ If no today schedule found — stop
+      if (!rawToday || !rawToday.todaySchedule) {
+        console.log("❌ No valid today schedule. Setting null.");
         setTodaySchedule(null);
-        setBranchInfo(null);
-        setAllSchedules(schedules);
+        setLoading(false);
         return;
       }
-
-      // Now TypeScript knows rawToday has schedule properties
-      const raw = "raw" in rawToday ? rawToday.raw : rawToday;
-
-      const start_time = rawToday.start_time ?? raw.start_time ?? raw.start ?? "";
-      const end_time = rawToday.end_time ?? raw.end_time ?? raw.end ?? "";
-
-      let duration = typeof raw.duration === "number" ? raw.duration : 0;
-
-      if (start_time && end_time && !duration) {
+      
+      // ⏱ Start & End times (safe)
+      const start_time = rawToday.todaySchedule.start_time || "";
+      const end_time = rawToday.todaySchedule.end_time || "";
+      const date = rawToday.todaySchedule.date || new Date().toISOString().split("T")[0];
+      
+      // ⏳ Duration calculation
+      let duration = 0;
+      if (start_time && end_time) {
         try {
           const [sh, sm] = String(start_time).split(":");
           const [eh, em] = String(end_time).split(":");
-
           const sD = new Date();
           sD.setHours(Number(sh), Number(sm), 0, 0);
-
           const eD = new Date();
           eD.setHours(Number(eh), Number(em), 0, 0);
-
           if (eD.getTime() < sD.getTime()) eD.setDate(eD.getDate() + 1);
-
           duration = (eD.getTime() - sD.getTime()) / (1000 * 60 * 60);
         } catch (e) {
           console.warn("❌ Failed to compute duration:", e);
         }
       }
-
-      const branchName = rawToday.branchname ?? raw.branch_id?.name ?? raw.branch?.name ?? null;
-      const branchAddress = raw.branch_id?.address ?? raw.branch?.address ?? "";
-
+      
+      // 🏢 Branch info - handle both string and object types for branch_id
+      const branchName = 
+        rawToday.todaySchedule.branch_id && typeof rawToday.todaySchedule.branch_id === 'object' && rawToday.todaySchedule.branch_id !== null
+          ? (rawToday.todaySchedule.branch_id as { _id?: string; name?: string }).name || null
+          : null;
+      const branchAddress = 
+        rawToday.todaySchedule.branch_id && typeof rawToday.todaySchedule.branch_id === 'object' && rawToday.todaySchedule.branch_id !== null
+          ? (rawToday.todaySchedule.branch_id as { _id?: string; name?: string; address?: string }).address || ""
+          : "";
+      
+      // 📦 Final Schedule Object
       const scheduleObj = {
         start_time,
         end_time,
         duration,
-        date: raw.date ?? new Date().toISOString().split("T")[0],
+        date,
         branch: branchName
-          ? { name: branchName, address: branchAddress, rawBranch: raw.branch_id ?? raw.branch ?? null }
+          ? {
+              name: branchName,
+              address: branchAddress,
+              rawBranch: rawToday.todaySchedule.branch_id || null,
+            }
           : null,
-        raw,
+        raw: rawToday.todaySchedule,
       };
-
+      
+      console.log("✅ Processed schedule object:", scheduleObj);
       setTodaySchedule(scheduleObj);
-      setBranchInfo(scheduleObj.branch);
-      setAllSchedules(schedules);
     } catch (err) {
       console.error("❌ Error loading today's schedule:", err);
       setTodaySchedule(null);
-      setBranchInfo(null);
-      setAllSchedules([]);
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchAttendance = async () => {
+    try {
+      // First, check if there's an ongoing cross-day shift
+      const hasOngoingCrossDay = await hasOngoingCrossDayShift();
+      
+      // Simplified logic: just check the attendance status
+      const isCheckedIn = hasOngoingCrossDay || await isCheckedInToday();
+      const isShiftCompleted = await hasCompletedShiftToday();
+      
+      console.log("🔍 hasOngoingCrossDay:", hasOngoingCrossDay);
+      console.log("🔍 isCheckedIn:", isCheckedIn);
+      console.log("🔍 isShiftCompleted:", isShiftCompleted);
+      
+      // Special handling for cross-day shifts
+      // If user has an ongoing cross-day shift, they should be able to check out
+      // but only after the schedule end time
+      if (hasOngoingCrossDay) {
+        setAttendanceStatus('checked_in');
+        setCheckedIn(true);
+        // Will be enabled at schedule end time by the useEffect
+        console.log("✅ Setting checked in for cross-day shift");
+      } else if (isShiftCompleted) {
+        setAttendanceStatus('shift_completed');
+      } else if (isCheckedIn) {
+        setAttendanceStatus('checked_in');
+      } else {
+        setAttendanceStatus('not_checked_in');
+      }
+      
+      // Keep the existing detailed logic for displaying check-in/check-out times
+      // Use enhanced history to include cross-day records
+      const todayRecords = await getMyAttendanceHistoryEnhanced();
+      console.log("📌 Today Records from Helper:", todayRecords.length);
+      console.log("📌 Today Records from Helper records:", todayRecords);
+      
+      if (!todayRecords || todayRecords.length === 0) {
+        // no attendance today
+        setAttendanceToday(null);
+        setCheckInTime(null);
+        setCheckOutTime(null);
+        setDuration("0h 0m");
+        
+        // For cross-day shifts, we might still be checked in from yesterday
+        // So we need to check specifically for that case
+        if (hasOngoingCrossDay || await isCheckedInToday()) {
+          setAttendanceStatus('checked_in');
+          setCheckedIn(true);
+          // Will be enabled at schedule end time by the useEffect
+          console.log("✅ Setting cross-day shift checkout availability");
+          
+          // Set last schedule for cross-day shifts
+          const lastScheduleData = await getLastSchedule();
+          setLastSchedule(lastScheduleData);
+        }
+        return;
+      }
+      
+      // pick latest record by In
+      todayRecords.sort(
+        (a, b) => moment(b.In).valueOf() - moment(a.In).valueOf()
+      );
+      const rec = todayRecords[0];
+      setAttendanceToday(rec);
+      const hasIn = !!rec?.In;
+      const hasOut = !!rec?.Out;
+      // times (HH:mm)
+      const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
+      const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
+      setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
+      setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
+      // duration: if out exists use out - in, otherwise now - in
+      const now = moment();
+      if (inMoment) {
+        const endMoment = outMoment || now;
+        const diff = moment.duration(endMoment.diff(inMoment));
+        const hrs = Math.floor(diff.asHours());
+        const mins = diff.minutes();
+        setDuration(`${hrs}h ${mins}m`);
+      } else {
+        setDuration("0h 0m");
+      }
+      // derive checked states from actual data
+      setCheckedIn(hasIn && !hasOut);
+      setCheckedOut(hasOut);
+      
+      // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
+      // regardless of whether we have today's schedule
+      if (hasOngoingCrossDay || (hasIn && !hasOut)) {
+        // If we have today's schedule and check-in time, enable checkout at schedule end time
+        if (todaySchedule?.end_time && inMoment) {
+          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+          
+          // Enable checkout starting from schedule end time
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          setCanCheckOut(shouldEnableCheckout);
+        } else {
+          // If no today's schedule (e.g., cross-day shift opened the next day), 
+          // don't enable checkout until we can determine the schedule end time
+          setCanCheckOut(false);
+          
+          // Set last schedule for cross-day shifts
+          const lastScheduleData = await getLastSchedule();
+          setLastSchedule(lastScheduleData);
+        }
+        console.log("✅ Enabling checkout for ongoing shift");
+      } else {
+        // 🔥 canCheckOut logic: use shift end time (primary, ignore duration for now)
+        // Only apply time-based logic if we have a complete shift (both check-in and check-out)
+        let allowedToCheckOut = false;
+        if (hasIn && !hasOut && inMoment) {
+          // First try to use today's schedule if available
+          if (todaySchedule?.end_time) {
+            const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+            let shiftEndMoment = inMoment
+              .clone()
+              .set({ hour: eh, minute: em, second: 0 });
+            if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
+            allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
+          } 
+          // If no today's schedule (e.g., cross-day shift opened the next day), 
+          // don't enable checkout until we can determine the schedule end time
+          else {
+            allowedToCheckOut = false;
+          }
+        }
+        setCanCheckOut(allowedToCheckOut);
+      }
+    } catch (err) {
+      console.error("❌ fetchAttendance error:", err);
+      setAttendanceToday(null);
+      setCheckInTime(null);
+      setCheckOutTime(null);
+      setDuration("0h 0m");
+      setCheckedIn(false);
+      setCheckedOut(false);
+      setCanCheckOut(false);
+      setAttendanceStatus('not_checked_in');
+    }
+  };
 
   const refreshLocation = async () => {
     try {
+      // ✅ Check if we have a recent location cached
+      const now = Date.now();
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data");
+        const cachedLoc = lastLocationCache.current.location;
+        
+        // ✅ Log user's current location coordinates
+        console.log("📍 User Location Coordinates:", {
+          latitude: cachedLoc.coords.latitude,
+          longitude: cachedLoc.coords.longitude
+        });
+        
+        const distance = getDistance(
+          cachedLoc.coords.latitude,
+          cachedLoc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+        setDistance(distance);
+        setWithinRange(distance <= CHECKIN_RADIUS);
+        console.log("📏 Cached distance updated:", distance.toFixed(2), "meters");
+        return;
+      }
+
+      // ✅ Request high accuracy location with timeout to prevent hanging
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         console.log("❌ Location permission denied");
         return;
       }
-
-      const loc = await Location.getCurrentPositionAsync({});
+      
+      // ✅ Use faster location acquisition
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced // Reduced accuracy for faster response
+      });
+      
+      // ✅ Log user's current location coordinates
+      console.log("📍 User Location Coordinates:", {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude
+      });
+      
+      // ✅ Cache the location
+      lastLocationCache.current = {
+        location: loc,
+        timestamp: now
+      };
+      
       const distance = getDistance(
         loc.coords.latitude,
         loc.coords.longitude,
         SHOP_LAT,
         SHOP_LON
       );
-
       setDistance(distance);
       setWithinRange(distance <= CHECKIN_RADIUS);
-
       console.log("📏 Distance updated:", distance.toFixed(2), "meters");
     } catch (err) {
       console.log("❌ Error refreshing location:", err);
+      
+      // ✅ Fallback: try again with lower accuracy if high accuracy fails
+      try {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low // Low accuracy as fallback
+        });
+        
+        // ✅ Log user's current location coordinates
+        console.log("📍 User Location Coordinates (Fallback):", {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude
+        });
+        
+        const now = Date.now();
+        // ✅ Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
+        
+        const distance = getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+        setDistance(distance);
+        setWithinRange(distance <= CHECKIN_RADIUS);
+        console.log("📏 Distance updated (fallback):", distance.toFixed(2), "meters");
+      } catch (fallbackErr) {
+        console.log("❌ Fallback location also failed:", fallbackErr);
+      }
     }
   };
 
   const reloadAll = async () => {
-    await Promise.all([loadTodaySchedule(), refreshLocation()]);
+    // ✅ Smart reload: Only fetch data if needed
+    try {
+      // Always refresh location
+      await refreshLocation();
+      
+      // ✅ Always fetch schedule (needed for UI display)
+      await loadTodaySchedule();
+      
+      // Always fetch attendance to properly handle cross-day shifts
+      await fetchAttendance();
+    } catch (error) {
+      console.error("❌ Error in smart reload:", error);
+    }
   };
 
+  // ✅ Overall Auto Refresh: Reduced interval to 5 minutes to decrease API load
+  // This also ensures cross-day shifts are properly detected when user opens app next day
   useEffect(() => {
-    reloadAll();
+    // Ensure we detect cross-day shifts on initial load
+    const initializeApp = async () => {
+      // First check for cross-day shifts
+      const hasOngoingCrossDay = await hasOngoingCrossDayShift();
+      if (hasOngoingCrossDay) {
+        // If there's an ongoing cross-day shift, make sure we show the checkout button
+        // at the appropriate time (schedule end time)
+        setAttendanceStatus('checked_in');
+        setCheckedIn(true);
+        
+        // For cross-day shifts, we want to show the checkout button immediately
+        // but only enable it after the schedule end time
+        setCanCheckOut(false); // Will be enabled at schedule end time
+        
+        // Set last schedule for cross-day shifts
+        const lastScheduleData = await getLastSchedule();
+        setLastSchedule(lastScheduleData);
+        
+        console.log("✅ Detected ongoing cross-day shift on initial load");
+      } else {
+        // Recheck with last schedule and attendance data if no ongoing cross-day shift
+        const lastSchedule = await getLastSchedule();
+        const lastAttendance = await getLastAttendanceRecord();
+        
+        // Set last schedule
+        setLastSchedule(lastSchedule);
+        
+        // If we have last schedule and attendance data, and the user is checked in but not checked out
+        if (lastSchedule && lastAttendance && lastAttendance.In && !lastAttendance.Out) {
+          // Check if the schedule end time has passed
+          const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
+          const [eh, em] = lastSchedule.end_time.split(":").map(Number);
+          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+          
+          // Enable checkout if schedule end time has passed
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          if (shouldEnableCheckout) {
+            setAttendanceStatus('checked_in');
+            setCheckedIn(true);
+            setCanCheckOut(true);
+            console.log("✅ Detected completed schedule with pending checkout");
+          } else {
+            // If schedule end time hasn't passed yet, still show that user is checked in
+            // but don't enable checkout until schedule end time
+            setAttendanceStatus('checked_in');
+            setCheckedIn(true);
+            setCanCheckOut(false);
+            console.log("✅ Detected ongoing schedule with pending checkout");
+          }
+        }
+      }
+      
+      // Then do the regular reload
+      reloadAll();
+    };
+    
+    initializeApp();
 
-    const interval = setInterval(loadTodaySchedule, 1000 * 60 * 5);
-
+    const interval = setInterval(reloadAll, 1000 * 60 * 5); // Every 5 minutes for overall refresh
     return () => clearInterval(interval);
   }, [userId, currentUser?.branch]);
 
@@ -420,424 +806,108 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     fetchProfile();
   }, []);
 
+  // ✅ Clear schedule cache on component mount for debugging
+  useEffect(() => {
+    clearScheduleCache();
+  }, []);
+
   useEffect(() => {
     console.log("📌 todaySchedule updated:", todaySchedule);
   }, [todaySchedule]);
 
   useEffect(() => {
-    if (!checkInTime || checkOutTime) return;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const startTime = parseTimeStringToDate(checkInTime);
-      const diffMs = now.getTime() - startTime.getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      setDuration(`${diffHours}h ${diffMinutes}m`);
-    }, 60000); // update every minute
-
-    return () => clearInterval(interval);
-  }, [checkInTime, checkOutTime]);
-
-  useEffect(() => {
-    if (!checkedIn || !checkInTime || !todaySchedule) return;
-
-    const [h, m, s] = checkInTime
-      .replace(/[^0-9:]/g, "")
-      .split(":")
-      .map(Number);
-
-    const checkInDate = new Date();
-    checkInDate.setHours(h, m, s || 0, 0);
-    // ⏰ Duration in milliseconds + 1 minute buffer
-    const durationMs = todaySchedule.duration * 60 * 60 * 1000 + 60 * 1000;
-    const allowedCheckoutTime = new Date(checkInDate.getTime() + durationMs);
-
-    const timer = setInterval(() => {
-      const now = new Date();
-      setCanCheckOut(now >= allowedCheckoutTime);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [checkedIn, checkInTime, todaySchedule]);
-
+    // If we have a checkout time, don't allow checkout
+    if (checkOutTime) {
+      setCanCheckOut(false);
+      return;
+    }
+    
+    // For cross-day shifts, we need to allow checkout if user has checked in but not checked out
+    // regardless of whether we have today's schedule
+    if (checkedIn && !checkOutTime) {
+      // First, try to use today's schedule if available
+      if (todaySchedule?.end_time && checkInTime) {
+        const inMoment = moment(checkInTime, "HH:mm");
+        const [eh, em] = todaySchedule.end_time.split(":").map(Number);
+        let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+        if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+        
+        // Enable checkout starting from schedule end time
+        const now = moment();
+        const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+        setCanCheckOut(shouldEnableCheckout);
+        
+        // Update periodically to ensure accurate timing
+        const timer = setInterval(() => {
+          const now = moment();
+          const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+          setCanCheckOut(shouldEnableCheckout);
+        }, 1000);
+        return () => clearInterval(timer);
+      } else {
+        // If no today's schedule (e.g., cross-day shift opened the next day), 
+        // recheck with last schedule data to determine when checkout should be enabled
+        const recheckCheckoutAvailability = async () => {
+          const lastSchedule = await getLastSchedule();
+          const lastAttendance = await getLastAttendanceRecord();
+          
+          // If we have last schedule and attendance data, use that to determine checkout time
+          if (lastSchedule && lastAttendance && lastAttendance.In && !lastAttendance.Out) {
+            const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
+            const [eh, em] = lastSchedule.end_time.split(":").map(Number);
+            let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+            if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
+            
+            // Enable checkout starting from schedule end time
+            const now = moment();
+            const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+            setCanCheckOut(shouldEnableCheckout);
+            
+            // Update periodically to ensure accurate timing
+            const timer = setInterval(() => {
+              const now = moment();
+              const shouldEnableCheckout = now.isSameOrAfter(scheduleEnd);
+              setCanCheckOut(shouldEnableCheckout);
+            }, 1000);
+            return () => clearInterval(timer);
+          } else {
+            // Fallback: If we can't determine schedule end time, don't enable checkout
+            // This prevents accidental early checkout
+            setCanCheckOut(false);
+          }
+        };
+        
+        recheckCheckoutAvailability();
+      }
+    }
+  }, [checkedIn, checkInTime, todaySchedule, checkOutTime]);
 
   const formatTime12h = (input: Date | string) => {
     let date: Date;
-
     if (typeof input === "string") {
       // If already contains AM/PM, just return it
-      if (input.toUpperCase().includes("AM") || input.toUpperCase().includes("PM")) {
+      if (
+        input.toUpperCase().includes("AM") ||
+        input.toUpperCase().includes("PM")
+      ) {
         return input;
       }
-
       // If string like "HH:mm" or "HH:mm:ss"
       const [hourStr, minuteStr] = input.split(":");
       const hour = parseInt(hourStr, 10);
       const minute = parseInt(minuteStr, 10);
-
       date = new Date();
       date.setHours(hour, minute, 0, 0);
     } else {
       date = input;
     }
-
     let hours = date.getHours();
     const minutes = date.getMinutes();
     const ampm = hours >= 12 ? "PM" : "AM";
     hours = hours % 12 || 12; // convert 0 to 12
     const minuteStr = minutes.toString().padStart(2, "0");
-
     return `${hours}:${minuteStr} ${ampm}`;
   };
-
-
-  const parseTimeStringToDate = (timeStr?: string | Date) => {
-    const d = new Date();
-    if (!timeStr) return d;
-
-    if (timeStr instanceof Date) return timeStr;
-
-    const trimmed = String(timeStr).trim();
-    const lower = trimmed.toLowerCase();
-
-    if (lower.includes("am") || lower.includes("pm")) {
-      const parts = trimmed.split(" ");
-      const timePart = parts[0];
-      const modifier = parts[1];
-      const [hStr, mStr, sStr] = timePart.split(":");
-      let hours = parseInt(hStr || "0", 10);
-      const minutes = parseInt(mStr || "0", 10);
-      const seconds = parseInt(sStr || "0", 10);
-      if (modifier?.toLowerCase() === "pm" && hours < 12) hours += 12;
-      if (modifier?.toLowerCase() === "am" && hours === 12) hours = 0;
-      d.setHours(hours, minutes, seconds || 0, 0);
-      return d;
-    }
-
-    const [h = 0, m = 0, s = 0] = trimmed.split(":").map(Number);
-    d.setHours(h || 0, m || 0, s || 0, 0);
-    return d;
-  };
-
-
-  // add / update local work hours (replaces dummy global workHours)
-  const addWorkHour = (uid: string, checkInTimeDate: Date): WorkHour => {
-    const newId = `WH${(localWorkHours.length + 1).toString().padStart(3, "0")}`;
-    const formattedTime = checkInTimeDate.toTimeString().split(" ")[0];
-    const formattedDate = checkInTimeDate.toISOString().split("T")[0];
-
-    const newRecord: WorkHour = {
-      id: newId,
-      user_id: uid,
-      check_in: formattedTime,
-      check_out: "",
-      date: formattedDate,
-      createDate: checkInTimeDate.toISOString(),
-      updateDate: checkInTimeDate.toISOString(),
-    };
-
-    setLocalWorkHours(prev => [...prev, newRecord]);
-    return newRecord;
-  };
-
-  const updateWorkHour = (uid: string, checkOutTimeDate: Date): WorkHour | null => {
-    // Find last record for user without check_out
-    const idx = [...localWorkHours].reverse().findIndex(w => w.user_id === uid && !w.check_out);
-    if (idx === -1) {
-      console.warn("⚠️ No active work record found for check-out.");
-      return null;
-    }
-    // reverse index -> actual index
-    const actualIndex = localWorkHours.length - 1 - idx;
-    const updated = { ...localWorkHours[actualIndex] };
-    const formattedTime = checkOutTimeDate.toTimeString().split(" ")[0];
-    updated.check_out = formattedTime;
-    updated.updateDate = checkOutTimeDate.toISOString();
-
-    setLocalWorkHours(prev => {
-      const next = [...prev];
-      next[actualIndex] = updated;
-      return next;
-    });
-    return updated;
-  };
-
-  useEffect(() => {
-    const fetchBranchAddress = async () => {
-      const branchId = todaySchedule?.branch?.rawBranch?._id;
-      if (!branchId) return;
-
-      try {
-        const branch = await getBranchDetails(branchId);
-
-        if (!branch || !("location" in branch) || !branch.location?.coordinates) return;
-
-        const [longitude, latitude] = branch.location.coordinates;
-
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-
-        const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (result.length > 0) {
-          const place = result[0];
-          const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}${place.region ? ", " + place.region : ""}${place.postalCode ? ", " + place.postalCode : ""}${place.country ? ", " + place.country : ""}`;
-
-          setBranchInfo({
-            name: branch.name,
-            address: formatted,
-            coordinates: { latitude, longitude },
-          });
-          console.log("✅ Branch address:", formatted);
-        }
-      } catch (err) {
-        console.log("❌ Error fetching branch address:", err);
-      }
-    };
-
-    fetchBranchAddress();
-  }, [todaySchedule]);
-
-
-  // shop address from branch coordinates
-  const [shopAddress, setShopAddress] = useState<string | null>(null);
-  const displayBranchAddress = () => {
-    if (!branchInfo) return "No branch address";
-    if (typeof branchInfo.address === "string") return branchInfo.address;
-    if (branchInfo.coordinates) {
-      return `Lat: ${branchInfo.coordinates.latitude.toFixed(6)}, Lon: ${branchInfo.coordinates.longitude.toFixed(6)}`;
-    }
-    return "Address not available";
-  };
-
-  const today = new Date().toLocaleDateString(langId === "de" ? "de-DE" : "en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-  const [todayRecord, setTodayRecord] = useState<WorkHour | null>(null);
-
-  // formatTime helper
-  const formatTime = (time: string | Date | null) => {
-    if (!time) return "--:--";
-    if (time instanceof Date) return formatTime12h(time);
-    const s = String(time);
-    if (s.toLowerCase().includes("am") || s.toLowerCase().includes("pm")) return s;
-    return formatTime12h(parseTimeStringToDate(s));
-  };
-
-  const [now, setNow] = useState<Date>(new Date());
-  useEffect(() => {
-    if (!checkedIn) return;
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, [checkedIn]);
-
-  const handleCheckIn = async () => {
-    handleCheckInAttempt(); // shows toast if too early
-
-    if (!todaySchedule) {
-      showErrorToast(lang.noScheduleToday);
-      return;
-    }
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showErrorToast("Location permission denied.");
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const payload = {
-        latitude: loc.coords.latitude.toString(),
-        longitude: loc.coords.longitude.toString(),
-        branchId: todaySchedule.branch?._id,
-      };
-      await startAttendance(payload);
-      const nowDate = new Date();
-      const inTime = formatTime12h(nowDate); // convert to 12-hour format
-      setCheckInTime(inTime);
-
-      setCheckedIn(true);
-      setCanCheckOut(true);
-      setCheckInTime(inTime);
-      setCheckOutTime(null);
-      setDuration("--");
-
-      const saved = addWorkHour(userId, nowDate);
-      setTodayRecord(saved);
-
-      showSuccessToast(lang.checkInSuccess);
-    } catch (error: any) {
-      showErrorToast(error.response?.data?.message || "Check-in failed.");
-    }
-  };
-
-  const handleCheckOut = async () => {
-    if (!checkInTime) {
-      showErrorToast(lang.notCheckedIn);
-      return;
-    }
-
-    if (!todaySchedule) {
-      showErrorToast(lang.genericNoSchedule);
-      return;
-    }
-
-    try {
-      const now = new Date();
-
-      // Parse schedule start & end
-      const [startHour, startMin] = (todaySchedule.start_time || "00:00").split(":").map(Number);
-      const scheduleStart = new Date(now);
-      scheduleStart.setHours(startHour, startMin, 0, 0);
-
-      if (now < scheduleStart) {
-        showErrorToast(`You can only check out after ${formatTime12h(todaySchedule.start_time)}`);
-        return;
-      }
-
-      // Request location permission
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showErrorToast("Location permission denied.");
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const payload = {
-        latitude: loc.coords.latitude.toString(),
-        longitude: loc.coords.longitude.toString(),
-        branchId: todaySchedule.branch?._id,
-      };
-
-      await endAttendance(payload);
-
-      // Format check-out time
-      const checkOutStr = formatTime12h(now);
-      console.log("✅ Check-out Time:", checkOutStr); // <-- log checkout time
-      setCheckOutTime(checkOutStr);
-
-      // Calculate duration
-      const checkInDateObj = parseTimeStringToDate(checkInTime);
-      let diffMs = now.getTime() - checkInDateObj.getTime();
-      if (diffMs < 0) diffMs = 0;
-
-      const diffMinutes = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMinutes / 60);
-      const remainingMinutes = diffMinutes % 60;
-      const durationStr = `${diffHours > 0 ? diffHours + "h " : ""}${remainingMinutes}m`;
-
-      setDuration(durationStr);
-      setCheckedOut(true);
-      setCanCheckOut(false);
-      setShowPopup(false);
-
-      // Update local attendance record
-      const updated = updateWorkHour(userId, now);
-      if (updated) setTodayRecord(updated);
-
-      showSuccessToast(lang.checkOutSuccess);
-    } catch (error: any) {
-      console.error("Check-out error:", error);
-      showErrorToast(error.response?.data?.message || "Check-out failed.");
-    }
-  };
-
-
-
-
-  useEffect(() => {
-    const getShopAddress = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          console.log("❌ Location permission denied for reverse geocode");
-          return;
-        }
-
-        if (!SHOP_LAT || !SHOP_LON) return;
-
-        const result = await Location.reverseGeocodeAsync({
-          latitude: SHOP_LAT,
-          longitude: SHOP_LON,
-        });
-
-        if (result.length > 0) {
-          const place = result[0];
-          const formatted = `${place.name ? place.name + ", " : ""}${place.street ? place.street + ", " : ""}${place.city || ""}`;
-          setShopAddress(formatted);
-          console.log("✅ Shop address:", formatted);
-        }
-      } catch (error) {
-        console.log("❌ Error getting shop address:", error);
-      }
-    };
-
-    getShopAddress();
-  }, [SHOP_LAT, SHOP_LON]);
-
-  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3;
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) ** 2 +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    const checkDistance = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-
-        const loc = await Location.getCurrentPositionAsync({});
-        const distance = getDistance(
-          loc.coords.latitude,
-          loc.coords.longitude,
-          SHOP_LAT,
-          SHOP_LON
-        );
-
-        setDistance(distance);
-        console.log("📏 Current distance to shop:", distance, "meters");
-
-        if (distance <= CHECKIN_RADIUS) {
-          setWithinRange(true);
-
-          // user is inside → stop auto-check after a small cooldown
-          clearTimeout(timer);
-          timer = setTimeout(() => {
-            console.log("⏹️ Auto distance check paused because user is inside");
-          }, 2000);
-
-        } else {
-          setWithinRange(false);
-
-          // user is outside → keep checking every 10 seconds
-          timer = setTimeout(checkDistance, 10000);
-        }
-
-      } catch (error) {
-        console.log("❌ Distance check failed:", error);
-      }
-    };
-
-    checkDistance();
-
-    return () => clearTimeout(timer);
-  }, [SHOP_LAT, SHOP_LON]);
-
 
   const parse12hToDate = (timeStr?: string | null): Date | null => {
     if (!timeStr) return null;
@@ -845,46 +915,46 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     const regex = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?$/;
     const m = s.match(regex);
     if (!m) return null;
-
     let hours = parseInt(m[1], 10);
     const minutes = parseInt(m[2], 10);
     const seconds = m[3] ? parseInt(m[3], 10) : 0;
     const modifier = m[4];
-
     if (modifier) {
       const mod = modifier.toLowerCase();
       if (mod === "pm" && hours < 12) hours += 12;
       if (mod === "am" && hours === 12) hours = 0;
     }
-
     const d = new Date();
-    d.setHours(isNaN(hours) ? 0 : hours, isNaN(minutes) ? 0 : minutes, isNaN(seconds) ? 0 : seconds, 0);
+    d.setHours(
+      isNaN(hours) ? 0 : hours,
+      isNaN(minutes) ? 0 : minutes,
+      isNaN(seconds) ? 0 : seconds,
+      0
+    );
     return d;
   };
 
-  const calculateDuration = (checkInTime: string | null, checkOutTime: string | null) => {
+  const calculateDuration = (
+    checkInTime: string | null,
+    checkOutTime: string | null
+  ) => {
     if (!checkInTime) return "0h 0m";
     const start = parse12hToDate(checkInTime);
     if (!start) return "0h 0m";
-
     let end: Date | null = null;
     if (checkOutTime) {
       end = parse12hToDate(checkOutTime) || new Date();
     } else {
       end = new Date();
     }
-
     if (end.getTime() < start.getTime()) {
       end.setDate(end.getDate() + 1);
     }
-
     const diffMs = end.getTime() - start.getTime();
     if (!isFinite(diffMs) || diffMs < 0) return "0h 0m";
-
     const diffMinutes = Math.floor(diffMs / 60000);
     const hrs = Math.floor(diffMinutes / 60);
     const mins = diffMinutes % 60;
-
     return `${hrs > 0 ? hrs + "h " : "0h "}${mins}m`;
   };
 
@@ -896,166 +966,521 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
     return () => clearInterval(interval);
   }, [checkedIn, checkInTime, checkOutTime]);
 
-  // load today's record from localWorkHours
-  useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    const record = [...localWorkHours].reverse().find(
-      (w) => w.user_id === userId && w.date === today
+  // formatTime helper
+  const formatTime = (time: string | Date | null) => {
+    if (!time) return "--:--";
+    if (time instanceof Date) return formatTime12h(time);
+    const s = String(time);
+    if (s.toLowerCase().includes("am") || s.toLowerCase().includes("pm"))
+      return s;
+    return formatTime12h(parse12hToDate(s) ?? new Date());
+  };
+
+  const getBranchIdFromSchedule = () => {
+    return (
+      todaySchedule?.raw?.branch_id?._id ??
+      todaySchedule?.branch?.rawBranch?._id ??
+      null
     );
-    if (record) {
-      setTodayRecord(record);
-      setCheckedIn(!!record.check_in && !record.check_out);
-      setCheckInTime(record.check_in || null);
-      setCheckOutTime(record.check_out || null);
+  };
 
-      if (record.check_in && record.check_out) {
-        setDuration(calculateDuration(record.check_in, record.check_out));
-      }
-    } else {
-      setTodayRecord(null);
-      setCheckedIn(false);
-      setCheckInTime(null);
-      setCheckOutTime(null);
-      setDuration("--");
+  // ✅ Add manual schedule fetch function for debugging
+  const fetchScheduleManually = async () => {
+    console.log("🔍 Manually fetching schedule...");
+    setLoading(true);
+    await loadTodaySchedule();
+    setLoading(false);
+  };
+
+  const handleCheckIn = async () => {
+    if (!todaySchedule) {
+      setShowCheckInLoading(false);
+      showErrorToast(lang.noScheduleToday);
+      return;
     }
-  }, [userId, localWorkHours]);
+    
+    // ✅ Check if current time is past the scheduled end time (optimized)
+    try {
+      // Create schedule end datetime with proper date (simplified)
+      const [endHours, endMinutes] = todaySchedule.end_time.split(":").map(Number);
+      const [startHours, startMinutes] = todaySchedule.start_time.split(":").map(Number);
+      
+      // Create date objects for today with the schedule times
+      const scheduleEndDateTime = new Date();
+      scheduleEndDateTime.setHours(endHours, endMinutes, 0, 0);
+      
+      const scheduleStartDateTime = new Date();
+      scheduleStartDateTime.setHours(startHours, startMinutes, 0, 0);
+      
+      const now = new Date();
+      
+      // Handle case where end time is next day (e.g., start 23:00, end 06:00)
+      if (scheduleEndDateTime < scheduleStartDateTime) {
+        scheduleEndDateTime.setDate(scheduleEndDateTime.getDate() + 1);
+      }
+      
+      // Prevent check-in if current time is past the scheduled end time
+      if (now > scheduleEndDateTime) {
+        setShowCheckInLoading(false);
+        showErrorToast(
+          `Cannot check in after scheduled end time ${todaySchedule.end_time}`
+        );
+        return;
+      }
+    } catch (dateError) {
+      console.error("Error parsing schedule dates:", dateError);
+      // If there's an error in date parsing, we'll skip the validation
+      // but log the error for debugging
+    }
+    
+    try {
+      // ✅ Use cached location if available (check first before requesting permissions)
+      const now = Date.now();
+      let loc;
+      
+      // Check if we have a recent location cached
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data for check-in");
+        loc = lastLocationCache.current.location;
+      } else {
+        // Only request permissions if we don't have a recent cached location
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setShowCheckInLoading(false);
+          showErrorToast("Location permission denied.");
+          return;
+        }
+        
+        // Get fresh location
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        
+        // Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
+      }
+      
+      // ✅ Log both branch and user location coordinates at check-in
+      console.log("📋 Check-in Location Data:", {
+        userLocation: {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude
+        },
+        branchLocation: {
+          name: branchInfo?.name,
+          latitude: branchInfo?.coordinates?.latitude,
+          longitude: branchInfo?.coordinates?.longitude
+        },
+        distanceToBranch: getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          branchInfo?.coordinates?.latitude || 0,
+          branchInfo?.coordinates?.longitude || 0
+        ).toFixed(2) + " meters"
+      });
+      
+      // Show loading immediately after getting location
+      setShowCheckInLoading(true);
+      
+      const payload = {
+        latitude: loc.coords.latitude.toString(),
+        longitude: loc.coords.longitude.toString(),
+        // Removed branchId since backend doesn't use it
+      };
+      
+      const response = await startAttendance(payload);
+      
+      if (response && response.success) {
+        setShowCheckInLoading(false);
+        showSuccessToast(lang.checkInSuccess);
+        
+        // ✅ Use the success response from API instead of fetching attendance again
+        if (response.attendance) {
+          // Update the local state with the attendance data from the response
+          // Parse the datetime string and format it to HH:mm
+          const inMoment = moment(response.attendance.In, "YYYY-MM-DD HH:mm:ss");
+          setCheckInTime(inMoment.format("HH:mm"));
+          setCheckedIn(true);
+          setAttendanceStatus('checked_in');
+          setDuration("0h 0m"); // Reset duration
+        
+          // ✅ Schedule alarm notification 2 minutes before shift end
+          if (todaySchedule) {
+            const notificationId = await scheduleEndShiftAlarm(todaySchedule, response.attendance.In);
+            if (notificationId) {
+              console.log(`🔔 Alarm scheduled with ID: ${notificationId}`);
+              // Store the notification ID in local state or storage for potential cancellation
+              // For now, we'll just log it
+            }
+          }
+        
+          // ✅ Schedule recurring checkout reminders at shift end time and every 10 minutes after
+          if (todaySchedule) {
+            const reminderIds = await scheduleRecurringCheckoutReminder(todaySchedule, response.attendance.In);
+            if (reminderIds) {
+              console.log(`🔔 Recurring checkout reminders scheduled with IDs:`, reminderIds);
+              // Store the notification IDs for potential cancellation on checkout
+              setCheckoutReminderIds(reminderIds);
+            }
+          }
+        }
+        
+        // ✅ Reduce delay for success loading page to improve UX
+        setShowCheckInSuccessLoading(true);
+        
+        // ✅ Shorter delay to show the success loading page before refreshing
+        setTimeout(() => {
+          setShowCheckInSuccessLoading(false);
+        }, 50); // Reduced from 100ms to 50ms
+      } else {
+        setShowCheckInLoading(false);
+        showErrorToast(lang.Check_in_failed);
+      }
+    } catch (error: any) {
+      setShowCheckInLoading(false); // ✅ Hide loading overlay on error
+      setShowCheckInSuccessLoading(false); // ✅ Hide success loading on error
+      console.error("Check-in error:", error);
+      
+      // ✅ Handle specific 403 error with user-friendly message
+      if (error.response?.status === 403) {
+        // Check for specific error messages
+        const errorMessage = error.response?.data?.message;
+        if (errorMessage && errorMessage.includes("already have an active session")) {
+          showErrorToast("You already have an active session. Please checkout first.");
+        } else {
+          showErrorToast("Access denied. Please contact your administrator.");
+        }
+      } 
+      // ✅ Handle other specific errors
+      else if (error.response?.status === 400) {
+        showErrorToast("Invalid checkin request. Please try again.");
+      } 
+      else if (error.response?.status === 500) {
+        showErrorToast("Server error. Please try again later.");
+      }
+      // ✅ Fallback to generic error message
+      else {
+        showErrorToast(error.response?.data?.message || lang.Check_in_failed);
+      }
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!checkInTime) {
+      setShowCheckOutLoading(false);
+      showErrorToast(lang.notCheckedIn);
+      return;
+    }
+    if (!todaySchedule) {
+      setShowCheckOutLoading(false);
+      showErrorToast(lang.genericNoSchedule);
+      return;
+    }
+    try {
+      // ✅ Use cached location if available (check first before requesting permissions)
+      const now = Date.now();
+      let loc;
+      
+      // Check if we have a recent location cached
+      if (lastLocationCache.current && 
+          lastLocationCache.current.timestamp > now - 30000) { // 30 seconds cache
+        console.log("✅ Using cached location data for check-out");
+        loc = lastLocationCache.current.location;
+      } else {
+        // Only request permissions if we don't have a recent cached location
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setShowCheckOutLoading(false);
+          showErrorToast("Location permission denied.");
+          return;
+        }
+        
+        // Get fresh location
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        
+        // Cache the location
+        lastLocationCache.current = {
+          location: loc,
+          timestamp: now
+        };
+      }
+      
+      // Show loading immediately after getting location
+      setShowCheckOutLoading(true);
+      
+      const payload = {
+        latitude: loc.coords.latitude.toString(),
+        longitude: loc.coords.longitude.toString(),
+        // Removed branchId since backend doesn't use it
+      };
+      
+      const response = await endAttendance(payload);
+      
+      if (response && response.success) {
+        setShowCheckOutLoading(false);
+        showSuccessToast(lang.checkOutSuccess);
+        
+        // ✅ Use the success response from API instead of fetching attendance again
+        if (response.attendance) {
+          // Update the local state with the attendance data from the response
+          // Parse the datetime strings and format them to HH:mm
+          const inMoment = moment(response.attendance.In, "YYYY-MM-DD HH:mm:ss");
+          const outMoment = moment(response.attendance.Out, "YYYY-MM-DD HH:mm:ss");
+          setCheckInTime(inMoment.format("HH:mm"));
+          setCheckOutTime(outMoment.format("HH:mm"));
+          setCheckedOut(true);
+          setCheckedIn(false);
+          setAttendanceStatus('shift_completed');
+          
+          // Calculate duration based on check-in and check-out times
+          const diff = moment.duration(outMoment.diff(inMoment));
+          const hrs = Math.floor(diff.asHours());
+          const mins = diff.minutes();
+          setDuration(`${hrs}h ${mins}m`);
+          
+          // ✅ Cancel any scheduled alarm notification
+          // Note: In a real implementation, you would store the notification ID
+          // and use it to cancel the specific notification
+          // For now, we'll just log that we should cancel
+          console.log("🔕 Cancelling scheduled alarm notification");
+          
+          // ✅ Cancel any scheduled recurring checkout reminders
+          if (checkoutReminderIds) {
+            await cancelAllScheduledCheckoutReminders(checkoutReminderIds);
+            setCheckoutReminderIds(null);
+            console.log("🔕 Cancelling scheduled recurring checkout reminders");
+          }
+        }
+      } else {
+        setShowCheckOutLoading(false);
+        showErrorToast(lang.Check_out_failed);
+      }
+    } catch (error: any) {
+      setShowCheckOutLoading(false); // ✅ Hide loading overlay on error
+      console.error("Check-out error:", error);
+      
+      // ✅ Handle specific 403 error with user-friendly message
+      if (error.response?.status === 403) {
+        // Check for specific error messages
+        const errorMessage = error.response?.data?.message;
+        if (errorMessage && errorMessage.includes("already have an active session")) {
+          showErrorToast("You already have an active session. Please try again.");
+        } else {
+          showErrorToast("Access denied. Please contact your administrator.");
+        }
+      } 
+      // ✅ Handle other specific errors
+      else if (error.response?.status === 400) {
+        showErrorToast("Invalid checkout request. Please try again.");
+      } 
+      else if (error.response?.status === 500) {
+        showErrorToast("Server error. Please try again later.");
+      }
+      // ✅ Fallback to generic error message
+      else {
+        showErrorToast(error.response?.data?.message || lang.Check_out_failed);
+      }
+    }
+  };
+
+  const getDistance = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ) => {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(Δφ / 2) ** 2 +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const todayStr = new Date().toISOString().split("T")[0];
-      if (todayRecord && todayRecord.date !== todayStr) {
-        setTodayRecord(null);
-        setCheckedIn(false);
-        setCheckInTime(null);
-        setCheckOutTime(null);
-        setDuration("--");
+    let timer: NodeJS.Timeout;
+    const checkDistance = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        const distance = getDistance(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          SHOP_LAT,
+          SHOP_LON
+        );
+        setDistance(distance);
+        console.log("📏 Current distance to shop:", distance, "meters");
+        if (distance <= CHECKIN_RADIUS) {
+          setWithinRange(true);
+          // user is inside → stop auto-check after a small cooldown
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            console.log("⏹️ Auto distance check paused because user is inside");
+          }, 2000);
+        } else {
+          setWithinRange(false);
+          // user is outside → keep checking every 10 seconds
+          timer = setTimeout(checkDistance, 10000);
+        }
+      } catch (error) {
+        console.log("❌ Distance check failed:", error);
       }
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [todayRecord]);
+    };
+    if (SHOP_LAT !== 0 || SHOP_LON !== 0) {
+      checkDistance();
+    }
+    return () => clearTimeout(timer);
+  }, [SHOP_LAT, SHOP_LON]);
 
   const formatTo12Hour = (time?: string): string => {
     if (!time) return "";
     const [hour, minute] = time.split(":");
     let h = parseInt(hour, 10);
     const ampm = h >= 12 ? "PM" : "AM";
-    h = h % 12; // convert 0 to 12
+    h = h % 12 || 12;
     return `${h}:${minute} ${ampm}`;
   };
 
-
-
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchAttendance = async () => {
-      try {
-        const todayRecords = await getMyAttendanceHistory(); // Already filtered today
-        console.log("📌 Today Records from Helper:", todayRecords.length);
-        console.log("📌 Today Records from Helper records:", todayRecords);
-        if (!mounted) return;
-
-        if (!todayRecords || todayRecords.length === 0) {
-          // no attendance today
-          setAttendanceToday(null);
-          setCheckInTime(null);
-          setCheckOutTime(null);
-          setDuration("0h 0m");
-          setCheckedIn(false);
-          setCheckedOut(false);
-          setCanCheckOut(false);
-          return;
-        }
-
-        // pick latest record by In
-        todayRecords.sort((a, b) => moment(b.In).valueOf() - moment(a.In).valueOf());
-        const rec = todayRecords[0];
-
-        setAttendanceToday(rec);
-
-        const hasIn = !!rec?.In;
-        const hasOut = !!rec?.Out;
-
-        // times (HH:mm)
-        const inMoment = hasIn ? moment(rec.In, "YYYY-MM-DD HH:mm:ss") : null;
-        const outMoment = hasOut ? moment(rec.Out, "YYYY-MM-DD HH:mm:ss") : null;
-
-        setCheckInTime(inMoment ? inMoment.format("HH:mm") : null);
-        setCheckOutTime(outMoment ? outMoment.format("HH:mm") : null);
-
-        // duration: if out exists use out - in, otherwise now - in
-        const now = moment();
-        if (inMoment) {
-          const endMoment = outMoment || now;
-          const diff = moment.duration(endMoment.diff(inMoment));
-          const hrs = Math.floor(diff.asHours());
-          const mins = diff.minutes();
-          setDuration(`${hrs}h ${mins}m`);
-        } else {
-          setDuration("0h 0m");
-        }
-
-        // derive checked states from actual data
-        setCheckedIn(hasIn && !hasOut);
-        setCheckedOut(hasOut);
-
-        // 🔥 Shift / canCheckOut logic: allow checkout only if user has checked in and not checked out, and schedule allows
-        let shiftEndMoment: moment.Moment | null = null;
-        if (todaySchedule?.end_time && inMoment) {
-          const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-          shiftEndMoment = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
-          if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
-        }
-
-        // If there's an In and no Out, allow check out when now >= in + scheduled duration OR when now >= shiftEndMoment (fallback)
-        let allowedToCheckOut = false;
-        if (hasIn && !hasOut && inMoment) {
-          if (typeof todaySchedule?.duration === "number" && todaySchedule.duration > 0) {
-            const allowed = inMoment.clone().add(todaySchedule.duration, "hours");
-            allowedToCheckOut = now.isSameOrAfter(allowed);
-          }
-          if (!allowedToCheckOut && shiftEndMoment) {
-            allowedToCheckOut = now.isSameOrAfter(shiftEndMoment);
-          }
-        }
-
-        setCanCheckOut(allowedToCheckOut);
-      } catch (err) {
-        console.error("❌ fetchAttendance error:", err);
-
-        if (!mounted) return;
-
-        setAttendanceToday(null);
-        setCheckInTime(null);
-        setCheckOutTime(null);
-        setDuration("0h 0m");
-        setCheckedIn(false);
-        setCheckedOut(false);
-        setCanCheckOut(false);
-      }
-    };
-
-    fetchAttendance();
-
-    const interval = setInterval(fetchAttendance, 1000 * 60 * 2);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [userId, currentUser?.branch, todaySchedule]);
-
-
-
+  // ✅ Update the onRefresh function to include loading scheduled alarms
   const onRefresh = async () => {
     setRefreshing(true);
-    await reloadAll();
+    // ✅ Force a full reload when user manually refreshes
+    // ✅ Clear cache to ensure fresh data
+    clearScheduleCache();
+    await Promise.all([
+      loadTodaySchedule(), 
+      refreshLocation(), 
+      fetchAttendance(),
+      loadScheduledAlarms() // ✅ Load scheduled alarms on refresh
+    ]);
     setRefreshing(false);
   };
 
+  // ✅ Function to load scheduled alarms
+  const loadScheduledAlarms = async () => {
+    try {
+      const alarms = await getScheduledNotifications();
+      setScheduledAlarms(alarms);
+    } catch (error) {
+      console.error("Error loading scheduled alarms:", error);
+    }
+  };
+
+  // ✅ Function to set a custom alarm
+  const setCustomAlarm = async () => {
+    if (!alarmTime) {
+      showErrorToast("Please select an alarm time");
+      return;
+    }
+
+    // Validate time format (HH:MM)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(alarmTime)) {
+      showErrorToast("Please enter a valid time in HH:MM format");
+      return;
+    }
+
+    try {
+      // Parse the alarm time
+      const [hours, minutes] = alarmTime.split(":").map(Number);
+      const alarmDate = new Date();
+      alarmDate.setHours(hours, minutes, 0, 0);
+
+      // If the alarm time is in the past, set it for tomorrow
+      const now = new Date();
+      if (alarmDate <= now) {
+        alarmDate.setDate(alarmDate.getDate() + 1);
+      }
+
+      const notificationId = await scheduleCustomAlarm(
+        alarmTitle || "Custom Alarm",
+        alarmMessage || "This is your custom alarm",
+        alarmDate
+      );
+
+      if (notificationId) {
+        showSuccessToast("Custom alarm set successfully");
+        // Reload scheduled alarms
+        loadScheduledAlarms();
+        // Clear input fields
+        setAlarmTime("");
+      } else {
+        showErrorToast("Failed to set custom alarm");
+      }
+    } catch (error) {
+      console.error("Error setting custom alarm:", error);
+      showErrorToast("Failed to set custom alarm");
+    }
+  };
+
+  // ✅ Function to cancel an alarm
+  const cancelAlarm = async (notificationId: string) => {
+    try {
+      await cancelNotification(notificationId);
+      showSuccessToast("Alarm cancelled successfully");
+      // Reload scheduled alarms
+      loadScheduledAlarms();
+    } catch (error) {
+      console.error("Error cancelling alarm:", error);
+      showErrorToast("Failed to cancel alarm");
+    }
+  };
+
+  // ✅ Load scheduled alarms when component mounts and set up periodic refresh
+  useEffect(() => {
+    // Load scheduled alarms immediately
+    loadScheduledAlarms();
+    
+    // Set up interval to refresh scheduled alarms every minute
+    const interval = setInterval(() => {
+      loadScheduledAlarms();
+    }, 60000); // Every minute
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // ---------- JSX (return) ----------
+  const displayBranchAddress = () => {
+    if (!branchInfo) return "No branch address";
+    if (typeof branchInfo.address === "string") return branchInfo.address;
+    if (branchInfo.coordinates) {
+      return `Lat: ${branchInfo.coordinates.latitude.toFixed(6)}, Lon: ${branchInfo.coordinates.longitude.toFixed(6)}`;
+    }
+    return "Address not available";
+  };
+
+  const today = new Date().toLocaleDateString(
+    langId === "de" ? "de-DE" : "en-US",
+    {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+
   return (
     <>
+      {/* ✅ Hidden debug button - uncomment for testing */}
+      {/* <Button1
+        text="Debug: Fetch Schedule"
+        onPress={fetchScheduleManually}
+        containerStyle={{ margin: 10, backgroundColor: 'red' }}
+      /> */}
       <Header
         backgroundColor={colors.secondary}
         position="relative"
@@ -1066,7 +1491,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
           width: 24,
           height: 24,
           onPress: () => {
-            navigation.navigate("C_NotificationScreen", { userId, langId: currentLang });
+            navigation.navigate("C_NotificationScreen", {
+              userId,
+              langId: currentLang,
+            });
           },
         }}
       />
@@ -1082,14 +1510,9 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
         }
       >
         <Text style={styles.date}>{today}</Text>
-        <Text
-          style={styles.welcome}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
+        <Text style={styles.welcome} numberOfLines={1} ellipsizeMode="tail">
           {lang.welcome} {loading ? "..." : currentUser?.fullname || "Guest"}
         </Text>
-
         {/* Heading */}
         <View style={styles.headingContainer}>
           <Image
@@ -1098,18 +1521,16 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
           />
           <Text style={styles.headingText}>{lang.todaySchedule}</Text>
         </View>
-
         <CartBox
           backgroundColor="#F1F2F4"
           borderRadius={12}
           width={"100%"}
-          alignItems='flex-start'
+          alignItems="flex-start"
           paddingTop={10}
           paddingBottom={10}
           paddingLeft={10}
         >
           <View style={styles.addressContainer}>
-
             {/* 🟢 TOP LINE → Schedule today? or no schedule */}
             {todaySchedule && branchInfo ? (
               <View style={styles.addressLine}>
@@ -1117,23 +1538,18 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                   source={require("../../../assets/icons/branch.png")}
                   style={styles.addressIcon1}
                 />
-                <Text style={styles.addressText}>
-                  {branchInfo.name}
-                </Text>
+                <Text style={styles.addressText}>{branchInfo.name}</Text>
               </View>
             ) : (
               <View style={styles.addressLine}>
                 <Text
-                  style={[
-                    styles.addressText,
-                    { color: colors.button_text },
-                  ]}
+                  style={[styles.addressText, { color: colors.button_text }]}
                 >
-                  {lang.noScheduleToday1 ?? "No assignment or shift scheduled for today."}
+                  {lang.noScheduleToday ??
+                    "No assignment or shift scheduled for today."}
                 </Text>
               </View>
             )}
-
             {/* 🟡 ADDRESS (only if available) */}
             {(branchInfo?.address || todaySchedule?.branch?.address) && (
               <View style={styles.addressLine}>
@@ -1144,7 +1560,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                 <Text
                   style={[
                     styles.addressText,
-                    { fontSize: 14, color: "#555", width: "70%" }
+                    { fontSize: 14, color: "#555", width: "70%" },
                   ]}
                   numberOfLines={1}
                   ellipsizeMode="tail"
@@ -1153,7 +1569,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                 </Text>
               </View>
             )}
-
             {/* 🔵 TIME ROW (only if schedule exists) */}
             {(todaySchedule?.start_time || todaySchedule?.end_time) && (
               <View style={styles.addressLine}>
@@ -1161,17 +1576,54 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                   source={require("../../../assets/icons/clock.png")}
                   style={styles.addressIcon}
                 />
-                <Text style={[styles.addressText, { fontSize: 14, color: "#333" }]}>
-                  {formatTime(todaySchedule.start_time)} - {formatTime(todaySchedule.end_time)}
+                <Text
+                  style={[styles.addressText, { fontSize: 14, color: "#333" }]}
+                >
+                  {formatTime(todaySchedule.start_time)} -{" "}
+                  {formatTime(todaySchedule.end_time)}
                 </Text>
               </View>
             )}
-
+            
+            {/* 🟣 SCHEDULE DETAILS FOR CROSS-DAY SHIFTS */}
+            {/* {checkedIn && !checkOutTime && todaySchedule && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Scheduled shift: {todaySchedule.date} {formatTime(todaySchedule.start_time)} - {formatTime(todaySchedule.end_time)}
+                </Text>
+              </View>
+            )} */}
+            
+            {/* 🟤 LAST SCHEDULE DETAILS FOR CROSS-DAY SHIFTS (when no today schedule) */}
+            {checkedIn && !checkOutTime && !todaySchedule && lastSchedule && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Scheduled shift: {lastSchedule.date} {formatTime(lastSchedule.start_time)} - {formatTime(lastSchedule.end_time)}
+                </Text>
+              </View>
+            )}
+            
+            {/* 🟠 SCHEDULE END TIME DISPLAY */}
+            {/* {checkedIn && !checkOutTime && (
+              <View style={[styles.addressLine, { marginTop: 5 }]}>                
+                <Text
+                  style={[styles.addressText, { fontSize: 12, color: "#666", fontStyle: 'italic' }]}
+                >
+                  Shift ends at: {' '}
+                  {todaySchedule?.end_time ? formatTime(todaySchedule.end_time) : 
+                   (lastSchedule?.end_time ? formatTime(lastSchedule.end_time) : '')}
+                </Text>
+              </View>
+            )} */}
           </View>
         </CartBox>
-
-
-        {!(attendanceToday && attendanceToday.In) ? (
+        
+        {/* Simplified logic for showing appropriate buttons */}
+        {attendanceStatus === 'not_checked_in' ? (
           <>
             <View style={styles.middle}>
               <Image
@@ -1180,84 +1632,83 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               />
               <Text style={styles.subText}>{lang.readyToStartShift}</Text>
             </View>
-
             <Button1
               text={lang.checkIn}
               onPress={() => {
+                // First check if there's an ongoing cross-day shift
+                // If so, prevent check-in and show checkout button instead
+                if (checkedIn) {
+                  showErrorToast("You are already checked in. Please check out first.");
+                  return;
+                }
+                
                 if (!todaySchedule || !branchInfo) {
                   showErrorToast(lang.noScheduleToday);
                   return;
                 }
-
                 if (!withinRange) {
                   showErrorToast(lang.tooFarFromShop);
                   return;
                 }
-
                 if (handleCheckInAttempt()) {
                   setShowPopup(true);
-                } else {
-                  showErrorToast(
-                    `You can only check in 15 minutes before ${todaySchedule?.start_time }`
-                  );
                 }
               }}
               backgroundColor={
-                todaySchedule && branchInfo && withinRange
+                todaySchedule && branchInfo && withinRange && canCheckIn && !checkedIn
                   ? colors.primary
                   : colors.button_background
               }
               textStyle={{
                 color:
-                  todaySchedule && branchInfo && withinRange
+                  todaySchedule && branchInfo && withinRange && canCheckIn && !checkedIn
                     ? colors.button_background
-                    : colors.subtext2
+                    : colors.subtext2,
               }}
               containerStyle={styles.checkinBtn}
             />
           </>
-
-        ) : (
+        ) : attendanceStatus === 'checked_in' ? (
           <View style={{ width: "100%", alignItems: "flex-start" }}>
             <View style={styles.statusRow}>
-              <Text style={{ fontWeight: "600", flex: 1, fontSize: fonts.size.l, alignItems: "flex-start", marginRight: 20 }}>
+              <Text
+                style={{
+                  fontWeight: "600",
+                  flex: 1,
+                  fontSize: fonts.size.l,
+                  marginRight: 20,
+                }}
+              >
                 {lang.currentStatus}
               </Text>
               <View
                 style={{
-                  backgroundColor: colors.primary,   // same bg always
+                  backgroundColor: colors.primary, // same bg always
                   paddingHorizontal: 12,
                   paddingVertical: 4,
                   borderRadius: 20,
                 }}
               >
-                <Text style={{ color: colors.secondary, fontSize: fonts.size.s, fontWeight: fonts.weight.medium }}>
-                  {offDuty ? lang.offDuty : lang.onDuty}
+                <Text
+                  style={{
+                    color: colors.secondary,
+                    fontSize: fonts.size.s,
+                    fontWeight: fonts.weight.medium,
+                  }}
+                >
+                  {lang.onDuty}
                 </Text>
               </View>
-
             </View>
-
             <View style={styles.infoBox}>
               {checkInTime && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>{lang.checkedInAt}</Text>
-                  <Text style={styles.infoValue}>{formatTo12Hour(checkInTime)}</Text>
-                </View>
-              )}
-
-              {checkOutTime && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>{lang.checkedOutAt}</Text>
                   <Text style={styles.infoValue}>
-                    {/* check if it already has AM/PM */}
-                    {checkOutTime.toUpperCase().includes("AM") || checkOutTime.toUpperCase().includes("PM")
-                      ? checkOutTime
-                      : formatTo12Hour(checkOutTime)}
+                    {formatTo12Hour(checkInTime)}
                   </Text>
                 </View>
               )}
-
               {checkInTime && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>{lang.duration}</Text>
@@ -1265,34 +1716,41 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                 </View>
               )}
             </View>
-
-            {!checkOutTime && (
+            {/* Show checkout button only if canCheckOut */}
+            {canCheckOut && (
               <Button1
                 text={lang.checkOut}
                 backgroundColor={colors.primary}
-                textStyle={{ color: colors.secondary }}
+                textStyle={{
+                  color: colors.secondary,
+                }}
                 containerStyle={styles.checkinBtn}
                 onPress={() => {
-                  if (canCheckOut) {
-                    setShowCheckoutPopup(true);
-                  } else {
-                    showErrorToast(lang.cannotCheckOutYet);
-                  }
+                  // Show loading immediately when checkout button is pressed
+                  setShowCheckOutLoading(true);
+                  // Delay the actual checkout process slightly to allow UI to update
+                  setTimeout(() => {
+                    handleCheckOut();
+                  }, 100);
                 }}
               />
             )}
-
+            {!canCheckOut && checkedIn && !checkOutTime && (
+              <Text style={{ color: colors.subtext2, fontSize: fonts.size.s, marginTop: 5 }}>
+                Checkout available after scheduled end time{' '}
+                {todaySchedule?.end_time ? formatTime(todaySchedule.end_time) : 
+                 (lastSchedule?.end_time ? formatTime(lastSchedule.end_time) : '')}
+              </Text>
+            )}
             <Popup
               visible={showCheckoutPopup}
               onClose={() => setShowCheckoutPopup(false)}
               popupBorderColor={colors.primary}
               dismissOnOverlayPress={false}
               title={lang.confirmCheckOut}
-              titleStyle={{ color: colors.primary }} // ✅ Correct
+              titleStyle={{ color: colors.primary }}
             >
-              <Text style={styles.popupText}>
-                {lang.checkoutMessage}
-              </Text>
+              <Text style={styles.popupText}>{lang.checkoutMessage}</Text>
               <View style={styles.popupBtnContainer}>
                 <Button1
                   text={lang.yes}
@@ -1303,7 +1761,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
                     setShowCheckoutPopup(false);
                   }}
                 />
-
                 <Button1
                   text={lang.no}
                   backgroundColor={colors.error_text}
@@ -1313,8 +1770,74 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               </View>
             </Popup>
           </View>
+        ) : (
+          // Shift completed - show completed status
+          <View style={{ width: "100%", alignItems: "flex-start" }}>
+            <View style={styles.statusRow}>
+              <Text
+                style={{
+                  fontWeight: "600",
+                  flex: 1,
+                  fontSize: fonts.size.l,
+                  marginRight: 20,
+                }}
+              >
+                {lang.currentStatus}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                  borderRadius: 20,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.secondary,
+                    fontSize: fonts.size.s,
+                    fontWeight: fonts.weight.medium,
+                  }}
+                >
+                  {lang.offDuty}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.infoBox}>
+              {checkInTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.checkedInAt}</Text>
+                  <Text style={styles.infoValue}>
+                    {formatTo12Hour(checkInTime)}
+                  </Text>
+                </View>
+              )}
+              {checkOutTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.checkedOutAt}</Text>
+                  <Text style={styles.infoValue}>
+                    {checkOutTime.toUpperCase().includes("AM") ||
+                    checkOutTime.toUpperCase().includes("PM")
+                      ? checkOutTime
+                      : formatTo12Hour(checkOutTime)}
+                  </Text>
+                </View>
+              )}
+              {checkInTime && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>{lang.duration}</Text>
+                  <Text style={styles.durationValue}>{duration}</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ width: "100%", alignItems: "center", marginTop: 20 }}>
+              <Text style={{ color: colors.subtext2, fontSize: fonts.size.m }}>
+                You have already completed your shift for today.
+              </Text>
+            </View>
+          </View>
         )}
-
+        
         <Popup
           visible={showPopup}
           onClose={() => setShowPopup(false)}
@@ -1324,7 +1847,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
           titleStyle={{ color: colors.primary }}
         >
           <Text style={styles.popupText}>
-            {lang.checkinMessage} <Text style={{ color: colors.primary }}>{lang.yes}</Text>.
+            {lang.checkinMessage}{" "}
+            <Text style={{ color: colors.primary }}>{lang.yes}</Text>.
           </Text>
           <View style={styles.popupBtnContainer}>
             <Button1
@@ -1332,8 +1856,13 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
               backgroundColor={colors.primary}
               width="45%"
               onPress={() => {
-                handleCheckIn();
                 setShowPopup(false);
+                // Show popup loading page immediately after clicking Yes
+                setShowCheckInLoading(true);
+                // Delay the actual check-in process slightly to allow UI to update
+                setTimeout(() => {
+                  handleCheckIn();
+                }, 100);
               }}
             />
             <Button1
@@ -1344,7 +1873,47 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({ userId, langId, setLangId }) 
             />
           </View>
         </Popup>
+        
+        {/* ✅ Popup Loading Page - New implementation */}
+        <Popup
+          visible={showCheckInLoading}
+          onClose={() => setShowCheckInLoading(false)}
+          dismissOnOverlayPress={false}
+          title={lang.processingCheckIn}
+          titleStyle={{ color: colors.primary, textAlign: 'center' }}
+        >
+          <View style={styles.popupLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.popupLoadingText}>{lang.processingCheckIn}</Text>
+          </View>
+        </Popup>
+        
+        {/* ✅ Checkout Loading Page - New implementation */}
+        <Popup
+          visible={showCheckOutLoading}
+          onClose={() => setShowCheckOutLoading(false)}
+          dismissOnOverlayPress={false}
+          title={lang.checkOut}
+          titleStyle={{ color: colors.primary, textAlign: 'center' }}
+        >
+          <View style={styles.popupLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.popupLoadingText}>{lang.checkOut}</Text>
+          </View>
+        </Popup>
       </ScrollView>
+      
+      {/* ✅ Check-in Success Loading Page */}
+      {showCheckInSuccessLoading && (
+        <View style={styles.successLoadingPage}>
+          <View style={styles.successLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.successLoadingText}>{lang.checkInSuccess}</Text>
+            <Text style={styles.successLoadingSubtext}>{lang.redirecting}</Text>
+          </View>
+        </View>
+      )}
+      
       <Toast config={toastConfig} />
     </>
   );
@@ -1369,16 +1938,13 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.xxl,
     fontWeight: fonts.weight.bold,
     marginBottom: 50,
-    textAlign: 'center',
-
+    textAlign: "center",
   },
-
   headingContainer: {
     flexDirection: "row",
     marginBottom: 8, // space between heading and CartBox
-    alignSelf: 'flex-start'
+    alignSelf: "flex-start",
   },
-
   headingIcon: {
     width: 20,
     height: 20,
@@ -1389,15 +1955,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: colors.primary,
     marginBottom: 8, // space between heading and CartBox
-
   },
-
   addressContainer: {
     flexDirection: "column",
     alignItems: "flex-start",
     justifyContent: "center",
     gap: 4, // small gap between lines
-
   },
   addressLine: {
     flexDirection: "row",
@@ -1419,13 +1982,12 @@ const styles = StyleSheet.create({
   addressText: {
     fontSize: fonts.size.m,
     color: colors.text,
-    fontWeight: fonts.weight.regular ,
+    fontWeight: fonts.weight.regular,
   },
-
   middle: {
     alignItems: "center",
     marginBottom: 20,
-    marginTop: 50
+    marginTop: 50,
   },
   icon: {
     width: 50,
@@ -1441,32 +2003,27 @@ const styles = StyleSheet.create({
     width: "100%",
     borderRadius: 12,
   },
-
   statusRow: {
     width: "100%",
-    alignSelf: 'flex-start',
-    alignItems: 'flex-start',
-    borderColor: "#000",
+    alignSelf: "flex-start",
+    alignItems: "flex-start",
     borderRadius: 10,
-    padding: 12,        // adds space inside border
-    marginTop: 20,
+    marginTop: 30,
     backgroundColor: "#fff",
-    flexDirection: 'row',
+    flexDirection: "row",
+    paddingBottom: 16,
   },
   statusText: {
     color: "#fff",
     fontSize: 12,
     fontWeight: "600",
-
   },
-
   infoBox: {
     width: "100%",
     padding: 15,
     borderRadius: 12,
     backgroundColor: "#f9f9f9",
     marginBottom: 20,
-
   },
   infoRow: {
     flexDirection: "row",
@@ -1479,15 +2036,14 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.semibold ,
+    fontWeight: fonts.weight.semibold,
     color: colors.text,
   },
   durationValue: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.semibold ,
+    fontWeight: fonts.weight.semibold,
     color: colors.primary,
   },
-
   popupText: {
     textAlign: "center",
     fontSize: fonts.size.s,
@@ -1498,5 +2054,48 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 20,
     marginTop: 10,
+  },
+  popupLoadingContainer: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  popupLoadingText: {
+    fontSize: fonts.size.m,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  
+  // ✅ New styles for check-in success loading page
+  successLoadingPage: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10000,
+  },
+  successLoadingContainer: {
+    backgroundColor: colors.secondary,
+    borderRadius: 10,
+    padding: 30,
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    width: '80%',
+  },
+  successLoadingText: {
+    marginTop: 15,
+    fontSize: fonts.size.l,
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  successLoadingSubtext: {
+    marginTop: 10,
+    fontSize: fonts.size.m,
+    color: colors.subtext2,
+    textAlign: 'center',
   },
 });
