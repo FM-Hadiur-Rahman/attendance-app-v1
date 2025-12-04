@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   BackHandler,
@@ -9,89 +9,27 @@ import {
   useWindowDimensions,
   Platform,
 } from 'react-native';
-import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import HomeScreen from '../screens/customer/main/HomeScreen';
+import NotificationScreen from '../screens/customer/main/NotificationScreen';
 import ProfileScreen from '../screens/customer/main/ProfileScreen';
 import WorkHistoryScreen from '../screens/customer/main/WorkHistoryScreen';
 import colors from '../styles/Colors';
 import ScheduleScreen from '../screens/customer/main/ScheduleScreen';
-import Toast from 'react-native-toast-message';
-import { showWarningToast, toastConfig } from './Toast';
-import axiosInstance from '../api/axiosInstance';
-import { clearAllAuthData } from '../api/auth/authToken';
 
 const Footer_C = () => {
+  // const [selectedTab, setSelectedTab] = useState<string>('Home');
   const route = useRoute<any>();
   const [selectedTab, setSelectedTab] = useState<string>(route.params?.selectedTab ?? 'Home');
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
-  const navigation = useNavigation<any>();
-
-  const tabHistoryRef = useRef<string[]>([selectedTab]);
-  const ignoreHistoryPushRef = useRef(false);
-  const selectedTabRef = useRef(selectedTab);
-  useEffect(() => { selectedTabRef.current = selectedTab; }, [selectedTab]);
-
-  //if Token missing navigate to Login
-  useEffect(() => {
-    let handled = false; // prevent multiple concurrent redirects
-    if (!axiosInstance || !axiosInstance.interceptors) {
-      console.warn('axiosInstance unavailable — interceptor not installed.');
-      return;
-    }
-
-    const id = axiosInstance.interceptors.response.use(
-      (resp: any) => resp,
-      async (error: any) => {
-        try {
-          const status = error?.response?.status;
-          const data = error?.response?.data;
-          const message = (error?.message || data?.message || JSON.stringify(data || '') || '').toString();
-
-          const isAuthError =
-            status === 401 ||
-            /token invalid/i.test(message) ||
-            /token expired/i.test(message) ||
-            /invalid or expired/i.test(message) ||
-            (/jwt/i.test(message) && /expired|invalid/i.test(message));
-
-          if (isAuthError && !handled) {
-            handled = true;
-            console.log('Auth interceptor: token invalid/expired detected:', { status, message });
-            try {
-              await clearAllAuthData();
-            } catch (e) {
-              console.warn('Error clearing auth data', e);
-            }
-            // show toast then reset to LoginScreen with langId if available
-            showWarningToast('Session expired. Please login again.');
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'LoginScreen' as never, params: { langId: (route?.params?.langId ?? 'en') } as never }],
-            });
-          }
-        } catch (e) {
-          console.warn('Auth interceptor handler error', e);
-        }
-        // rethrow so original caller can still handle if needed
-        return Promise.reject(error);
-      }
-    );
-    return () => {
-      try {
-        axiosInstance.interceptors.response.eject(id);
-      } catch (e) {
-        console.warn('Failed to eject axios interceptor', e);
-      }
-    };
-  }, []);
-
-  const lastBackPress = useRef(0);
+  
 
   const userId = route.params?.userId;
   const langId = route.params?.langId ?? 'en';
 
-  const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
+const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
+//const lang = translations[currentLangId];
 
   // Now tabConfig is inside Footer and uses lang dynamically
   const tabConfig = [
@@ -124,55 +62,28 @@ const Footer_C = () => {
   const ActiveScreen = tabConfig.find(tab => tab.key === selectedTab)?.component;
 
   useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'android') return;
-
-      const onBackPress = () => {
-        const history = tabHistoryRef.current;
-
-        if (history.length > 1) {
-          // go to previous tab
-          history.pop();
-          const prev = history[history.length - 1] ?? 'Home';
-          ignoreHistoryPushRef.current = true;
-          setSelectedTab(prev);
+      useCallback(() => {
+        if (Platform.OS !== 'android') return; // BackHandler is Android-only
+  
+        const onBackPress = () => {
           return true;
-        }
-
-        // already on Home tab
-        if (selectedTabRef.current === 'Home') {
-          const now = Date.now();
-          if (now - lastBackPress.current < 2000) {
-            BackHandler.exitApp(); // exit app directly
-            return true;
-          } else {
-            lastBackPress.current = now;
-            showWarningToast('Press back again to exit');
-            return true;
-          }
-        }
-        // any other tab → go to Home
-        tabHistoryRef.current = ['Home'];
-        ignoreHistoryPushRef.current = true;
-        setSelectedTab('Home');
-        return true;
-      };
-
-      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => subscription.remove();
-    }, [])
-  );
+        };
+  
+        const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+        return () => subscription.remove();
+      }, [])
+    );
 
   return (
     <View style={styles.safeArea}>
       <View style={styles.content}>
         {ActiveScreen ? (
-          <ActiveScreen
-            userId={userId}
-            langId={currentLangId}
-            setLangId={setCurrentLangId}
-          />
-        ) : null}
+        <ActiveScreen
+          userId={userId}
+          langId={currentLangId}              
+          setLangId={setCurrentLangId}      
+        />
+      ) : null}
       </View>
 
       <View
@@ -189,17 +100,9 @@ const Footer_C = () => {
               key={index}
               style={styles.tabItem}
               onPress={() => {
-                if (tab.key === selectedTabRef.current) return;
-                if (ignoreHistoryPushRef.current) {
-                  ignoreHistoryPushRef.current = false;
-                  tabHistoryRef.current = [tab.key];
-                } else {
-                  tabHistoryRef.current.push(tab.key);
-                }
                 console.log('Footer -> tab press:', tab.key, { userId, langId });
                 setSelectedTab(tab.key);
               }}
-
               activeOpacity={0.7}
             >
               <View style={{ width: 28, height: 28, justifyContent: 'center', alignItems: 'center' }}>
@@ -213,7 +116,6 @@ const Footer_C = () => {
           );
         })}
       </View>
-      <Toast config={toastConfig} />
     </View>
   );
 };
@@ -232,17 +134,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     backgroundColor: colors.secondary,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
+    borderTopColor:colors.border,
+    borderTopWidth:1,
     overflow: 'hidden',
   },
   tabBarMobile: {
-    height: 60,
-    paddingTop: 12,
+    height: 60,          
+    paddingTop: 12,     
     paddingBottom: 0,
   },
   tabBarTablet: {
-    height: 80,
+    height: 80,         
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 6 : 8,
   },

@@ -36,12 +36,15 @@ const normalizeBranchIdValue = (v: any): string | undefined => {
   return undefined;
 };
 
-const calcDuration = (checkIn: Date, checkOut?: Date) => {
-  if (!checkIn) return { h: 0, m: 0, text: "00h 00m" };
+const calcDuration = (checkIn?: string, checkOut?: string) => {
+  if (!checkIn || !checkOut) return { h: 0, m: 0, text: "00h 00m" };
+  const [h1, m1, s1 = 0] = checkIn.split(":").map((v) => Number(v) || 0);
+  const [h2, m2, s2 = 0] = checkOut.split(":").map((v) => Number(v) || 0);
 
-  const now = checkOut || new Date(); // Use current time if no checkOut
-  let diffMinutes = (now.getTime() - checkIn.getTime()) / 60000;
-  if (diffMinutes < 0) diffMinutes = 0; // No negative durations
+  const start = new Date(2000, 0, 1, h1, m1, s1);
+  let end = new Date(2000, 0, 1, h2, m2, s2);
+  let diffMinutes = (end.getTime() - start.getTime()) / 60000;
+  if (diffMinutes < 0) diffMinutes += 24 * 60;
 
   const h = Math.floor(diffMinutes / 60);
   const m = Math.floor(diffMinutes % 60);
@@ -120,7 +123,7 @@ const groupSchedulesByWeek = (entries: any[]) => {
 /* ---------- main screen ---------- */
 const screenWidth = Dimensions.get("window").width;
 
-const WorkHistoryScreen: React.FC<Props> = ({ langId }) => {
+const WorkHistoryScreen: React.FC<Props> = ({ userId = "U001", langId }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [branchAddresses, setBranchAddresses] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
@@ -294,9 +297,7 @@ useEffect(() => {
   useEffect(() => {
     const fetchDistances = async () => {
       try {
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced
-        });
+        const pos = await Location.getCurrentPositionAsync({});
         const coords = pos?.coords;
         if (!coords) return;
 
@@ -397,10 +398,10 @@ const todayTotal = useMemo(() => {
   schedules.forEach((s) => {
     const inRaw = s.In ?? s.actualIn ?? s.date;
     const outRaw = s.Out ?? s.actualOut ?? s.dateOut;
-    if (!inRaw) return;
+    if (!inRaw || !outRaw) return;
 
     const inTime = new Date(inRaw);
-    const outTime = outRaw ? new Date(outRaw) : new Date(); // Use now if no out
+    const outTime = new Date(outRaw);
     if (isNaN(inTime.getTime()) || isNaN(outTime.getTime())) return;
 
     if (
@@ -409,7 +410,7 @@ const todayTotal = useMemo(() => {
       inTime.getDate() === today.getDate()
     ) {
       const diff = Math.floor((outTime.getTime() - inTime.getTime()) / 60000);
-      totalMinutes += Math.max(0, diff); // No negative
+      totalMinutes += diff;
     }
   });
 
@@ -419,27 +420,33 @@ const todayTotal = useMemo(() => {
 
   // month total from schedules
 const monthTotal = useMemo(() => {
-  if (!schedules || schedules.length === 0) return 0;
+  if (!schedules || schedules.length === 0) return { hours: 0, minutes: 0, text: "00h 00m" };
 
-  let totalMinutes = 0;
+  let totalSeconds = 0;
   const today = new Date();
 
   schedules.forEach((s) => {
     const inRaw = s.In ?? s.actualIn ?? s.date;
     const outRaw = s.Out ?? s.actualOut ?? s.dateOut;
-    if (!inRaw) return;
+    if (!inRaw || !outRaw) return;
 
     const inDate = new Date(inRaw);
-    const outDate = outRaw ? new Date(outRaw) : new Date(); // Use now if no out
+    const outDate = new Date(outRaw);
     if (isNaN(inDate.getTime()) || isNaN(outDate.getTime())) return;
 
     if (inDate.getFullYear() === today.getFullYear() && inDate.getMonth() === today.getMonth()) {
-      const diff = Math.floor((outDate.getTime() - inDate.getTime()) / 60000);
-      totalMinutes += Math.max(0, diff);
+      totalSeconds += Math.floor((outDate.getTime() - inDate.getTime()) / 1000);
     }
   });
 
-  return totalMinutes;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  return {
+    hours,
+    minutes,
+    text: `${String(hours).padStart(2, "0")}h${String(minutes).padStart(2, "0")}m`
+  };
 }, [schedules]);
 
 
@@ -495,7 +502,7 @@ useEffect(() => {
   if (schedules && schedules.length > 0) {
     setLastTotals({
       today: todayTotal,
-      month: totalToText(monthTotal),
+      month: monthTotal.text,
     });
   }
 }, [schedules, todayTotal, monthTotal]);
@@ -594,7 +601,7 @@ useEffect(() => {
                 : "Address not available");
 
             const inDate = item.In ? new Date(item.In) : item.actualIn ? new Date(item.actualIn) : null;
-            const outDate = item.Out ? new Date(item.Out) : item.actualOut ? new Date(item.actualOut) : undefined;
+            const outDate = item.Out ? new Date(item.Out) : item.actualOut ? new Date(item.actualOut) : null;
 
             const inTimeText = inDate
               ? inDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })
@@ -605,9 +612,13 @@ useEffect(() => {
 
             const timeText = `${inTimeText} - ${outTimeText}`;
 
-            const durationText = inDate
-              ? calcDuration(inDate, outDate).text
-              : "--h--m";
+            const durationText =
+              inDate && outDate
+                ? calcDuration(
+                  `${String(inDate.getHours()).padStart(2, "0")}:${String(inDate.getMinutes()).padStart(2, "0")}:${String(inDate.getSeconds()).padStart(2, "0")}`,
+                  `${String(outDate.getHours()).padStart(2, "0")}:${String(outDate.getMinutes()).padStart(2, "0")}:${String(outDate.getSeconds()).padStart(2, "0")}`
+                ).text
+                : "--h--m";
 
             return (
               <CartBox
@@ -827,3 +838,5 @@ const styles = StyleSheet.create({
     maxWidth: "60%"
   },
 });
+
+

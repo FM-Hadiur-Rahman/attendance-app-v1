@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Image } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Header from '../../components/Header';
 import colors from '../../styles/Colors';
 import CartBox from '../../components/CartBox';
@@ -8,18 +8,16 @@ import fonts from '../../styles/Fonts';
 import translations from "../../assets/translations.json"
 import { contents } from "../../api/Content";
 
-type RootStackParamList = {
-  AboutScreen: {
-    userId: string;
-    langId: string;
-    setLangId?: (lang: string) => void;
-  };
+type AboutScreenProps = {
+  userId: string;
+  langId: string;
+  setLangId?: (lang: string) => void;
 };
 
-const AboutScreen = () => {
+const AboutScreen: React.FC<AboutScreenProps> = () => {
+
   const navigation = useNavigation();
-  const route = useRoute<RouteProp<RootStackParamList, 'AboutScreen'>>();
-  
+  const route = useRoute<any>();
   const { userId, langId, setLangId } = route.params || {};
 
   const [refreshing, setRefreshing] = useState(false);

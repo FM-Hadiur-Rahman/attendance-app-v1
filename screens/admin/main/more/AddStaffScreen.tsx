@@ -16,7 +16,6 @@ import {
   Platform,
   RefreshControl,
   LayoutChangeEvent,
-  KeyboardAvoidingView,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -32,7 +31,7 @@ import Popup from "../../../../components/Popup";
 import translations from "../../../../assets/translations.json";
 import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 
-// API helpers
+// API helpers 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
 import { register as authRegister } from "../../../../api/auth/authService";
@@ -63,8 +62,8 @@ const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 type ScheduleEntry = {
   startTime: string;
   endTime: string;
-  duration?: number; // in hours (optional)
-  date?: string | null; // YYYY-MM-DD (optional)
+  duration?: number;      // in hours (optional)
+  date?: string | null;   // YYYY-MM-DD (optional)
 };
 
 type SchedulePayload = {
@@ -269,12 +268,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       const s = normalizeHHMM(start);
       const e = normalizeHHMM(end);
       if (!date || !weekday || !s || !e) {
-        console.warn("Skipping malformed schedule entry", {
-          date,
-          weekday,
-          start,
-          end,
-        });
+        console.warn("Skipping malformed schedule entry", { date, weekday, start, end });
         return;
       }
       result.push({
@@ -327,8 +321,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         const d = nextDateObj.getDate().toString().padStart(2, "0");
         const nextDate = `${y}-${m}-${d}`;
 
-        const nextWeekday =
-          FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
+        const nextWeekday = FULL_WEEKDAYS[(FULL_WEEKDAYS.indexOf(dayName) + 1) % 7];
 
         const duration2 = computeDurationHours(0, endMinutes);
         addEntry(nextDate, nextWeekday, "00:00", end_time, duration2);
@@ -575,19 +568,16 @@ const AddStaffScreen: React.FC = (props: any) => {
       valid = false;
     } else if (digits.length < rule.min) {
       if (rule.min === rule.max) {
-        newErrors.phone = `${
-          lang.Please_complete_all || "Please complete all"
-        } ${rule.max} ${lang.digits || "digits"}`;
+        newErrors.phone = `${lang.Please_complete_all || "Please complete all"
+          } ${rule.max} ${lang.digits || "digits"}`;
       } else {
-        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${
-          rule.min
-        } ${lang.digits || "digits"}`;
+        newErrors.phone = `${lang.Enter_at_least || "Enter at least"} ${rule.min
+          } ${lang.digits || "digits"}`;
       }
       valid = false;
     } else if (digits.length > rule.max) {
-      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${
-        lang.digits || "digits"
-      }`;
+      newErrors.phone = `${lang.Maximum || "Maximum"} ${rule.max} ${lang.digits || "digits"
+        }`;
       valid = false;
     }
     setErrors(newErrors);
@@ -714,10 +704,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         }
       } catch (e) {
         // if the check fails unexpectedly, we do not block user — but log it
-        console.warn(
-          "Email availability check failed, proceeding without blocking:",
-          e
-        );
+        console.warn("Email availability check failed, proceeding without blocking:", e);
       }
     }
 
@@ -818,28 +805,6 @@ const AddStaffScreen: React.FC = (props: any) => {
     }
   };
 
-    // added this for android keyboard avoiding view 
-    const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
-  
-    useEffect(() => {
-      const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-      const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-  
-      const onShow = (e: any) => {
-        const h = e?.endCoordinates?.height ?? 0;
-        setKeyboardHeight(h);
-      };
-      const onHide = () => setKeyboardHeight(0);
-  
-      const showSub = Keyboard.addListener(showEvent, onShow);
-      const hideSub = Keyboard.addListener(hideEvent, onHide);
-  
-      return () => {
-        showSub.remove();
-        hideSub.remove();
-      };
-    }, []);
-
   useEffect(() => {
     // load default branch once on mount
     (async () => {
@@ -915,11 +880,11 @@ const AddStaffScreen: React.FC = (props: any) => {
       scheduleArray.length === 0
         ? "No schedules set for this week."
         : scheduleArray
-            .map(
-              (item) =>
-                `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
-            )
-            .join("\n");
+          .map(
+            (item) =>
+              `${item.day_of_week} (${item.date}): ${item.start_time} - ${item.end_time}`
+          )
+          .join("\n");
 
     console.log("Proceeding from Step 2. Weekly schedules summary:\n", summary);
 
@@ -966,7 +931,7 @@ const AddStaffScreen: React.FC = (props: any) => {
             ...prev,
             username:
               prev.username ===
-              (lang.username_exists || "Username already taken")
+                (lang.username_exists || "Username already taken")
                 ? ""
                 : prev.username,
           }));
@@ -1048,9 +1013,7 @@ const AddStaffScreen: React.FC = (props: any) => {
       // Force server fetch to ensure we use the active logged-in user's branch
       branchIdToUse = await getLoggedInUserBranch(false); // pass true to prefer cache if you want
       if (!branchIdToUse) {
-        console.warn(
-          "No branch id found for logged-in user; payload will send empty string for branch"
-        );
+        console.warn("No branch id found for logged-in user; payload will send empty string for branch");
       }
     } catch (e) {
       console.warn("Failed to obtain logged-in user's branch id", e);
@@ -1161,21 +1124,14 @@ const AddStaffScreen: React.FC = (props: any) => {
       try {
         // prepare friendly notification body
         const employeeId = String(createdId);
-        const scheduleArrayForNotif: SchedulePayload[] =
-          buildScheduleArray() || [];
+        const scheduleArrayForNotif: SchedulePayload[] = buildScheduleArray() || [];
 
         const formatDateReadable = (ymd: string) => {
           if (!ymd) return "";
-          const [y, m, d] = String(ymd)
-            .split("-")
-            .map((v) => Number(v));
+          const [y, m, d] = String(ymd).split("-").map((v) => Number(v));
           if (!y || !m || !d) return ymd;
           const dt = new Date(y, m - 1, d);
-          return dt.toLocaleDateString(undefined, {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          });
+          return dt.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
         };
 
         const composeBody = () => {
@@ -1194,10 +1150,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         };
 
         const notifPayload = {
-          title:
-            scheduleArrayForNotif.length > 0
-              ? "Welcome - New Shift Assigned"
-              : "Welcome to the team",
+          title: scheduleArrayForNotif.length > 0 ? "Welcome - New Shift Assigned" : "Welcome to the team",
           body: composeBody(),
           type: "staff_created",
           meta: {
@@ -1213,44 +1166,27 @@ const AddStaffScreen: React.FC = (props: any) => {
           console.log("[notif] welcome notification written for", employeeId);
         } catch (e) {
           // do not block success path
-          console.warn(
-            "[notif] failed to write welcome notification for",
-            employeeId,
-            e
-          );
+          console.warn("[notif] failed to write welcome notification for", employeeId, e);
         }
       } catch (e) {
-        console.warn(
-          "[notif] unexpected error preparing/sending welcome notification:",
-          e
-        );
+        console.warn("[notif] unexpected error preparing/sending welcome notification:", e);
       }
 
       showSuccessToast(
         lang?.staff_created_success ?? "Staff created successfully"
       );
       setConfirmPopupVisible(false);
-      console.log(
-        "Creating staff with payload branch:",
-        branchIdToUse,
-        "payload:",
-        {
-          fullname: fullName,
-          branch: branchIdToUse ?? "",
-          username,
-          email,
-          position,
-          phone: finalPhone,
-        }
-      );
+      console.log("Creating staff with payload branch:", branchIdToUse, "payload:", {
+        fullname: fullName,
+        branch: branchIdToUse ?? "",
+        username, email, position, phone: finalPhone,
+      })
       navigation.goBack();
     } catch (err: any) {
       setConfirmPopupVisible(false);
       setErrors((prev) => ({
         ...prev,
-        username:
-          lang.username_exists_use ||
-          "This username already exists in another branch.",
+        username: lang.username_exists_use || "This username already exists in another branch.",
       }));
       setUsernameExists(true);
 
@@ -1266,8 +1202,9 @@ const AddStaffScreen: React.FC = (props: any) => {
       // NOTE: we already attempted restore above; keep this as a safety net.
       try {
         if (prevToken) {
-          axiosInstance.defaults.headers["Authorization"] =
-            `Bearer ${prevToken}`;
+          axiosInstance.defaults.headers[
+            "Authorization"
+          ] = `Bearer ${prevToken}`;
         } else {
           await AsyncStorage.removeItem("userToken");
         }
@@ -1307,8 +1244,8 @@ const AddStaffScreen: React.FC = (props: any) => {
       />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <KeyboardAwareScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: 100 }]}
-          extraScrollHeight={100}
+          contentContainerStyle={styles.content}
+          extraScrollHeight={20} // adjust scroll when keyboard opens
           enableOnAndroid={true}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -1321,6 +1258,17 @@ const AddStaffScreen: React.FC = (props: any) => {
             />
           }
         >
+          <ScrollView
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                progressBackgroundColor={colors.secondary}
+                colors={[colors.primary]}
+                tintColor={colors.primary}
+              />
+            }
+          >
             <View style={styles.progressWrap}>
               <View
                 style={[
@@ -1495,57 +1443,6 @@ const AddStaffScreen: React.FC = (props: any) => {
                   errorMessage={touched.phone ? errors.phone : ""}
                   leftIcon={selectedCountry.flag}
                   leftIcon2={require("../../../../assets/icons/down_b.png")}
-                  onLeftIconPress={() =>
-                    navigation.navigate("Code", {
-                      initialSelectedId: selectedCountry.id,
-                      onSelect: (item: any) => {
-                        setSelectedCountry(item);
-                        const newRule =
-                          PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
-                          DEFAULT_PHONE_RULE;
-
-                        let currentRaw = (phone || "").replace(/\D/g, "");
-                        const hasLeadingZero = currentRaw.startsWith("0");
-                        const maxDisplay =
-                          newRule.max + (hasLeadingZero ? 1 : 0);
-                        currentRaw = currentRaw.slice(0, maxDisplay);
-
-                        let normalized = currentRaw.startsWith("0")
-                          ? currentRaw.slice(1)
-                          : currentRaw;
-                        normalized = normalized.slice(0, newRule.max);
-
-                        setPhone(formatPhoneForDisplay(currentRaw));
-                        setPhoneRaw(normalized);
-
-                        if (!normalized || normalized.length === 0) {
-                          setErrors((prev) => ({
-                            ...prev,
-                            phone: lang.phone_required,
-                          }));
-                        } else if (normalized.length < newRule.min) {
-                          if (newRule.min === newRule.max) {
-                            setErrors((prev) => ({
-                              ...prev,
-                              phone: `${
-                                lang.Please_complete_all ||
-                                "Please complete all"
-                              } ${newRule.max} digits`,
-                            }));
-                          } else {
-                            setErrors((prev) => ({
-                              ...prev,
-                              phone: `${
-                                lang.enterAtLeast || "Enter at least"
-                              } ${newRule.min} ${lang.digits || "digits"}`,
-                            }));
-                          }
-                        } else {
-                          setErrors((prev) => ({ ...prev, phone: "" }));
-                        }
-                      },
-                    })
-                  }
                   onLeftIcon2Press={() =>
                     navigation.navigate("Code", {
                       initialSelectedId: selectedCountry.id,
@@ -1578,17 +1475,15 @@ const AddStaffScreen: React.FC = (props: any) => {
                           if (newRule.min === newRule.max) {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${
-                                lang.Please_complete_all ||
+                              phone: `${lang.Please_complete_all ||
                                 "Please complete all"
-                              } ${newRule.max} digits`,
+                                } ${newRule.max} digits`,
                             }));
                           } else {
                             setErrors((prev) => ({
                               ...prev,
-                              phone: `${
-                                lang.enterAtLeast || "Enter at least"
-                              } ${newRule.min} ${lang.digits || "digits"}`,
+                              phone: `${lang.enterAtLeast || "Enter at least"
+                                } ${newRule.min} ${lang.digits || "digits"}`,
                             }));
                           }
                         } else {
@@ -1650,10 +1545,10 @@ const AddStaffScreen: React.FC = (props: any) => {
                                   <Text style={styles.time_text}>
                                     {schedules[dayName]
                                       ? `${formatTime12(
-                                          schedules[dayName].startTime
-                                        )} - ${formatTime12(
-                                          schedules[dayName].endTime
-                                        )}`
+                                        schedules[dayName].startTime
+                                      )} - ${formatTime12(
+                                        schedules[dayName].endTime
+                                      )}`
                                       : ""}
                                   </Text>
                                 </View>
@@ -1792,6 +1687,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                 />
               </>
             )}
+          </ScrollView>
         </KeyboardAwareScrollView>
       </TouchableWithoutFeedback>
 
@@ -1808,7 +1704,7 @@ const AddStaffScreen: React.FC = (props: any) => {
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{lang.edit_profile}</Text>
+            <Text style={styles.modalTitle}>Edit profile</Text>
 
             <CartBox
               paddingLeft={20}
@@ -1817,9 +1713,8 @@ const AddStaffScreen: React.FC = (props: any) => {
               alignItems="flex-start"
               borderRadius={12}
               borderWidth={1}
-              borderColor={colors.border}
+              borderColor="#E5E7EB"
               marginBottom={12}
-              backgroundColor={colors.secondary}
               onPress={openCamera}
             >
               <View style={styles.logout}>
@@ -1838,8 +1733,7 @@ const AddStaffScreen: React.FC = (props: any) => {
               alignItems="flex-start"
               borderRadius={12}
               borderWidth={1}
-              backgroundColor={colors.secondary}
-              borderColor={colors.border}
+              borderColor="#E5E7EB"
               onPress={openGallery}
             >
               <View style={styles.logout}>
@@ -1939,7 +1833,7 @@ const AddStaffScreen: React.FC = (props: any) => {
               onPress={onSavePress}
               backgroundColor={colors.primary}
               width={"45%"}
-              //disabled={checkingUsername} // optional - depends on Button1 props
+            //disabled={checkingUsername} // optional - depends on Button1 props
             />
           </View>
         )}
@@ -1949,26 +1843,17 @@ const AddStaffScreen: React.FC = (props: any) => {
         animationType="slide"
         transparent
         visible={addScheduleModalVisible}
-        onRequestClose={() => { setAddScheduleModalVisible(false); }}
+        onRequestClose={() => {
+          setAddScheduleModalVisible(false);
+        }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => { setAddScheduleModalVisible(true); }}
-          pointerEvents="auto"
+          onPress={() => {
+            setAddScheduleModalVisible(true);
+          }}
         >
-          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1, justifyContent: "flex-end" }}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-          >
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-              <View
-                style={[
-                  styles.modalContainer,
-                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                ]}
-              >
+          <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>{lang.Add_Schedule}</Text>
 
@@ -1988,7 +1873,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                     placeholder={""}
                     value={selectedBranch}
                     editable={false}
-                    setValue={() => {}}
+                    setValue={() => { }}
                     rightIcon={require("../../../../assets/icons/branch_b.png")}
                     rightIconStyle={{ tintColor: colors.primary }}
                   />
@@ -1996,36 +1881,18 @@ const AddStaffScreen: React.FC = (props: any) => {
 
                 <InputBox
                   label={lang.set_time_from}
-                  placeholder={"HH:MM"}
+                  placeholder={"00:00:00"}
                   value={timeFrom}
-                      setValue={(v: string) => {
-                        let digits = v.replace(/[^0-9]/g, "");
-                        let hh = "";
-                        let mm = "";
-                        if (digits.length > 0) {
-                          hh = digits.slice(0, 2);
-                          if (parseInt(hh) > 23) hh = "23"; // clamp to 24
-                        }
-
-                        if (digits.length > 2) {
-                          mm = digits.slice(2, 4);
-                          if (parseInt(mm) > 59) mm = "59"; // clamp to 59
-                        }
-
-                        const formatted = hh + (mm ? ":" + mm : "");
-                        setTimeFrom(formatted);
-
-                        // Full validation
-                        const isValid = /^([0-1]?[0-9]|2[0-4]):([0-5][0-9])$/.test(formatted);
-                        if (isValid) setTimeFromError("");
-                        else setTimeFromError("Invalid time");
-                      }}
-                      keyboardType="numeric"  
-                       maxLength={5}    
+                  setValue={(v: string) => {
+                    setTimeFrom(v);
+                    const ok = /^(\d{2}):(\d{2}):(\d{2})$/.test(v);
+                    if (ok) setTimeFromError("");
+                  }}
                   rightIcon={require("../../../../assets/icons/clock_b.png")}
                   errorMessage={timeFromError}
                   rightIconStyle={{ tintColor: colors.primary }}
                   onRightIconPress={onShowNativeTimePicker}
+                  onPress={onShowNativeTimePicker}
                 />
 
                 <InputBox
@@ -2049,9 +1916,7 @@ const AddStaffScreen: React.FC = (props: any) => {
                 <View style={{ height: 20 }} />
               </ScrollView>
             </View>
-              </View>
-            </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
+          </View>
         </Pressable>
       </Modal>
       {/* Native Time Picker */}
@@ -2071,7 +1936,7 @@ export default AddStaffScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
-  content: { paddingHorizontal: 20 },
+  content: { paddingHorizontal: 20, paddingBottom: 80 },
   contentBox: {
     marginBottom: 20,
   },
@@ -2136,7 +2001,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   logout: { flexDirection: "row" },
-  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain", alignSelf:"center" },
+  logoutIcon: { width: 17, height: 17, marginRight: 8, resizeMode: "contain" },
   logoutText: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
@@ -2149,12 +2014,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 70,
+    paddingBottom: 50,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
+    shadowRadius: 1.5,
+    elevation: 4,
   },
   modalHandle: {
     width: 40,
@@ -2168,7 +2033,8 @@ const styles = StyleSheet.create({
     fontSize: fonts.size.l,
     fontWeight: fonts.weight.medium,
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 19,
+    lineHeight: 22,
   },
   modalButton: {
     paddingVertical: 12,
@@ -2219,5 +2085,5 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.regular,
     color: colors.primary,
   },
-  clock: { width: 14, height: 14, marginRight: 4, alignSelf:'center' },
+  clock: { width: 14, height: 14, marginRight: 4 },
 });

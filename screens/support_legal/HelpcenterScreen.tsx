@@ -242,7 +242,7 @@ const HelpCenterScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      <View style={[styles.buttonWrap, { paddingBottom: insets.bottom || 20 }]}>
+      <View style={[styles.buttonWrap, { paddingBottom: insets.bottom || 0 }]}>
         <Button1
           text={sending ? (lang.sending ?? 'Sending...') : (lang.send_button ?? 'Send')}
           width="90%"
@@ -257,7 +257,7 @@ const HelpCenterScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   headerWrapper: { backgroundColor: colors.secondary },
-  scrollContent: { paddingTop: 0, flex: 1, backgroundColor: colors.secondary, paddingBottom:20 },
+  scrollContent: { paddingTop: 0, flex: 1, backgroundColor: colors.secondary },
   entire_group: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, alignItems: 'center' },
   title: { fontSize: fonts.size.l, fontWeight: fonts.weight.semibold, color: colors.text, marginTop: 20, marginBottom: 12, fontFamily: fonts.family.regular, alignSelf: 'flex-start' },
   errorText: { color: colors.error_text, fontSize: 12, alignSelf: 'flex-start', marginBottom: 6 },

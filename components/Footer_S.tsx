@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   BackHandler,
@@ -13,10 +13,7 @@ import colors from '../styles/Colors';
 import DashboardScreen from '../screens/superadmin/main/DashboardScreen';
 import BranchScreen from '../screens/superadmin/main/BranchScreen';
 import AddBranchScreen from '../screens/superadmin/main/AddBranchScreen';
-import Toast, { showWarningToast, toastConfig } from './Toast';
-
-import { getToken, clearAllAuthData } from '../api/auth/authToken';
-import axiosInstance from '../api/axiosInstance';
+import Toast, { toastConfig } from './Toast';
 
 // Define the props interface for screen components
 interface ScreenProps {
@@ -41,13 +38,6 @@ const Footer_S = () => {
   const initialTab = route.params?.selectedTab ?? 'DashboardScreen';
   const [selectedTab, setSelectedTab] = useState<string>(initialTab);
 
-  const tabHistoryRef = useRef<string[]>([selectedTab]);
-  const ignoreHistoryPushRef = useRef(false);
-  const selectedTabRef = useRef(selectedTab);
-  useEffect(() => { selectedTabRef.current = selectedTab; }, [selectedTab]);
-
-  const lastBackPress = useRef(0);
-
   // If navigator pushes/updates params later, keep selectedTab in sync
   useEffect(() => {
     if (route.params?.selectedTab && route.params.selectedTab !== selectedTab) {
@@ -62,11 +52,11 @@ const Footer_S = () => {
   const ADD_BTN_SIZE = 60;
   const ADD_BTN_HALF_INSIDE = 30;
 
+  // Type the components properly
   const DashboardScreenTyped = DashboardScreen as React.ComponentType<ScreenProps>;
   const AddBranchScreenTyped = AddBranchScreen as React.ComponentType<ScreenProps>;
   const BranchScreenTyped = BranchScreen as React.ComponentType<ScreenProps>;
-
-
+  
   const tabConfig = [
     {
       key: 'DashboardScreen',
@@ -94,118 +84,11 @@ const Footer_S = () => {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== 'android') return;
-
-      const onBackPress = () => {
-        const history = tabHistoryRef.current;
-
-        if (history.length > 1) {
-          // go to previous tab
-          history.pop();
-          const prev = history[history.length - 1] ?? 'DashboardScreen';
-          ignoreHistoryPushRef.current = true;
-          setSelectedTab(prev);
-          return true;
-        }
-
-        // already on Dashboard/Home tab
-        if (selectedTabRef.current === 'DashboardScreen') {
-          const now = Date.now();
-          if (now - lastBackPress.current < 2000) {
-            BackHandler.exitApp(); // exit app directly
-            return true;
-          } else {
-            lastBackPress.current = now;
-            showWarningToast('Press back again to exit');
-            return true;
-          }
-        }
-        // any other tab → go to Dashboard
-        tabHistoryRef.current = ['DashboardScreen'];
-        ignoreHistoryPushRef.current = true;
-        setSelectedTab('DashboardScreen');
-        return true;
-      };
+      const onBackPress = () => true;
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
       return () => subscription.remove();
     }, [])
   );
-
-  // Helper: treat invalid tokens, navigate to login
-  const handleInvalidToken = async (reason?: string) => {
-    try {
-      console.log('Footer_A: handleInvalidToken() called', reason);
-      await clearAllAuthData();
-    } catch (e) {
-      console.warn('Footer_A: clearAllAuthData error', e);
-    } finally {
-      showWarningToast('Session expired. Please login again.');
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'LoginScreen',
-            params: { langId: langId },
-          },
-        ],
-      });
-    }
-  };
-
-  // Axios response interceptor to catch 401 / "Token invalid or expired"
-  useEffect(() => {
-    if (!axiosInstance || !axiosInstance.interceptors) {
-      console.warn('Footer_S: axiosInstance not found or has no interceptors. Adjust path if necessary.');
-      return;
-    }
-
-    const id = axiosInstance.interceptors.response.use(
-      (response: any) => response, // pass through successful responses
-      (error: any) => {
-        // examine error shape (axios) and decide if it's an auth error
-        const status = error?.response?.status;
-        const data = error?.response?.data;
-        const message = (error?.message || data?.message || JSON.stringify(data || '') || '').toString();
-
-        const isAuthError =
-          status === 401 ||
-          /token invalid/i.test(message) ||
-          /token expired/i.test(message) ||
-          /invalid or expired/i.test(message) ||
-          /jwt/i.test(message) && /expired|invalid/i.test(message);
-
-        if (isAuthError) {
-          handleInvalidToken(message);
-          return Promise.reject(error);
-        }
-        return Promise.reject(error);
-      }
-    );
-
-    return () => {
-      try {
-        axiosInstance.interceptors.response.eject(id);
-      } catch (e) {
-        console.warn('Footer_S: failed to eject axios interceptor', e);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    const pingServer = async () => {
-      try {
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const msg = err?.response?.data?.message || err?.message || '';
-        if (status === 401 || /token invalid|token expired|invalid or expired/i.test(msg)) {
-          handleInvalidToken(`ping: ${msg}`);
-        }
-      }
-    };
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, []);
 
   return (
     <View style={styles.safeArea}>
@@ -242,17 +125,9 @@ const Footer_S = () => {
               key={tab.key}
               style={styles.tabItem}
               onPress={() => {
-                if (tab.key === selectedTabRef.current) return;
-                if (ignoreHistoryPushRef.current) {
-                  ignoreHistoryPushRef.current = false;
-                  tabHistoryRef.current = [tab.key];
-                } else {
-                  tabHistoryRef.current.push(tab.key);
-                }
                 console.log('Footer -> tab press:', tab.key, { userId, langId });
                 setSelectedTab(tab.key);
               }}
-
               activeOpacity={0.7}
             >
               <View style={{ width: 28, height: 28, justifyContent: 'center', alignItems: 'center' }}>

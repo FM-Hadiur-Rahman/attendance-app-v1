@@ -33,8 +33,8 @@ const toastStyles: Record<
     fontSize: fonts.size.l,
   },
   warning: {
-    bg: colors.secondary,
-    textColor: colors.sub_background2,
+    bg: colors.sub_background2,
+    textColor: colors.text,
     fontWeight: fonts.weight.medium as any,
     fontSize: fonts.size.l,
   },

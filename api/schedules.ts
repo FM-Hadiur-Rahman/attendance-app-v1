@@ -15,35 +15,6 @@ export interface ScheduleItem {
   __v?: number;
 }
 
-export interface PendingCheckoutUser {
-  user: {
-    id: string;
-    username: string;
-    email?: string;
-    fullname?: string;
-  };
-  schedule: {
-    id: string;
-    start_time: string;
-    end_time: string;
-    date: string;
-  } | null;
-  attendance: {
-    id: string;
-    checkInTime: string;
-    branch: {
-      id?: string;
-      _id?: string;
-      name?: string;
-    };
-  };
-  branch: {
-    _id?: string;
-    name?: string;
-  };
-  isCrossDayShift?: boolean;
-}
-
 /**
  * Fetch schedules (paginated). Accepts optional params (page, limit, etc).
  * Returns the raw response shape (we expect { schedules: ScheduleItem[] } or an array).
@@ -65,164 +36,114 @@ export const getSchedules = async (params: Record<string, any> = {}): Promise<Sc
 };
 
 /**
- * Fetch schedules for a given employee within a date range
- * Query params: employee_id, startDate, endDate
- */
-export const getSchedulesByEmployee = async (
-  employee_id: string,
-  startDate: string,
-  endDate: string
-): Promise<ScheduleItem[]> => {
-  try {
-    const res = await axiosInstance.get('/schedule/employee', {
-      params: { employee_id, startDate, endDate }
-    });
-    
-    if (res?.data?.success && Array.isArray(res.data.schedules)) {
-      return res.data.schedules as ScheduleItem[];
-    }
-    
-    return [];
-  } catch (err: any) {
-    console.error('getSchedulesByEmployee error', err?.response?.data ?? err);
-    throw err?.response?.data || err;
-  }
-};
-
-/**
  * Convenience: fetch schedules and filter those whose date (local) matches given dateYMD ("YYYY-MM-DD").
- * Uses pagination internally to collect all matching schedules.
- * Returns array of ScheduleItem.
+ * Uses client-side filter because backend date filtering shape may vary.
  */
-export const getSchedulesForDate = async (
-  dateYMD: string,
-  opts: { userId?: string; branchId?: string; timezone?: string } = {}
-): Promise<ScheduleItem[]> => {
-  const { userId, branchId, timezone = "Asia/Colombo" } = opts;
-  let page = 1;
-  const limit = 20;
-  let totalPages = 1;
-  let allSchedules: ScheduleItem[] = [];
-
+export const getSchedulesForDate = async (dateYMD: string): Promise<ScheduleItem[]> => {
   try {
-    while (page <= totalPages) {
-      const res = await axiosInstance.get<{ 
-        schedules?: ScheduleItem[]; 
-        data?: ScheduleItem[]; 
-        total?: number; 
-        totalPages?: number;
-        page?: number;
-      }>("/schedule", {
-        params: { page, limit },
-      });
+    // try to fetch many entries so we don't miss pages
+    const schedules = await getSchedules({ limit: 1000 });
+    const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-      // Handle different response formats
-      const data = res.data;
-      const schedules = Array.isArray(data) 
-        ? data 
-        : (data?.schedules || data?.data || []);
-        
-      const total = typeof data === 'object' && data !== null 
-        ? ('total' in data ? data.total : ('totalPages' in data ? data.totalPages : undefined))
-        : undefined;
-      
-      totalPages = typeof data === 'object' && data !== null && 'totalPages' in data 
-        ? data.totalPages || 1 
-        : Math.ceil((total || schedules.length) / limit);
-
-      // Filter schedules for the specific date and optional filters
-      const filtered = schedules.filter((s) => {
-        if (!s?.date) return false;
-        
-        // Convert schedule date to local date string for comparison
-        const schedDate = new Date(s.date);
-        const schedYMD = schedDate.toLocaleDateString("en-CA", { timeZone: timezone });
-        
-        if (schedYMD !== dateYMD) return false;
-        if (userId) {
-          const empId = typeof s.employee_id === 'object' && s.employee_id !== null 
-            ? s.employee_id._id 
-            : s.employee_id;
-          if (empId !== userId) return false;
-        }
-        if (branchId) {
-          const brId = typeof s.branch_id === 'object' && s.branch_id !== null 
-            ? s.branch_id._id 
-            : s.branch_id;
-          if (brId !== branchId) return false;
-        }
-        return true;
-      });
-
-      allSchedules = [...allSchedules, ...filtered];
-      page++;
-    }
-
-    return allSchedules;
-  } catch (err: any) {
-    console.error("getSchedulesForDate error", err?.response?.data ?? err);
-    return [];
-  }
-};
-
-/**
- * Get users with pending checkouts for a branch
- * Returns users who have a schedule that has ended but haven't checked out yet
- */
-export const getPendingCheckoutUsers = async (branchId: string): Promise<PendingCheckoutUser[]> => {
-  try {
-    const res = await axiosInstance.get('/schedule/pending-checkout', {
-      params: { branchId }
+    return schedules.filter((s) => {
+      if (!s?.date) return false;
+      const d = new Date(s.date);
+      // convert to local YMD to match how we compute today's date in the UI
+      const sYMD = toYMD(d);
+      return sYMD === dateYMD;
     });
-    
-    if (res?.data?.success && Array.isArray(res.data.data)) {
-      return res.data.data as PendingCheckoutUser[];
-    }
-    
+  } catch (err: any) {
+    console.error('getSchedulesForDate error', err);
     return [];
+  }
+};
+
+export interface EmployeeSchedule {
+  _id: string;
+  employee_id: {
+    _id: string;
+    username: string;
+    role: string;
+    branch: string;
+  };
+  branch_id: { _id: string; name: string };
+  date: string;
+  start_time: string;
+  end_time: string;
+  day_of_week: string;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
+}
+
+export const getEmployeeSchedules = async (employee_id: string, startDate: string, endDate: string) => {
+  const res = await axiosInstance.get("/schedule/employee", {
+    params: { employee_id, startDate, endDate },
+  });
+  return res.data.schedules as EmployeeSchedule[];
+};
+
+// src/api/schedule.ts (append near other exports)
+export const postSchedulesBulk = async (
+  employee_id: string,
+  branch_id: string,
+  schedules: Array<{ date: string; day_of_week: string; start_time: string; end_time: string }>
+) => {
+  try {
+    const payload = {
+      employee_id: employee_id || "",
+      branch_id: branch_id || "",
+      schedules,
+    };
+    const res = await axiosInstance.post("/schedule/bulk", payload);
+    return res.data;
   } catch (err: any) {
-    console.error('getPendingCheckoutUsers error', err?.response?.data ?? err);
+    console.error("postSchedulesBulk error", err?.response?.data ?? err);
     throw err?.response?.data || err;
   }
 };
 
 /**
- * Create a new schedule
- * POST /schedule
+ * ✅ Update a single schedule entry
  */
-export const createSchedule = async (scheduleData: Omit<ScheduleItem, '_id' | 'id' | 'createdAt' | 'updatedAt' | '__v'>): Promise<ScheduleItem> => {
+export const updateSchedule = async (id: string, payload: Partial<ScheduleItem>) => {
   try {
-    const res = await axiosInstance.post('/schedule', scheduleData);
-    return res.data.data as ScheduleItem;
+    const res = await axiosInstance.put(`/schedule/${id}`, payload);
+    return res.data;
   } catch (err: any) {
-    console.error('createSchedule error', err?.response?.data ?? err);
+    console.error("updateSchedule error", err?.response?.data ?? err);
     throw err?.response?.data || err;
   }
 };
 
 /**
- * Update an existing schedule
- * PUT /schedule/:id
+ * Create a single schedule
  */
-export const updateSchedule = async (id: string, scheduleData: Partial<ScheduleItem>): Promise<ScheduleItem> => {
+export const createSchedule = async (payload: Partial<ScheduleItem>) => {
   try {
-    const res = await axiosInstance.put(`/schedule/${id}`, scheduleData);
-    return res.data.data as ScheduleItem;
+    // Check required fields without using string indexing
+    if (!payload.employee_id) throw new Error("Missing required field: employee_id");
+    if (!payload.branch_id) throw new Error("Missing required field: branch_id");
+    if (!payload.date) throw new Error("Missing required field: date");
+    if (!payload.start_time) throw new Error("Missing required field: start_time");
+    if (!payload.end_time) throw new Error("Missing required field: end_time");
+    if (!payload.day_of_week) throw new Error("Missing required field: day_of_week");
+    
+    const res = await axiosInstance.post("/schedule", payload);
+    return res.data;
   } catch (err: any) {
-    console.error('updateSchedule error', err?.response?.data ?? err);
+    console.error("createSchedule error", err?.response?.data ?? err);
     throw err?.response?.data || err;
   }
 };
 
-/**
- * Delete a schedule
- * DELETE /schedule/:id
- */
-export const deleteSchedule = async (id: string): Promise<void> => {
+export const deleteSchedule = async (id: string) => {
   try {
-    await axiosInstance.delete(`/schedule/${id}`);
+    const res = await axiosInstance.delete(`/schedule/${id}`);
+    return res.data;
   } catch (err: any) {
-    console.error('deleteSchedule error', err?.response?.data ?? err);
+    console.error("deleteSchedule error", err?.response?.data ?? err);
     throw err?.response?.data || err;
   }
 };

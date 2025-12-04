@@ -66,9 +66,9 @@ const StaffRecordScreen: React.FC<any> = (props) => {
           if (u && u.branch) {
             if (typeof u.branch === "string") {
               resolvedBranchId = u.branch;
-            } else if (u.branch) {
-              resolvedBranchId = String(u.branch);
-              resolvedBranchName = String((u.branch) ?? "");
+            } else if (u.branch._id) {
+              resolvedBranchId = String(u.branch._id);
+              resolvedBranchName = String((u.branch).name ?? "");
             }
           }
         } catch (err) {
@@ -226,7 +226,7 @@ const StaffRecordScreen: React.FC<any> = (props) => {
                   const displayName = u.fullname ?? "New User";
                   const position = u.position ?? "Saff";
                   const staffLabel = `Staff${(index + 1).toString().padStart(2, "0")}`;
-                  const userIdKey = (u)._id ?? `u-${index}`;
+                  const userIdKey = (u)._id ?? (u).id ?? `u-${index}`;
                   return (
                     <TouchableOpacity key={userIdKey} onPress={() => openStaffProfile(userIdKey)}>
                       <CartBox containerStyle={styles.detail_cartbox}>

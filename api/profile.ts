@@ -59,7 +59,7 @@ export const getBranchId = async (): Promise<string | null> => {
 export const getProfile = async (): Promise<ProfileUser> => {
   try {
     const res = await axiosInstance.get('/profile');
-    if (!res.data?.user) {
+    if (!res?.data?.user) {
       throw new Error('Profile response missing user');
     }
 
@@ -108,7 +108,7 @@ export const updateProfile = async (
     const serverMsg =
       error?.response?.data?.message ??
       error?.response?.data ??
-      error.response?.statusText;
+      error?.response?.statusText;
     throw serverMsg || error?.message || 'Failed to update profile';
   }
 };
@@ -194,7 +194,7 @@ export const getUserAttendanceSummary = async (staffId: string): Promise<Attenda
   try {
     if (!staffId) throw new Error('getUserAttendanceSummary: missing staffId');
     const res = await axiosInstance.get(`/admin/attendance/user-summary/${staffId}?period=month`);
-    const data = res.data ?? null;
+    const data = res?.data ?? null;
     return data as AttendanceSummary;
     
   } catch (error: any) {
@@ -211,7 +211,7 @@ export const getUserById = async (id: string): Promise<ProfileUser | null> => {
   try {
     if (!id) throw new Error('getUserById: missing id');
     const res = await axiosInstance.get(`/users/${id}`);
-    const user = res.data?.user ?? res?.data ?? null;
+    const user = res?.data?.user ?? res?.data ?? null;
     return user as ProfileUser | null;
   } catch (error: any) {
     console.error('getUserById() failed:', error?.response?.data ?? error);
@@ -219,10 +219,10 @@ export const getUserById = async (id: string): Promise<ProfileUser | null> => {
   }
 };
 
-export const getUsers = async (params: Record<string, unknown> = {}): Promise<ProfileUser[]> => {
+export const getUsers = async (params: Record<string, any> = {}): Promise<ProfileUser[]> => {
   try {
     const res = await axiosInstance.get('/users', { params });
-    const users = res.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
+    const users = res?.data?.users ?? (Array.isArray(res?.data) ? res.data : []);
     return users as ProfileUser[];
   } catch (error: any) {
     console.error('getUsers() failed:', error?.response?.data ?? error);
@@ -237,8 +237,7 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
     const map: Record<string, string | undefined> = {};
 
     users.forEach((u) => {
-      // Remove the unnecessary !u check since u should always be a valid object in forEach
-      if (u.role !== 'admin') return;
+      if (!u || u.role !== 'admin') return;
 
       // determine branch id string safely
       let branchIdStr: string | undefined;
@@ -268,11 +267,11 @@ export const getManagersByBranch = async (params: { limit?: number } = {}): Prom
 };
 
 
-export const deleteUser = async (staffId: string): Promise<unknown> => {
+export const deleteUser = async (staffId: string): Promise<any> => {
   try {
     if (!staffId) throw new Error('deleteUser: missing staffId');
     const res = await axiosInstance.delete(`/users/${staffId}`);
-    return res.data ?? null;
+    return res?.data ?? null;
   } catch (error: any) {
     console.error('deleteUser() failed:', error?.response?.data ?? error);
     throw (
@@ -287,20 +286,44 @@ export const getBranchById = async (branchId: string): Promise<{ _id: string; na
   try {
     if (!branchId) throw new Error('getBranchById: missing branchId');
 
-    // Use the correct backend endpoint for getting branch by ID
-    const res = await axiosInstance.get(`/branch/${branchId}`);
-    const data = res?.data ?? null;
-    
-    // Handle the response structure: { success: true, branch: { _id, name, ... } }
-    const branch = data?.branch ?? data?.data ?? data;
-    
-    const id = branch?._id ?? branch?.id ?? branchId;
-    const name = branch?.name ?? branch?.branch_name ?? branch?.title ?? null;
-    
-    if (id) {
-      return { _id: String(id), name: String(name ?? id) };
+    // Try several likely endpoints. Use axiosInstance so Authorization header is included.
+    const tryPaths = [
+      // common patterns
+      `/branch/${branchId}`,
+      `/branches/${branchId}`,
+      `/api.branch/${branchId}`,   // matches the URL you provided: https://api.mrbrbackpunkte.de/api.branch/(branchid)
+      // some APIs expose dot-style paths (rare) — as an absolute fallback use full URL
+      `https://api.mrbrbackpunkte.de/api.branch/${branchId}`,
+    ];
+
+    let lastErr: any = null;
+    for (const p of tryPaths) {
+      try {
+        // If p is absolute URL axiosInstance.get will still work.
+        const res = await axiosInstance.get(p);
+        const data = res?.data ?? null;
+
+        // Possible shapes:
+        // { data: { _id, name, ... } } OR { branch: { _id, name } } OR { _id, name }
+        const branch =
+          data?.data?.branch ??
+          data?.branch ??
+          data?.data ??
+          data;
+
+        const id = branch?._id ?? branch?.id ?? branchId;
+        const name = branch?.name ?? branch?.branch_name ?? branch?.title ?? null;
+
+        if (id) {
+          return { _id: String(id), name: String(name ?? id) };
+        }
+      } catch (err) {
+        lastErr = err;
+        // try the next candidate
+      }
     }
-    
+
+    console.warn('getBranchById: all attempts failed', lastErr);
     return null;
   } catch (error: any) {
     console.error('getBranchById() failed:', error?.response ?? error);
@@ -317,7 +340,7 @@ export const postSchedulesBulk = async (
   try {
     // defensive: filter out any malformed items
     const bodySchedules = (schedules || []).filter(s =>
-      typeof s.date === 'string' && typeof s.day_of_week === 'string' &&
+      s && typeof s.date === 'string' && typeof s.day_of_week === 'string' &&
       typeof s.start_time === 'string' && typeof s.end_time === 'string'
     ).map(s => ({
       date: s.date,
@@ -328,7 +351,7 @@ export const postSchedulesBulk = async (
 
     const body = {
       employee_id: String(employeeId),
-      branch_id: String(branchId),
+      branch_id: String(branchId ?? ''),
       schedules: bodySchedules,
     };
 
@@ -371,47 +394,55 @@ export const getLoggedInUserBranch = async (
       console.warn("getLoggedInUserBranch: no logged-in user id available");
       return null;
     }
-    
-    // Use the correct backend endpoint for getting user by ID
-    try {
-      const res = await axiosInstance.get(`/users/${userId}`);
-      const data = res?.data ?? null;
-      const user = data?.data?.user ?? data?.user ?? data?.data ?? data;
+    const tryPaths = [
+      `/user/${userId}`,
+      `/users/${userId}`,
+      `/api/user/${userId}`,
+      `/api.users/${userId}`,
+      // absolute fallback:
+      `https://api.mrbrbackpunkte.de/api/user/${userId}`,
+    ];
 
-      if (!user) {
-        console.warn("getLoggedInUserBranch: no user data found");
-        return null;
-      }
-      
-      const branchField = user.branch ?? user.branch_id ?? user.branchId ?? null;
-      let branchId: string | null = null;
-      
-      if (!branchField) {
-        const nested = user.branch ?? null;
-        if (nested && (nested._id || nested.id)) {
-          branchId = String(nested._id ?? nested.id);
-        }
-      } else {
-        branchId =
-          typeof branchField === "string"
-            ? branchField
-            : branchField._id ?? branchField.id ?? null;
-      }
+    let lastErr: any = null;
+    for (const p of tryPaths) {
+      try {
+        const res = await axiosInstance.get(p);
+        const data = res?.data ?? null;
+        const user =
+          data?.data?.user ?? data?.user ?? data?.data ?? data;
 
-      if (branchId) {
-        // cache it for next time
-        try {
-          await AsyncStorage.setItem(USER_BRANCH_KEY, String(branchId));
-          console.log("getLoggedInUserBranch: cached branch id:", branchId);
-        } catch (e) {
-          console.warn("getLoggedInUserBranch: failed to cache branch id", e);
+        if (!user) continue;
+        const branchField = user.branch ?? user.branch_id ?? user.branchId ?? null;
+        let branchId: string | null = null;
+        if (!branchField) {
+          const nested = user.branch ?? null;
+          if (nested && (nested._id || nested.id)) {
+            branchId = String(nested._id ?? nested.id);
+          }
+        } else {
+          branchId =
+            typeof branchField === "string"
+              ? branchField
+              : branchField._id ?? branchField.id ?? null;
         }
-        return String(branchId);
+
+        if (branchId) {
+          // cache it for next time
+          try {
+            await AsyncStorage.setItem(USER_BRANCH_KEY, String(branchId));
+            console.log("getLoggedInUserBranch: cached branch id:", branchId);
+          } catch (e) {
+            console.warn("getLoggedInUserBranch: failed to cache branch id", e);
+          }
+          return String(branchId);
+        }
+      } catch (err) {
+        lastErr = err;
+        // continue to next path
       }
-    } catch (err) {
-      console.warn("getLoggedInUserBranch: request failed", err);
     }
 
+    console.warn("getLoggedInUserBranch: all attempts failed", lastErr);
     return null;
   } catch (error: any) {
     console.error("getLoggedInUserBranch failed:", error?.response ?? error);

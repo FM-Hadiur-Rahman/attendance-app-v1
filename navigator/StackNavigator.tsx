@@ -52,12 +52,12 @@ export const StackNavigator: React.FC = () => {
       <Stack.Screen
         name="Footer_C"
         component={Footer_C}
-        options={{ headerShown: false, gestureEnabled: false }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Footer_A"
         component={Footer_A}
-        options={{ headerShown: false , gestureEnabled: false}}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="HelpCenterScreen"
@@ -139,7 +139,7 @@ export const StackNavigator: React.FC = () => {
       <Stack.Screen
         name="Footer_S"
         component={Footer_S}
-        options={{ headerShown: false, gestureEnabled: false }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="AddBranchScreen"

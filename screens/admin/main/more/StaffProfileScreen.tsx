@@ -14,9 +14,6 @@ import {
   Linking,
   Keyboard,
   Platform,
-  Dimensions,
-  TouchableWithoutFeedback,
-  KeyboardAvoidingView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import InputBox from "../../../../components/InputBox";
@@ -50,9 +47,6 @@ export const getUserWorkSummaryLocal = (userId: string) => {
   // Kept for compatibility if you have local mock data — but we now prefer server API.
   return { totalDays: 0, totalTime: "0h 0m" };
 };
-
-const { width: deviceWidth } = Dimensions.get("window");
-const base = deviceWidth / 440;
 
 interface StaffProfileScreenprops {
   id?: string;
@@ -134,28 +128,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const setFieldTouched = (field: string) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
   };
-
-  // added this for android keyboard avoiding view 
-  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const onShow = (e: any) => {
-      const h = e?.endCoordinates?.height ?? 0;
-      setKeyboardHeight(h);
-    };
-    const onHide = () => setKeyboardHeight(0);
-
-    const showSub = Keyboard.addListener(showEvent, onShow);
-    const hideSub = Keyboard.addListener(hideEvent, onHide);
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const validateField = (field: string) => {
     let error = "";
@@ -343,8 +315,9 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       console.warn("phone: normalized length invalid", { normalized, rule });
       setErrors((prev) => ({
         ...prev,
-        phone: `${lang.Enter_at_least || "Enter at least"} ${rule.min} ${lang.digits || "digits"
-          }`,
+        phone: `${lang.Enter_at_least || "Enter at least"} ${rule.min} ${
+          lang.digits || "digits"
+        }`,
       }));
       return false;
     }
@@ -395,7 +368,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         setPositionModalVisible(false);
         try {
           showSuccessToast?.(lang.positionUpdated);
-        } catch { }
+        } catch {}
       }
     } catch (err: any) {
       console.error("Failed to save position:", err);
@@ -423,7 +396,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         setEmailModalVisible(false);
         try {
           showSuccessToast?.(lang.emailUpdated);
-        } catch { }
+        } catch {}
       }
     } catch (err: any) {
       console.error("Failed to save email:", err);
@@ -446,7 +419,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       // show toast for deletion
       try {
         showSuccessToast?.("Staff deleted");
-      } catch { }
+      } catch {}
 
       // get logged-in admin id fallback
       let currentUserId = route.params?.userId;
@@ -678,13 +651,16 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         </CartBox>
 
         <View style={styles.statsContainer}>
-          <CartBox borderRadius={10} marginRight={20} containerStyle={styles.statBox}>
+          <CartBox containerStyle={styles.statBox}>
             <Text style={styles.statLabel}>{lang.totalDays}</Text>
             <Text style={styles.statValue}>{totalDays}</Text>
           </CartBox>
 
           <CartBox
-            borderRadius={10}
+            paddingVertical={16}
+            paddingHorizontal={10}
+            backgroundColor={colors.background}
+            borderRadius={16}
             containerStyle={styles.statBox}
           >
             <Text style={styles.statLabel}>{lang.totalWorkingHours}</Text>
@@ -698,192 +674,189 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           width="90%"
           backgroundColor={colors.background}
           borderRadius={16}
-          paddingTop={13}
-          paddingLeft={20}
-          paddingRight={20}
+          paddingVertical={20}
+          paddingHorizontal={20}
           containerStyle={{
             alignSelf: "center",
             marginBottom: 12,
+            height: "auto",
           }}
           alignItems="flex-start"
           justifyContent="flex-start"
           paddingBottom={12}
         >
-          <View style={{}}>
-            <Text style={styles.sectionTitle}>{lang.personalInformation}</Text>
+          <Text style={styles.sectionTitle}>{lang.personalInformation}</Text>
 
-            <View style={{ marginBottom: 12 }}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 5,
-                }}
-              >
-                <Image
-                  source={require("../../../../assets/icons/p_profile_b.png")}
-                  style={styles.icon}
-                />
-                <Text style={styles.infoLabel}>{lang.fullname}</Text>
-              </View>
+          <View style={{ marginBottom: 12, paddingHorizontal: 12 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 5,
+              }}
+            >
+              <Image
+                source={require("../../../../assets/icons/p_profile_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.infoLabel}>{lang.fullname}</Text>
+            </View>
+            <Text
+              style={styles.infoValue}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {currentUser?.fullname}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setPositionModalVisible(true)}
+            style={{ marginBottom: 12, paddingHorizontal: 12 }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 5,
+              }}
+            >
+              <Image
+                source={require("../../../../assets/icons/p_position_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.infoLabel}>{lang.position}</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Text
-                style={styles.infoValue1}
+                style={styles.infoValue}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {currentUser?.fullname}
+                {currentUser?.position}
               </Text>
             </View>
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setPositionModalVisible(true)}
-              style={{ marginBottom: 12 }}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setEmailModalVisible(true)}
+            style={{ marginBottom: 12, paddingHorizontal: 12 }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 5,
+              }}
             >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 5,
-                }}
-              >
-                <Image
-                  source={require("../../../../assets/icons/p_position_b.png")}
-                  style={styles.icon}
-                />
-                <Text style={styles.infoLabel}>{lang.position}</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text
-                  style={styles.infoValue}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {currentUser?.position}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setEmailModalVisible(true)}
-              style={{ marginBottom: 12 }}
+              <Image
+                source={require("../../../../assets/icons/p_email_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.infoLabel}>{lang.email}</Text>
+            </View>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
             >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 5,
+              <Text
+                style={styles.infoValue}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {currentUser?.email}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                activeOpacity={0.7}
+                onPress={() => {
+                  const toEmail = currentUser?.email ?? "";
+                  const subject = encodeURIComponent("");
+                  const body = encodeURIComponent("");
+                  if (!toEmail) return;
+                  Linking.openURL(
+                    `mailto:${toEmail}?subject=${subject}&body=${body}`
+                  ).catch((err) =>
+                    console.log("Failed to open email app:", err)
+                  );
                 }}
               >
-                <Image
-                  source={require("../../../../assets/icons/p_email_b.png")}
-                  style={styles.icon}
-                />
-                <Text style={styles.infoLabel}>{lang.email}</Text>
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  width: "100%",
-                }}
-              >
-                <Text
-                  style={styles.infoValue}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {currentUser?.email}
-                </Text>
+                <Text style={styles.actionButtonText}>{lang.mail}</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    const toEmail = currentUser?.email ?? "";
-                    const subject = encodeURIComponent("");
-                    const body = encodeURIComponent("");
-                    if (!toEmail) return;
-                    Linking.openURL(
-                      `mailto:${toEmail}?subject=${subject}&body=${body}`
-                    ).catch((err) =>
-                      console.log("Failed to open email app:", err)
-                    );
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>{lang.mail}</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setPhoneModalVisible(true)}
-              style={{ marginBottom: 0 }}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setPhoneModalVisible(true)}
+            style={{ marginBottom: 0, paddingHorizontal: 12 }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 5,
+              }}
             >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 5,
+              <Image
+                source={require("../../../../assets/icons/p_phone_b.png")}
+                style={styles.icon}
+              />
+              <Text style={styles.infoLabel}>{lang.phoneNumber}</Text>
+            </View>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <Text style={styles.infoValue}>{currentUser?.phone}</Text>
+              <TouchableOpacity
+                style={styles.actionButton}
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (!currentUser?.phone) return;
+                  const phoneNumber = (currentUser.phone as string).replace(
+                    /\s+/g,
+                    ""
+                  );
+                  Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
+                    console.log("Failed to open dialer:", err)
+                  );
                 }}
               >
-                <Image
-                  source={require("../../../../assets/icons/p_phone_b.png")}
-                  style={styles.icon}
-                />
-                <Text style={styles.infoLabel}>{lang.phoneNumber}</Text>
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  width: "100%",
-                }}
-              >
-                <Text style={styles.infoValue}>{currentUser?.phone}</Text>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    if (!currentUser?.phone) return;
-                    const phoneNumber = (currentUser.phone as string).replace(
-                      /\s+/g,
-                      ""
-                    );
-                    Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
-                      console.log("Failed to open dialer:", err)
-                    );
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>{lang.call}</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </View>
+                <Text style={styles.actionButtonText}>{lang.call}</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
         </CartBox>
 
         <CartBox
           width="90%"
           backgroundColor={colors.background}
           borderRadius={16}
-          paddingTop={13}
-          paddingBottom={12}
-          paddingLeft={20}
-          paddingRight={20}
+          paddingVertical={20}
+          paddingHorizontal={20}
           containerStyle={{
             alignSelf: "center",
             marginBottom: 12,
+            height: 159,
           }}
           alignItems="flex-start"
           justifyContent="flex-start"
         >
           <Text style={styles.sectionTitle}>{lang.loginAccountDetails}</Text>
 
-          <View style={{ marginBottom: 12 }}>
+          <View style={{ marginBottom: 12, paddingHorizontal: 12 }}>
             <View
               style={{
                 flexDirection: "row",
@@ -906,7 +879,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             </Text>
           </View>
 
-          <View style={{ marginBottom: 0, }}>
+          <View style={{ marginBottom: 0, paddingHorizontal: 12 }}>
             <View
               style={{
                 flexDirection: "row",
@@ -958,36 +931,21 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPositionModalVisible(false)}
         />
-        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1, justifyContent: "flex-end" }}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-        >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-            <View
-              style={[
-                styles.modalContainer,
-                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-              ]}
-            >
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>{lang.Edit_Position}</Text>
-              <InputBox
-                label={lang.position}
-                value={positionInput}
-                setValue={setPositionInput}
-                placeholder="Enter position"
-              />
-              <Button1
-                text={lang.save}
-                width="100%"
-                onPress={handleSavePosition}
-              />
-            </View>
-
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>{lang.position}</Text>
+          <InputBox
+            label="Position"
+            value={positionInput}
+            setValue={setPositionInput}
+            placeholder="Enter position"
+          />
+          <Button1
+            text={lang.save}
+            width="100%"
+            onPress={handleSavePosition}
+          />
+        </View>
       </Modal>
 
       {/* Email Modal */}
@@ -1001,42 +959,28 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setEmailModalVisible(false)}
         />
-        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1, justifyContent: "flex-end" }}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-        >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-            <View
-              style={[
-                styles.modalContainer,
-                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-              ]}
-            >
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>{lang.editEmail}</Text>
-              <InputBox
-                label={lang.email}
-                value={emailInput}
-                setValue={(text) => {
-                  const formatted = text.toLowerCase();
-                  setEmailInput(formatted);
-                  if (!formatted.includes("@"))
-                    setEmailError("Enter a valid email");
-                  else setEmailError("");
-                }}
-                placeholder="Enter email"
-                errorMessage={emailError}
-              />
-              <Button1
-                text={lang.save}
-                width="100%"
-                onPress={handleSaveEmail}
-              />
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>{lang.email}</Text>
+          <InputBox
+            label="Email"
+            value={emailInput}
+            setValue={(text) => {
+              const formatted = text.toLowerCase();
+              setEmailInput(formatted);
+              if (!formatted.includes("@"))
+                setEmailError("Enter a valid email");
+              else setEmailError("");
+            }}
+            placeholder="Enter email"
+            errorMessage={emailError}
+          />
+          <Button1
+            text={lang.save}
+            width="100%"
+            onPress={handleSaveEmail}
+          />
+        </View>
       </Modal>
 
       {/* Phone Modal */}
@@ -1050,91 +994,77 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setPhoneModalVisible(false)}
         />
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>{lang.phoneNumber}</Text>
+          {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
+          <InputBox
+            label="Phone"
+            placeholder="123 456 789"
+            value={phone} // <-- use phoneInput state
+            setValue={(text: string) => onPhoneChange(text)}
+            errorMessage={touched.phone ? errors.phone : ""}
+            leftIcon={selectedCountry.flag}
+            leftIcon2={require("../../../../assets/icons/down_b.png")}
+            onLeftIcon2Press={() =>
+              (navigation as any).navigate("Code", {
+                initialSelectedId: selectedCountry.id,
+                onSelect: (item: any) => {
+                  setSelectedCountry(item);
+                  const newRule =
+                    PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
+                    DEFAULT_PHONE_RULE;
 
-        {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1, justifyContent: "flex-end" }}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-        >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-            <View
-              style={[
-                styles.modalContainer,
-                Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-              ]}
-            >
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>{lang.editPhoneNumber}</Text>
-              {/* <InputBox label="Phone" placeholder="123 456 789" value={phoneInput} setValue={(text) => setPhoneInput(text.replace(/[^0-9]/g, ""))} /> */}
-              <InputBox
-                label={lang.phoneNumber}
-                placeholder="123 456 789"
-                value={phone} // <-- use phoneInput state
-                setValue={(text: string) => onPhoneChange(text)}
-                errorMessage={touched.phone ? errors.phone : ""}
-                leftIcon={selectedCountry.flag}
-                leftIcon2={require("../../../../assets/icons/down_b.png")}
-                onLeftIcon2Press={() =>
-                  (navigation as any).navigate("Code", {
-                    initialSelectedId: selectedCountry.id,
-                    onSelect: (item: any) => {
-                      setSelectedCountry(item);
-                      const newRule =
-                        PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
-                        DEFAULT_PHONE_RULE;
+                  let currentRaw = (phone || "").replace(/\D/g, "");
+                  const hasLeadingZero = currentRaw.startsWith("0");
+                  const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
+                  currentRaw = currentRaw.slice(0, maxDisplay);
 
-                      let currentRaw = (phone || "").replace(/\D/g, "");
-                      const hasLeadingZero = currentRaw.startsWith("0");
-                      const maxDisplay = newRule.max + (hasLeadingZero ? 1 : 0);
-                      currentRaw = currentRaw.slice(0, maxDisplay);
+                  let normalized = currentRaw.startsWith("0")
+                    ? currentRaw.slice(1)
+                    : currentRaw;
+                  normalized = normalized.slice(0, newRule.max);
 
-                      let normalized = currentRaw.startsWith("0")
-                        ? currentRaw.slice(1)
-                        : currentRaw;
-                      normalized = normalized.slice(0, newRule.max);
+                  setPhone(formatPhoneForDisplay(currentRaw));
+                  setPhoneRaw(normalized);
 
-                      setPhone(formatPhoneForDisplay(currentRaw));
-                      setPhoneRaw(normalized);
-
-                      if (!normalized || normalized.length === 0) {
-                        setErrors((prev) => ({
-                          ...prev,
-                          phone: lang.phone_required,
-                        }));
-                      } else if (normalized.length < newRule.min) {
-                        if (newRule.min === newRule.max) {
-                          setErrors((prev) => ({
-                            ...prev,
-                            phone: `Please complete all ${newRule.max} digits`,
-                          }));
-                        } else {
-                          setErrors((prev) => ({
-                            ...prev,
-                            phone: `${lang.Enter_at_least || "Enter at least"} ${newRule.min
-                              } ${lang.digits || "digits"}`,
-                          }));
-                        }
-                      } else {
-                        setErrors((prev) => ({ ...prev, phone: "" }));
-                      }
-                    },
-                  })
-                }
-                onFocus={() => {
-                  setFieldTouched("phone");
-                }}
-                onBlur={() => validateField("phone")}
-                keyboardType="phone-pad"
-              />
-              <Button1
-                text={lang.save}
-                width="100%"
-                onPress={handleSavePhone}
-              />
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+                  if (!normalized || normalized.length === 0) {
+                    setErrors((prev) => ({
+                      ...prev,
+                      phone: lang.phone_required,
+                    }));
+                  } else if (normalized.length < newRule.min) {
+                    if (newRule.min === newRule.max) {
+                      setErrors((prev) => ({
+                        ...prev,
+                        phone: `Please complete all ${newRule.max} digits`,
+                      }));
+                    } else {
+                      setErrors((prev) => ({
+                        ...prev,
+                        phone: `${lang.Enter_at_least || "Enter at least"} ${
+                          newRule.min
+                        } ${lang.digits || "digits"}`,
+                      }));
+                    }
+                  } else {
+                    setErrors((prev) => ({ ...prev, phone: "" }));
+                  }
+                },
+              })
+            }
+            onFocus={() => {
+              setFieldTouched("phone");
+            }}
+            onBlur={() => validateField("phone")}
+            keyboardType="phone-pad"
+          />
+          <Button1
+            text={lang.save}
+            width="100%"
+            onPress={handleSavePhone}
+          />
+        </View>
       </Modal>
 
       {/* Profile Image Modal */}
@@ -1143,9 +1073,9 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={styles.modalOverlay}
           onPress={() => setModalVisible(false)}
         />
-        <View style={[styles.modalContainer]}>
+        <View style={[styles.modalContainer, { marginTop: insets.top }]}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{lang.edit_profile}</Text>
+          <Text style={styles.modalTitle}>{lang.profile}</Text>
 
           <TouchableOpacity
             style={styles.modalOption}
@@ -1249,43 +1179,47 @@ const styles = StyleSheet.create({
     width: 25,
     height: 25,
   },
+
+  // Stats
   statsContainer: {
     flexDirection: "row",
+    justifyContent: "space-around",
     marginTop: 20,
     marginBottom: 20,
-    justifyContent: 'space-between',
-    alignSelf: 'center',
+    height: 78,
   },
   statBox: {
-    backgroundColor: colors.secondary,
+    backgroundColor: "#ffffffff",
+    borderRadius: 5,
     alignItems: "flex-start",
-    width: 190 * base,
+    width: "43.18%",
     borderColor: colors.border,
     borderWidth: 1,
-    paddingLeft: 12,
-    paddingTop: 12,
-    paddingBottom: 12,
   },
   statValue: {
     fontSize: fonts.size.xxl,
-    fontWeight: fonts.weight.bold,
+    fontWeight: fonts.weight.bold ,
     color: colors.primary,
-    marginBottom: 10
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   statLabel: {
-    fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular,
-    color: colors.search,
-  },
-  sectionTitle: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular,
-    marginBottom: 14,
     color: colors.subtext,
+    paddingHorizontal: 12,
+  },
+
+  sectionTitle: {
+    fontSize: fonts.size.m,
+    fontWeight: fonts.weight.medium,
+    marginBottom: 8,
+    color: colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   icon: {
-    width: 16,
-    height: 16,
+    width: 18,
+    height: 18,
     marginRight: 8,
     tintColor: colors.primary,
   },
@@ -1297,17 +1231,10 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular,
+    fontWeight: fonts.weight.regular ,
     color: colors.subtext,
     paddingHorizontal: 25,
-    width: '80%',
-  },
-  infoValue1: {
-    fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular,
-    color: colors.subtext,
-    paddingHorizontal: 25,
-    maxWidth: "99%",
+    maxWidth: 220,
   },
   actionButton: {
     backgroundColor: colors.primary,
@@ -1320,40 +1247,40 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: colors.secondary,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.medium,
+    fontWeight: fonts.weight.medium ,
   },
+  // Modal
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
   modalContainer: {
     backgroundColor: colors.secondary,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 20 : 10, // Extra top padding for Android status bar
+    paddingBottom: 20,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 70,
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
+    maxHeight: "80%", // Prevent full-screen takeover on small devices
   },
   modalTitle: {
     fontSize: fonts.size.l,
     fontWeight: fonts.weight.medium,
     marginBottom: 20,
     textAlign: "center",
-    color: colors.text,
-    paddingHorizontal: 10,
+    color: colors.text, // Ensure high contrast
+    paddingHorizontal: 10, // Prevent edge clipping
   },
   modalHandle: {
     width: 40,
-    height: 6,
-    backgroundColor: colors.modal_line,
+    height: 4, // Slightly thicker for touch/visibility
+    backgroundColor: colors.subtext3, // Use a visible color from your theme
     borderRadius: 10,
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 20, // More space below handle
+    elevation: 2, // Android shadow for pop
+    shadowColor: colors.text, // iOS shadow fallback
+    
   },
   modalOption: {
     flexDirection: "row",
@@ -1372,7 +1299,7 @@ const styles = StyleSheet.create({
   },
   modalOptionText: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.medium,
+    fontWeight: fonts.weight.medium ,
     color: colors.text,
   },
   profileImageContainer1: {
@@ -1393,14 +1320,14 @@ const styles = StyleSheet.create({
   deleteLabel: {
     fontSize: fonts.size.m,
     color: colors.logout_text,
-    fontWeight: fonts.weight.medium,
+    fontWeight: fonts.weight.medium ,
   },
   popupsubtext: {
     color: colors.subtext,
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular,
+    fontWeight: fonts.weight.regular ,
     marginBottom: 30,
     alignSelf: "center",
   },
-  buttonWrap: { paddingBottom: 20, alignItems: "center", backgroundColor: colors.secondary, paddingTop: 20 },
+  buttonWrap: { paddingBottom: 20, alignItems: "center" },
 });
