@@ -348,7 +348,19 @@
     "Check_out_failed": "Check-out failed.",
     "processingCheckIn": "Processing check-in, please wait...",
     "pleaseWait": "Please wait...",
-    "redirecting": "Redirecting, please wait..."
+    "redirecting": "Redirecting, please wait...",
+    "Check_out":"Check out",
+    "Checked_in":"Checked in",
+    "Check_out_time":"Check-out time",
+    "Confirm_check_out":"Confirm check out",
+    "Checkout_failed_Try_again":"Checkout failed. Try again.",
+    "Checked_out_successfully": "Checked out successfully",
+    "Checkout_cannot_be_before_checkin": "Checkout cannot be before check-in",
+    "Checkout_cannot_be_earlier_than_scheduled_end": "Checkout cannot be earlier than scheduled end",
+    "Confirm_checkout_for": "Confirm checkout for",
+    "Invalid_time":"Invalid time",
+    "This_action_will_be_recorded":"This action will be recorded."
+
   },
   "de": {
     "profile": "Profil",
@@ -697,6 +709,17 @@
     "Check_out_failed": "Auschecken fehlgeschlagen",
     "processingCheckIn": "Check-in wird verarbeitet, bitte warten...",
     "pleaseWait": "Bitte warten...",
-    "redirecting": "Weiterleitung erfolgt, bitte warten..."
+    "redirecting": "Weiterleitung erfolgt, bitte warten...",
+    "Check_out":"Auschecken",
+    "Checked_in":"Eingecheckt",
+    "Check_out_time":"Auscheckzeit",
+    "Confirm_check_out":"Check-out bestätigen",
+    "Checkout_failed_Try_again":"Auschecken fehlgeschlagen. Versuchen Sie es erneut.",
+    "Checked_out_successfully": "Erfolgreich ausgecheckt",
+    "Checkout_cannot_be_before_checkin": "Das Auschecken kann nicht vor dem Einchecken erfolgen",
+    "Checkout_cannot_be_earlier_than_scheduled_end": "Das Auschecken kann nicht vor dem geplanten Ende erfolgen",
+    "Confirm_checkout_for": "Checkout für bestätigen",
+    "Invalid_time":"Ungültige Zeit",
+    "This_action_will_be_recorded":"Diese Aktion wird aufgezeichnet."
   }
 }

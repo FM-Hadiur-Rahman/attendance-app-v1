@@ -9,6 +9,12 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard
 } from "react-native";
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
@@ -18,8 +24,13 @@ import translations from "../../../assets/translations.json";
 import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
 import { getUserById, getUsers } from "../../../api/profile";
 import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
-import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+import { getAttendanceAllHistory, AttendanceHistoryItem, forceCheckout } from "../../../api/attendanceAllHistory";
 import { getBranchById } from "../../../api/Branchs";
+import Popup from "../../../components/Popup";
+import InputBox from "../../../components/InputBox";
+import { Button1 } from "../../../components/Button";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -74,6 +85,39 @@ const formatTime12 = (t: string) => {
   if (h12 === 0) h12 = 12;
   return `${h12}:${mm} ${ampm}`;
 };
+const timeStringToDate = (timeStr: string) => {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  if (!timeStr) return now;
+  const parts = timeStr.split(":").map((p) => parseInt(p, 10) || 0);
+  now.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+  return now;
+};
+
+// normalize a time string to "HH:MM" (handles "HH:MM:SS" or "H:M")
+const normalizeToHHMM = (t?: string) => {
+  if (!t) return "";
+  const parts = t.split(":").map(p => parseInt(p || "0", 10));
+  const hh = pad2(parts[0] ?? 0);
+  const mm = pad2(parts[1] ?? 0);
+  return `${hh}:${mm}`;
+};
+
+// build a local Date from "YYYY-MM-DD" and "HH:MM" then return its ISO (UTC) string
+const buildIsoFromDateAndHHMM = (ymd: string, hhmm: string) => {
+  const [y, m, d] = ymd.split("-").map(s => parseInt(s, 10));
+  const [hh, mm] = hhmm.split(":").map(s => parseInt(s || "0", 10));
+  // create local Date with components (year, monthIndex, day, hour, minute, second)
+  const local = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+  return local.toISOString();
+};
+
+// convert "HH:MM" to minutes-from-midnight
+const hhmmToMinutesStrict = (hhmm: string) => {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(":").map(x => parseInt(x || "0", 10));
+  return (h || 0) * 60 + (m || 0);
+};
 
 const formatYMDDisplay = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map((s) => parseInt(s, 10));
@@ -101,30 +145,12 @@ const yesterdayYMD = formatYMD(yesterdayDate);
 
 const parseAttendanceDatetime = (s: string | undefined | null): Date | null => {
   if (!s) return null;
-  // Replace space with 'T' so Date can parse (ISO-like)
   const iso = s.replace(' ', 'T');
   const dt = new Date(iso);
   return Number.isNaN(dt.getTime()) ? null : dt;
 };
 const yesterday = new Date();
 yesterday.setDate(yesterday.getDate() - 1);
-
-type CacheEntry<T> = { value: T; expiresAt: number };
-const simpleCache = new Map<string, CacheEntry<any>>();
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds (tweakable)
-const cacheGet = <T,>(key: string): T | undefined => {
-  const e = simpleCache.get(key);
-  if (!e) return undefined;
-  if (Date.now() > e.expiresAt) {
-    simpleCache.delete(key);
-    return undefined;
-  }
-  return e.value as T;
-};
-/** Set cache */
-const cacheSet = <T,>(key: string, value: T, ttlMs = CACHE_TTL_MS) => {
-  simpleCache.set(key, { value, expiresAt: Date.now() + ttlMs });
-};
 
 interface ScreenProps {
   userId: string;
@@ -134,8 +160,8 @@ interface ScreenProps {
   onConsumedRefresh?: () => void;
   toastMessage?: string;
   onConsumedToast?: () => void;
-  branch?: any;
-  createdUser?: any;
+  branch?: string;
+  createdUser?: string;
 }
 
 const HomeScreen_A: React.FC<ScreenProps> = (props) => {
@@ -166,11 +192,141 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const [usersState, setUsersState] = useState<any[]>([]);
   const [loadingShiftData, setLoadingShiftData] = useState<boolean>(false);
 
-  // New: recent checkins from attendance API (already enriched)
+  // Modal / checkout state
+  const [forceCheckoutModalVisible, setForceCheckoutModalVisible] = useState<boolean>(false);
+  /**
+ * When opening the Force Checkout modal we store the attendance record
+ * plus the resolved user profile (if available) so the modal always
+ * has fullname/username regardless of the raw attendance.user shape.
+ */
+  type CheckoutTarget = AttendanceHistoryItem & {
+    userProfile?: { fullname?: string; username?: string };
+    schedule?: ScheduleItem | null;
+  };
+  const [checkoutTargetAttendance, setCheckoutTargetAttendance] = useState<CheckoutTarget | null>(null);
+
+  const [checkoutTime, setCheckoutTime] = useState<string>(""); // "HH:MM"
+  const [checkoutTimeError, setCheckoutTimeError] = useState<string>("");
+  const [confirmPopupVisible, setConfirmPopupVisible] = useState<boolean>(false);
+  const [confirmSubmitting, setConfirmSubmitting] = useState<boolean>(false);
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  const shouldShowForceCheckoutButton = (
+    attendance: AttendanceHistoryItem,
+    schedule?: ScheduleItem | null
+  ): boolean => {
+    if (!attendance || attendance.Out) return false;
+    if (!schedule || !schedule.date || !schedule.end_time) return false;
+
+    const schedDate = new Date(schedule.date);
+    const [eh, em] = schedule.end_time.split(':').map((x) => parseInt(x || '0', 10));
+    schedDate.setHours(eh, em, 0, 0);
+    return Date.now() >= schedDate.getTime();
+  };
+
+  const openForceCheckoutModal = (
+    attendance: AttendanceHistoryItem,
+    schedule?: ScheduleItem | null,
+    userProfile?: { fullname?: string; username?: string } | null
+  ) => {
+    // store schedule and userProfile with the attendance so modal validations can access schedule.end_time
+    const merged: CheckoutTarget = {
+      ...(attendance),
+      userProfile: userProfile ?? undefined,
+      schedule: schedule ?? null,
+    };
+
+    // set default checkout time to schedule end time (normalized to HH:MM) if available
+    const defaultTime = normalizeToHHMM(schedule?.end_time ?? "");
+    setCheckoutTargetAttendance(merged);
+    setCheckoutTime(defaultTime);
+    // set timeFrom for the native picker using "HH:MM:00"
+    setTimeFrom(defaultTime ? `${defaultTime}:00` : "");
+    setCheckoutTimeError("");
+    setForceCheckoutModalVisible(true);
+  };
+
+  const setCheckoutTimeSafe = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, "");
+    let hh = "";
+    let mm = "";
+    if (digits.length > 0) {
+      hh = digits.slice(0, 2);
+      if (hh && parseInt(hh, 10) > 23) hh = "23";
+    }
+    if (digits.length > 2) {
+      mm = digits.slice(2, 4);
+      if (mm && parseInt(mm, 10) > 59) mm = "59";
+    }
+    const formatted = hh + (mm ? ":" + mm : "");
+    setCheckoutTime(formatted);
+
+    const valid = /^([01]?\d|2[0-3]):([0-5]\d)$/.test(formatted);
+    setCheckoutTimeError(valid ? "" : lang.Invalid_time);
+  };
+
+  const handleSaveForceCheckout = async () => {
+    if (!checkoutTargetAttendance) return;
+
+    // guard — (should be already validated by showConfirmDialog, but keep safety)
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+      setCheckoutTimeError(lang.Invalid_time);
+      return;
+    }
+
+    setConfirmSubmitting(true);
+    try {
+      // Build local Date for the attendance In date + provided time
+      const inDatePart = checkoutTargetAttendance.In.split(" ")[0]; // "YYYY-MM-DD"
+      const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
+      const [hhStr, mmStr] = checkoutTime.split(":");
+      const ch = parseInt(hhStr || "0", 10);
+      const cm = parseInt(mmStr || "0", 10);
+      const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, ch, cm, 0, 0);
+
+      // Additional safety checks (schedule / check-in)
+      const scheduleEndHHMM = checkoutTargetAttendance.schedule ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "") : null;
+      if (scheduleEndHHMM) {
+        const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
+        const checkoutMin = hhmmToMinutesStrict(checkoutTime);
+        if (checkoutMin < schedMin) {
+          showErrorToast(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
+          setConfirmSubmitting(false);
+          return;
+        }
+      }
+      const checkinDt = parseAttendanceDatetime(checkoutTargetAttendance.In);
+      if (checkinDt && checkoutLocal.getTime() < checkinDt.getTime()) {
+        setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
+        setConfirmSubmitting(false);
+        return;
+      }
+
+      const checkoutIso = checkoutLocal.toISOString();
+
+      await forceCheckout(checkoutTargetAttendance.id ?? checkoutTargetAttendance._id, checkoutIso);
+      // success
+      setConfirmPopupVisible(false);
+      setForceCheckoutModalVisible(false);
+      setCheckoutTargetAttendance(null);
+      setCheckoutTime("");
+      await fetchAttendanceAndEnrich(activeBranchId);
+      await fetchShiftData(activeBranchId);
+
+      showSuccessToast(lang.Checked_out_successfully);
+    } catch (err) {
+      console.warn("force checkout failed", err);
+      showErrorToast(lang.Checkout_failed_Try_again);
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
+
+  // recent checkins from attendance API (already enriched)
   const [recentCheckins, setRecentCheckins] = useState<
     Array<{
       attendance: AttendanceHistoryItem;
-      userProfile: any | null;
+      userProfile: { fullname: string; username: string };
       schedule?: ScheduleItem | null;
       status: "early" | "late" | "ontime" | "noschedule";
       diffText: string;
@@ -195,11 +351,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const loadSchedulesForBranchWithCache = async (branchIdToUse: string | null): Promise<ScheduleItem[]> => {
     if (!branchIdToUse) return [];
 
-    const cacheKey = `schedules:${branchIdToUse}:${todayYMD}:${yesterdayYMD}`;
-    const cached = cacheGet<ScheduleItem[]>(cacheKey);
-    if (cached) return cached;
-
-    // Fetch only the two dates we need. Backend should accept branchId filter.
+    // Fetch today's and yesterday's schedules fresh every time
     const [todaySchedules, yesterdaySchedules] = await Promise.all([
       getSchedulesForDate(todayYMD, { branchId: branchIdToUse }),
       getSchedulesForDate(yesterdayYMD, { branchId: branchIdToUse }),
@@ -213,17 +365,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       const key = s._id;
       dedupe.set(String(key), s);
     });
-
-    const out = Array.from(dedupe.values());
-    cacheSet(cacheKey, out);
-    return out;
+    return Array.from(dedupe.values());
   };
 
-  /**
-   * fetchShiftData: sets schedulesState and usersState.
-   * - Keeps implementation small.
-   * - Ensures only needed data for branch is fetched.
-   */
   const fetchShiftData = async (branchIdToUse: string | null): Promise<void> => {
     if (!branchIdToUse) {
       setSchedulesState([]);
@@ -233,10 +377,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
     setLoadingShiftData(true);
     try {
-      // getSchedulesForDate already handles pagination; pass branchId so backend can filter.
       const [schedules, users] = await Promise.all([
         loadSchedulesForBranchWithCache(branchIdToUse),
-        getUsers({ limit: 1000 }), // ideally backend supports branchId + limit, change if available
+        getUsers({ limit: 1000 }),
       ]);
       setSchedulesState(schedules);
       setUsersState(users ?? []);
@@ -248,6 +391,65 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       setLoadingShiftData(false);
     }
   };
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timeFrom, setTimeFrom] = useState<string>("");
+  const onShowNativeTimePicker = () => setShowTimePicker(true);
+  const onNativeTimeChange = (event: any, selected?: Date) => {
+    setShowTimePicker(false);
+    if (!selected) return;
+    const hh = pad2(selected.getHours());
+    const mm = pad2(selected.getMinutes());
+    const formatted = `${hh}:${mm}`;
+    setCheckoutTime(formatted);
+    setTimeFrom(`${formatted}:00`);
+  };
+
+const showConfirmDialog = () => {
+  try {
+    if (!checkoutTargetAttendance) return;
+
+    // 1) basic format check
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+      setCheckoutTimeError(lang.Invalid_time);
+      return;
+    }
+
+    // 2) schedule end check (if schedule exists)
+    const scheduleEndHHMM = checkoutTargetAttendance.schedule
+      ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "")
+      : null;
+    if (scheduleEndHHMM) {
+      const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
+      const checkoutMin = hhmmToMinutesStrict(checkoutTime);
+      if (checkoutMin < schedMin) {
+        setCheckoutTimeError(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
+        return;
+      }
+    }
+
+    // 3) not before check-in
+    const inStr = checkoutTargetAttendance.In ?? "";
+    const checkinDt = parseAttendanceDatetime(inStr);
+    if (inStr && checkinDt) {
+      const inDatePart = inStr.split(" ")[0];
+      const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
+      const [hh, mm] = checkoutTime.split(":").map(s => parseInt(s || "0", 10));
+      const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+      if (checkoutLocal.getTime() < checkinDt.getTime()) {
+        setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
+        return;
+      }
+    }
+
+    // passed validation — clear error and show popup
+    setCheckoutTimeError("");
+    setForceCheckoutModalVisible(false);
+    setTimeout(() => setConfirmPopupVisible(true), 350);
+  } catch (err) {
+    console.warn("showConfirmDialog validation error", err);
+    setCheckoutTimeError(lang.Invalid_time);
+  }
+};
 
   //To calculate total staff count (For the current branch, Today date schedule)
   const TotalstaffCount = useMemo(() => {
@@ -290,7 +492,6 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     return count;
   }, [schedulesState, todayYMD, activeBranchId]);
 
-
   /**
    * Enrich attendance records for display.
    *
@@ -307,12 +508,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       setRecentCheckins([]);
       return;
     }
-
     try {
-      const cacheKey = `attendanceAll:${branchIdToUse}:${todayYMD}:${yesterdayYMD}`;
-      const cached = cacheGet<AttendanceHistoryItem[]>(cacheKey);
-      const all = cached ?? (await getAttendanceAllHistory());
-      if (!cached) cacheSet(cacheKey, all);
+      const all = await getAttendanceAllHistory();
 
       const now = new Date();
 
@@ -346,6 +543,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         filtered.map(async (att) => {
           const uid = att.user.id;
           let userProfile = usersState.find((u) => String((u)._id) === String(uid));
+
           if (!userProfile && uid) {
             try {
               userProfile = await getUserById(String(uid));
@@ -440,6 +638,19 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const isFocused = useIsFocused();
 
   useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeBranchId || !isFocused) return;
     // immediate refresh when screen becomes focused
     fetchShiftData(activeBranchId);
@@ -477,9 +688,10 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           return;
         }
         const branchField = u.branch;
-        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? (branchField as { _id?: string })._id ?? null : null);
+        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? 
+          (branchField as { _id?: string })._id ?? null : null);
 
-        const branchName = branchField && typeof branchField === "object" ? (branchField as { name?: string }).name ?? null : null;
+        const branchName = branchField && typeof branchField === "object" ? (branchField as { name: string }).name ?? null : null;
 
         console.log("User branch data:", branchField);
         console.log("Extracted branchId:", branchId);
@@ -552,7 +764,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         <Text style={styles.heading}>{lang.recent_check_ins}</Text>
 
         <ScrollView
-          style={{ marginBottom: '15%' }}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: '15%' }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -564,15 +777,13 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
         >
           <View style={styles.details}>
             {loadingShiftData ? (
-              // Loading state: show spinner centered
               <View style={{ justifyContent: 'center', alignItems: 'center', marginTop: "40%" }}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
             ) : recentCheckins.length === 0 ? (
-              // Loaded but empty: show "No recent check-ins"
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 20 * base }}>
                 <Text style={{ textAlign: 'center', color: colors.subtext }}>
-                  {lang.no_recent_checkins || 'No recent check-ins'}
+                  {lang.no_recent_checkins}
                 </Text>
               </View>
             ) : (
@@ -626,6 +837,15 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                         </View>
                       </View>
                     </View>
+                    {shouldShowForceCheckoutButton(attendance, schedule) && (
+                      <Button1
+                        text={lang.Check_out}
+                        textStyle={{ color: colors.primary, paddingVertical: 10, fontSize: fonts.size.l, fontWeight: fonts.weight.medium }}
+                        backgroundColor={colors.secondary}
+                        containerStyle={{ borderColor: colors.primary, borderWidth: 1, borderRadius: 12, width: '100%', marginTop: 10 }}
+                        onPress={() => openForceCheckoutModal(attendance, schedule, userProfile)}
+                      />
+                    )}
                   </CartBox>
                 );
               })
@@ -633,6 +853,130 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           </View>
         </ScrollView>
       </View>
+      {/* Force checkout modal */}
+      <Modal
+        visible={forceCheckoutModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setForceCheckoutModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => { setForceCheckoutModalVisible(false); }}
+          pointerEvents="auto"
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>
+                  {lang.Check_out} - {checkoutTargetAttendance?.userProfile?.fullname ?? checkoutTargetAttendance?.user?.fullname}
+                </Text>
+
+                <Text style={[styles.name, { marginBottom: 16 }]}>
+                  {lang.Checked_in}:{" "}
+                  {checkoutTargetAttendance
+                    ? formatYMDDisplay(checkoutTargetAttendance.In.split(" ")[0])
+                    : ""}, {" "}
+                  {checkoutTargetAttendance
+                    ? formatTime12(checkoutTargetAttendance.In.split(" ")[1])
+                    : ""}
+                </Text>
+                <InputBox
+                  label={lang.Check_out_time}
+                  placeholder="HH:MM"
+                  value={checkoutTime}
+                  setValue={(v: string) => setCheckoutTimeSafe(v)}
+                  keyboardType="numeric"
+                  maxLength={5}
+                  rightIcon={require("../../../assets/icons/clock_b.png")}
+                  errorMessage={checkoutTimeError}
+                  onRightIconPress={onShowNativeTimePicker}
+                />
+                <View style={{ marginTop: 51 }}>
+                  <Button1
+                    text={lang.Confirm_check_out}
+                    backgroundColor={colors.primary}
+                    width={"100%"}
+                    textStyle={{ color: colors.secondary }}
+                    onPress={showConfirmDialog}
+                  />
+                </View>
+              </View>
+
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+      {/* Confirm popup */}
+      <Popup
+        visible={confirmPopupVisible}
+        onClose={() => setConfirmPopupVisible(false)}
+        popupBorderColor={colors.primary}
+        dismissOnOverlayPress={false}
+        title={`${lang.Confirm_checkout_for} ${checkoutTargetAttendance?.userProfile?.fullname} ? ${lang.This_action_will_be_recorded}`}
+        titleStyle={{ color: colors.primary, marginBottom: 20 }}
+      >
+        {/* Small loading indicator BETWEEN title and buttons */}
+        {confirmSubmitting && (
+          <View style={{ alignItems: "center", marginBottom: 12 }}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        )}
+
+        {/* Buttons row — guard onPress so disabled prop is not required */}
+        <View
+          style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}
+          // prevent touches while submitting (extra safety)
+          pointerEvents={confirmSubmitting ? "none" : "auto"}
+        >
+          <View style={{ width: "48%" }}>
+            <Button1
+              text={lang.yes}
+              backgroundColor={colors.primary}
+              width={"100%"}
+              textStyle={{ color: colors.secondary }}
+              onPress={() => {
+                if (confirmSubmitting) return; 
+                handleSaveForceCheckout();
+              }}
+            />
+          </View>
+
+          <View style={{ width: "48%" }}>
+            <Button1
+              text={lang.no}
+              onPress={() => {
+                if (confirmSubmitting) return;
+                setConfirmPopupVisible(false);
+              }}
+              backgroundColor={colors.error_text}
+              width={"100%"}
+              textStyle={{ color: colors.secondary }}
+            />
+          </View>
+        </View>
+      </Popup>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={timeStringToDate(timeFrom)}
+          mode="time"
+          is24Hour={true}
+          display={Platform.OS === "ios" ? "spinner" : "clock"}
+          onChange={onNativeTimeChange}
+        />
+      )}
+      <Toast config={toastConfig} />
     </View>
   );
 };
@@ -640,9 +984,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
   body: {
+    flex: 1,
     marginTop: 20,
     marginHorizontal: 20,
-    flex: 1,
   },
   boxes: {
     flexDirection: "row",
@@ -768,7 +1112,7 @@ const styles = StyleSheet.create({
   middleRightContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    flex: 1,
+    flex: 1
   },
   statusInline: {
     flexDirection: "row",
@@ -783,6 +1127,34 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
     width: 70,
+  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalContainer: {
+    backgroundColor: colors.secondary,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 70,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHandle: {
+    width: 40,
+    height: 6,
+    backgroundColor: colors.modal_line,
+    borderRadius: 10,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: fonts.size.l,
+    fontWeight: fonts.weight.medium,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });
 
