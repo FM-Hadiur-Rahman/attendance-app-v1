@@ -11,6 +11,7 @@ import {
   TextInput // ✅ Added missing import
 } from "react-native";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications"; // ✅ Added missing import
 import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import { Button1 } from "../../../components/Button";
@@ -40,7 +41,7 @@ import {
   getLastAttendanceRecord,
   scheduleEndShiftAlarm,
   cancelScheduledAlarm,
-  scheduleRecurringCheckoutReminder,
+  scheduleCheckoutReminders,
   cancelAllScheduledCheckoutReminders,
   clearScheduleCache,
   getTodayScheduleNoCache,
@@ -49,7 +50,6 @@ import {
   getScheduledNotifications,
   cancelNotification
 } from "../../../api/checkin_checkout";
-
 //import { getTodaySchedule } from "../../../api/schedules";
 
 // ✅ Define your navigation stack param list
@@ -80,6 +80,33 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
 }) => {
   // useNavigation with proper typing
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  
+  // ✅ Add notification permission setup effect
+  useEffect(() => {
+    (async () => {
+      // Request notification permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== "granted") {
+        console.warn("[home-screen] notifications permission denied");
+      }
+
+      // Ensure notifications show / play sound while app is foreground
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+    })();
+  }, []);
   const [withinRange, setWithinRange] = useState(false);
   const [distance, setDistance] = useState<number | null>(null);
   const [showPopup, setShowPopup] = useState(false);
@@ -308,7 +335,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const now = new Date();
     
     // ✅ Check if current time is past the scheduled end time
-    const scheduleEndDate = new Date(
+    let scheduleEndDate = new Date(
       `${tzDate}T${todaySchedule.end_time}:00`
     );
     
@@ -328,7 +355,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     
     setCanCheckIn(now >= earliestCheckInTime);
   }, [todaySchedule]);
-
   // ✅ New: Live update canCheckIn every minute for button state
   useEffect(() => {
     if (!todaySchedule) return;
@@ -345,7 +371,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       const now = new Date();
       
       // ✅ Check if current time is past the scheduled end time
-      const scheduleEndDate = new Date(
+      let scheduleEndDate = new Date(
         `${tzDate}T${todaySchedule.end_time}:00`
       );
       
@@ -366,9 +392,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       setCanCheckIn(now >= earliestCheckInTime);
     }, 60000); // every 1 minute
     return () => clearInterval(interval);
-  }, [todaySchedule]);
-
-  const handleCheckInAttempt = () => {
+  }, [todaySchedule]);  const handleCheckInAttempt = () => {
     if (!todaySchedule) return false;
     
     const tzDate =
@@ -726,6 +750,8 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       console.error("❌ Error in smart reload:", error);
     }
   };
+
+  // Test notification functions removed as they are no longer needed
 
   // ✅ Overall Auto Refresh: Reduced interval to 5 minutes to decrease API load
   // This also ensures cross-day shifts are properly detected when user opens app next day
@@ -1118,13 +1144,16 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
             }
           }
         
-          // ✅ Schedule recurring checkout reminders at shift end time and every 10 minutes after
+          // ✅ Schedule checkout reminders at shift end time and every 2 minutes after
           if (todaySchedule) {
-            const reminderIds = await scheduleRecurringCheckoutReminder(todaySchedule, response.attendance.In);
-            if (reminderIds) {
-              console.log(`🔔 Recurring checkout reminders scheduled with IDs:`, reminderIds);
-              // Store the notification IDs for potential cancellation on checkout
-              setCheckoutReminderIds(reminderIds);
+            try {
+              const reminderIds = await scheduleCheckoutReminders(todaySchedule, response.attendance.In);
+              if (reminderIds) {
+                // Store the notification IDs for potential cancellation on checkout
+                setCheckoutReminderIds(reminderIds);
+              }
+            } catch (error) {
+              console.error("❌ Error scheduling checkout reminders:", error);
             }
           }
         }
@@ -1250,11 +1279,11 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           // For now, we'll just log that we should cancel
           console.log("🔕 Cancelling scheduled alarm notification");
           
-          // ✅ Cancel any scheduled recurring checkout reminders
+          // ✅ Cancel any scheduled checkout reminders
           if (checkoutReminderIds) {
             await cancelAllScheduledCheckoutReminders(checkoutReminderIds);
             setCheckoutReminderIds(null);
-            console.log("🔕 Cancelling scheduled recurring checkout reminders");
+            console.log("🔕 Cancelling scheduled checkout reminders");
           }
         }
       } else {
@@ -1667,6 +1696,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
               }}
               containerStyle={styles.checkinBtn}
             />
+{/* Test notification buttons removed as they are no longer needed */}
           </>
         ) : attendanceStatus === 'checked_in' ? (
           <View style={{ width: "100%", alignItems: "flex-start" }}>
@@ -1919,8 +1949,6 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
   );
 };
 
-export default C_Homescreen;
-
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -2099,3 +2127,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+export default C_Homescreen;

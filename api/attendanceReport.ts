@@ -90,7 +90,7 @@ export const getUsersForBranch = async (branchId?: string) => {
   try {
     const params: any = { limit: 1000 };
     if (branchId) params.branch = branchId;
-    params.role = 'user';
+    params.role = 'user,staff';
     const res = await axiosInstance.get('/users', { params });
     const data = res?.data ?? {};
     if (Array.isArray(data.users)) return data.users;

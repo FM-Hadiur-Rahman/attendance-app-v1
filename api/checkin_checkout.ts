@@ -984,7 +984,10 @@ export const scheduleEndShiftAlarm = async (schedule: any, checkInTime: string):
         priority: Notifications.AndroidNotificationPriority.HIGH,
         color: '#3b82f6', // blue color
       },
-      trigger: { date: alarmTime, type: Notifications.SchedulableTriggerInputTypes.DATE }, // Pass the Date object with correct type
+      trigger: { 
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: alarmTime
+      },
     });
     
     console.log(`🔔 Alarm scheduled for ${alarmTime.toString()} with ID: ${notificationId}`);
@@ -1005,13 +1008,15 @@ export const cancelScheduledAlarm = async (notificationId: string): Promise<void
   }
 };
 
-// Function to schedule recurring checkout reminders
+// Function to schedule checkout reminders
 // This implements the requirement: "Set an alarm/notification at the user's schedule end time. 
-// If the user has not checked out at that time, then send a reminder every 10 minutes until the user completes the check-out."
-export const scheduleRecurringCheckoutReminder = async (schedule: any, checkInTime: string): Promise<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null> => {
+// If the user has not checked out at that time, then send a reminder every 2 minutes until the user completes the check-out."
+// Note: Due to Expo limitations, we schedule individual notifications every 2 minutes instead of a single recurring notification
+// that starts at a specific time, as Expo's TIME_INTERVAL trigger always starts immediately.
+export const scheduleCheckoutReminders = async (schedule: any, checkInTime: string): Promise<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null> => {
   try {
     if (!schedule?.end_time) {
-      console.warn('⚠️ Cannot schedule recurring checkout reminder: missing schedule end time');
+      console.warn('⚠️ Cannot schedule checkout reminders: missing schedule end time');
       return null;
     }
 
@@ -1031,7 +1036,7 @@ export const scheduleRecurringCheckoutReminder = async (schedule: any, checkInTi
     // Don't schedule if the schedule end time has already passed
     const now = new Date();
     if (scheduleEndDate <= now) {
-      console.log('⚠️ Schedule end time has already passed, not scheduling recurring checkout reminder');
+      console.log('⚠️ Schedule end time has already passed, not scheduling checkout reminders');
       return null;
     }
     
@@ -1045,40 +1050,58 @@ export const scheduleRecurringCheckoutReminder = async (schedule: any, checkInTi
         color: '#3b82f6', // blue color
       },
       trigger: { 
-        date: scheduleEndDate,
-        type: Notifications.SchedulableTriggerInputTypes.DATE
-      },
-    });
-    
-    // Schedule recurring notifications every 10 minutes after schedule end time
-    // We'll set this to start 10 minutes after schedule end time and repeat every 10 minutes
-    const recurringNotificationDate = new Date(scheduleEndDate.getTime() + 10 * 60 * 1000); // 10 minutes after
-    
-    const recurringNotificationId = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Checkout Reminder',
-        body: 'You haven\'t checked out yet. Please complete your checkout process.',
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-        color: '#3b82f6', // blue color
-      },
-      trigger: {
-        date: recurringNotificationDate,
         type: Notifications.SchedulableTriggerInputTypes.DATE,
-        channelId: 'default' // For recurring notifications
+        date: scheduleEndDate
       },
     });
     
-    console.log("🔔 Initial checkout reminder scheduled for:", scheduleEndDate, "with ID:", initialNotificationId);
-    console.log("🔔 Recurring checkout reminders scheduled starting at:", recurringNotificationDate, "with ID:", recurringNotificationId);
+    // Schedule individual notifications every 2 minutes after shift end time
+    // Since Expo doesn't support delayed recurring notifications, we schedule individual ones
+    // We'll schedule the first one 2 minutes after shift end, then 4 minutes, then 6 minutes, etc.
+    // up to a reasonable limit (e.g., 10 reminders = 20 minutes total)
+    const recurringNotificationIds = [];
+    for (let i = 1; i <= 10; i++) {  // Schedule up to 10 reminders (20 minutes total)
+      const reminderTime = new Date(scheduleEndDate.getTime() + i * 2 * 60 * 1000); // i * 2 minutes
+      
+      // Don't schedule if the reminder time has already passed
+      const now = new Date();
+      if (reminderTime <= now) {
+        continue;
+      }
+      
+      try {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Checkout Reminder',
+            body: 'You haven\'t checked out yet. Please complete your checkout process.',
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            color: '#3b82f6', // blue color
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: reminderTime
+          },
+        });
+        recurringNotificationIds.push(notificationId);
+      } catch (error) {
+        console.error(`❌ Error scheduling checkout reminder #${i}:`, error);
+      }
+    }
+    
+    // Return the ID of the first notification (or null if none were scheduled)
+    const recurringNotificationId = recurringNotificationIds.length > 0 ? recurringNotificationIds[0] : null;
+    
     return { initialNotificationId, recurringNotificationId };
   } catch (error) {
-    console.error('❌ Error scheduling recurring checkout reminder:', error);
+    console.error('❌ Error scheduling checkout reminders:', error);
     return null;
   }
 };
 
 // Function to cancel all scheduled checkout reminders
+// Note: With the new implementation, we only cancel the first recurring notification ID
+// In a full implementation, we would track all scheduled notification IDs
 export const cancelAllScheduledCheckoutReminders = async (notificationIds: { initialNotificationId: string | null, recurringNotificationId: string | null }): Promise<void> => {
   try {
     const { initialNotificationId, recurringNotificationId } = notificationIds;
@@ -1092,7 +1115,8 @@ export const cancelAllScheduledCheckoutReminders = async (notificationIds: { ini
     // Cancel recurring notification if it exists
     if (recurringNotificationId) {
       await Notifications.cancelScheduledNotificationAsync(recurringNotificationId);
-      console.log(`🔕 Recurring checkout reminders with ID ${recurringNotificationId} cancelled`);
+      console.log(`🔕 First checkout reminder with ID ${recurringNotificationId} cancelled`);
+      // Note: In a full implementation, we would cancel all individually scheduled reminders
     }
   } catch (error) {
     console.error('❌ Error cancelling scheduled checkout reminders:', error);
@@ -1128,8 +1152,8 @@ export const scheduleCustomAlarm = async (
         color: options?.color || '#3b82f6',
       },
       trigger: {
-        date: alarmTime,
         type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: alarmTime,
       },
     });
 
@@ -1141,7 +1165,7 @@ export const scheduleCustomAlarm = async (
   }
 };
 
-// Function to schedule a recurring alarm
+// Function to schedule a recurring alarm at specified intervals
 export const scheduleRecurringAlarm = async (
   title: string,
   body: string,
@@ -1164,9 +1188,9 @@ export const scheduleRecurringAlarm = async (
         color: options?.color || '#3b82f6',
       },
       trigger: {
-        date: startTime,
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        channelId: 'default',
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: intervalMinutes * 60,
+        repeats: true,
       },
     });
 

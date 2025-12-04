@@ -456,7 +456,7 @@ const AttendanceScreen: React.FC = (props: any) => {
         usersArr = await getUsers({ limit: 1000 });
       } catch (e) {
         try {
-          const r = await fetchUsers({ branchId: branchIdToUse, role: "user", limit: 1000, page: 1 });
+          const r = await fetchUsers({ branchId: branchIdToUse, role: "user,staff", limit: 1000, page: 1 });
           usersArr = r?.users ?? [];
         } catch (er) {
           usersArr = [];
