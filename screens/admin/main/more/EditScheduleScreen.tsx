@@ -15,15 +15,15 @@ import {
     Dimensions,
     LayoutChangeEvent,
     KeyboardAvoidingView,
-    TouchableWithoutFeedback,
     Keyboard,
+    TouchableWithoutFeedback
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { fetchUsers, ProfileUser, getProfile } from "../../../../api/profile";
+import { fetchUsers, ProfileUser, getProfile, postSchedulesBulk } from "../../../../api/profile";
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
-import { getEmployeeSchedules, getSchedules, ScheduleItem, postSchedulesBulk, updateSchedule, createSchedule, deleteSchedule } from "../../../../api/schedules";
+import { getSchedulesByEmployee, getSchedules, ScheduleItem, createSchedule, updateSchedule, deleteSchedule } from "../../../../api/schedules";
 import Header from "../../../../components/Header";
 import colors from "../../../../styles/Colors";
 import CartBox from "../../../../components/CartBox";
@@ -719,7 +719,7 @@ export default function EditScheduleScreen(props: any) {
                 const start = weekDates[0];
                 const end = weekDates[weekDates.length - 1];
                 console.log(`[DEBUG] fetchWeekForOffset offset=${offsetWeeks} start=${start} end=${end}`);
-                const resp = await getEmployeeSchedules(u.id, start, end);
+                const resp = await getSchedulesByEmployee(u.id, start, end);
                 console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
                 const rawArr = unwrapSchedules(resp) || [];
                 // debug list: id, iso, localYmd

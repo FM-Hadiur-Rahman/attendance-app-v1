@@ -19,9 +19,10 @@ import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native"
 
 // API helpers
 import { getUserById, fetchUsers, getUsers } from "../../../api/profile";
-import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
-import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
+import { getSchedulesForDate, getPendingCheckoutUsers, ScheduleItem, PendingCheckoutUser } from "../../../api/schedules";
+import { getAttendanceAllHistory, getCurrentShiftUsers, AttendanceHistoryItem } from "../../../api/attendanceAllHistory";
 import { getBranchById } from "../../../api/Branchs";
+import { hasOngoingCrossDayShift, getLastSchedule } from "../../../api/checkin_checkout";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -139,6 +140,10 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       branchNameToShow?: string | null;
     }>
   >([]);
+
+  // New: users with pending checkouts
+  const [pendingCheckouts, setPendingCheckouts] = useState<PendingCheckoutUser[]>([]);
+  const [loadingPendingCheckouts, setLoadingPendingCheckouts] = useState<boolean>(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -277,18 +282,17 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     }
 
     try {
-      const all = await getAttendanceAllHistory();
+      // Get users who are currently on shift (including cross-day shifts)
+      const all = await getCurrentShiftUsers();
       const now = new Date();
       const filtered = (all || []).filter((a) => {
         const aBranchId = a.branch && typeof a.branch === 'object' && 'id' in a.branch ? (a.branch as { id?: string }).id : (typeof a.branch === 'string' ? a.branch : a.branch_id ?? null);
 
         if (!aBranchId) return false;
         if (String(aBranchId) !== String(branchIdToUse)) return false;
+        // For currently on shift users, we don't filter by today's date since it includes cross-day shifts
         if (!a.In) return false;
-        const inDt = new Date(a.In.replace(' ', 'T'));
-        const inYMD = toYMD(new Date(inDt.getFullYear(), inDt.getMonth(), inDt.getDate()));
-        if (inYMD !== todayYMD) return false;
-        return inDt.getTime() <= now.getTime();
+        return new Date(a.In.replace(' ', 'T')).getTime() <= now.getTime();
       });
 
       filtered.sort((a, b) => (a.In < b.In ? 1 : -1));
@@ -410,6 +414,26 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       setRecentCheckins([]);
     }
   };
+
+  // fetch users with pending checkouts
+  const fetchPendingCheckouts = async (branchIdToUse: string | null) => {
+    if (!branchIdToUse) {
+      setPendingCheckouts([]);
+      return;
+    }
+
+    setLoadingPendingCheckouts(true);
+    try {
+      const pendingUsers = await getPendingCheckoutUsers(branchIdToUse);
+      setPendingCheckouts(pendingUsers);
+    } catch (e) {
+      console.warn("fetchPendingCheckouts failed", e);
+      setPendingCheckouts([]);
+    } finally {
+      setLoadingPendingCheckouts(false);
+    }
+  };
+
   const isFocused = useIsFocused();
 
   useEffect(() => {
@@ -418,11 +442,13 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     // immediate refresh when screen becomes focused
     fetchShiftData(activeBranchId);
     fetchAttendanceAndEnrich(activeBranchId);
+    fetchPendingCheckouts(activeBranchId);
 
     // poll attendance only (keeps UI live while screen open)
     const pollMs = 60 * 1000; // 60s - adjust as needed
     const interval = setInterval(() => {
       fetchAttendanceAndEnrich(activeBranchId);
+      fetchPendingCheckouts(activeBranchId);
     }, pollMs);
 
     return () => {
@@ -437,7 +463,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       console.log("No userId found in params");
       return;
     }
-    // don’t overwrite if already set
+    // don't overwrite if already set
     if (activeBranchId) {
       console.log("activeBranchId already set:", activeBranchId);
       return;
@@ -484,6 +510,7 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
   useEffect(() => {
     fetchAttendanceAndEnrich(activeBranchId);
+    fetchPendingCheckouts(activeBranchId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId, version, schedulesState, usersState]);
 
@@ -531,7 +558,54 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
           </CartBox>
         </View>
 
+        {/* Pending Checkouts Section */}
+        {(pendingCheckouts.length > 0 || loadingPendingCheckouts) && (
+          <>
+            <Text style={styles.heading}>Pending Check-Out</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 15 }}
+            >
+              <View style={{ flexDirection: "row" }}>
+                {loadingPendingCheckouts ? (
+                  <View style={{ justifyContent: 'center', alignItems: 'center', marginHorizontal: 10 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : (
+                  pendingCheckouts.map((user) => (
+                    <CartBox key={user.user.id} containerStyle={styles.pending_checkout_box}>
+                      <Text style={styles.pending_user_name} numberOfLines={1} ellipsizeMode="tail">
+                        {user.user.fullname || user.user.username}
+                      </Text>
+                      {user.schedule ? (
+                        <Text style={styles.pending_schedule_time}>
+                          {user.schedule.start_time} - {user.schedule.end_time}
+                        </Text>
+                      ) : (
+                        <Text style={styles.pending_cross_day}>Cross-day shift</Text>
+                      )}
+                      <Text style={styles.pending_branch_name} numberOfLines={1} ellipsizeMode="tail">
+                        {user.branch?.name || "Unknown Branch"}
+                      </Text>
+                    </CartBox>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </>
+        )}
+
         <Text style={styles.heading}>{lang.recent_check_ins}</Text>
+        {recentCheckins.some(({ attendance }) => {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayYMD = toYMD(yesterday);
+          const inDate = attendance.In.split(' ')[0];
+          return inDate === yesterdayYMD;
+        }) && (
+          <Text style={[styles.heading, { fontSize: fonts.size.s, color: colors.primary, marginTop: 10 }]}>Includes cross-day shifts from yesterday</Text>
+        )}
 
         <ScrollView
           style={{ marginBottom: '15%' }}
@@ -567,6 +641,20 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
 
                 const dateDisplay = formatYMDDisplay(attendance.In.split(' ')[0]);
 
+                // Check if this is a cross-day shift
+                const isCrossDayShift = (() => {
+                  if (!attendance.In) return false;
+                  
+                  // Get yesterday's date
+                  const yesterday = new Date();
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  const yesterdayYMD = toYMD(yesterday);
+                  
+                  // Check if check-in was yesterday
+                  const inDate = attendance.In.split(' ')[0];
+                  return inDate === yesterdayYMD;
+                })();
+
                 return (
                   <CartBox key={attendance.id} containerStyle={styles.detail_cartbox}>
                     {branchNameToShow && (
@@ -590,6 +678,11 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
                           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{displayName}</Text>
                           <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{timeStr}</Text>
                           <Text style={styles.time} numberOfLines={1} ellipsizeMode="tail">{dateDisplay}</Text>
+                          {isCrossDayShift && (
+                            <Text style={[styles.time, { color: colors.primary, fontWeight: 'bold' }]} numberOfLines={1} ellipsizeMode="tail">
+                              Cross-day shift
+                            </Text>
+                          )}
                         </View>
 
                         <View style={styles.statusInline}>
@@ -764,6 +857,38 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weight.medium,
     fontSize: fonts.size.m,
     width: 70,
+  },
+  // Styles for pending checkouts
+  pending_checkout_box: {
+    width: 150,
+    borderRadius: 10,
+    padding: 12,
+    marginRight: 10,
+    backgroundColor: colors.status_late_bg,
+    borderWidth: 1,
+    borderColor: colors.status_late,
+  },
+  pending_user_name: {
+    fontSize: fonts.size.s,
+    fontWeight: fonts.weight.medium,
+    color: colors.text,
+    marginBottom: 4,
+  },
+  pending_schedule_time: {
+    fontSize: fonts.size.xs,
+    color: colors.subtext,
+    marginBottom: 2,
+  },
+  pending_cross_day: {
+    fontSize: fonts.size.xs,
+    color: colors.primary,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  pending_branch_name: {
+    fontSize: fonts.size.xs,
+    color: colors.subtext,
+    fontStyle: 'italic',
   },
 });
 

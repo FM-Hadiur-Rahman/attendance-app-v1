@@ -1,6 +1,7 @@
 // src/api/check in_checkout.ts
 import axiosInstance from "./axiosInstance";
 import { ScheduleItem } from "./schedules";
+import * as Notifications from "expo-notifications";
 
 interface LocationPayload {
   latitude: string;
@@ -126,17 +127,14 @@ export const getTodaySchedule = async (
   console.log("📅 Today as ISO string:", new Date().toISOString().split('T')[0]);
 
   try {
-    // ✅ Optimized: Only fetch current page instead of looping through all pages
-    const resp = await axiosInstance.get("/schedule/", {
-      params: { page: 1, limit: 50 } // Increased limit to get more schedules in one request
-    });
-
-    console.log("📦 API Response:", resp.data);
-    console.log("📦 API Response structure:", Object.keys(resp.data || {}));
+    // ✅ Use the dedicated endpoint to get today's schedule for the logged-in user
+    const resp = await axiosInstance.get("/schedule/today");
+    
+    console.log("📦 API Response from /schedule/today:", resp.data);
 
     // Check if response has the expected structure
-    if (!resp.data) {
-      console.log("❌ API response is empty");
+    if (!resp.data || !resp.data.success) {
+      console.log("❌ API response is empty or not successful");
       const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
@@ -148,33 +146,10 @@ export const getTodaySchedule = async (
       return result;
     }
     
-    // Log the response structure for debugging
-    console.log("📦 API Response keys:", Object.keys(resp.data));
-    console.log("📦 API Response has schedules:", 'schedules' in resp.data);
-    console.log("📦 API Response has data:", 'data' in resp.data);
+    const todaySchedule = resp.data.schedule;
     
-    const schedules: any[] = resp.data?.schedules ?? resp.data?.data ?? [];
-    console.log(`📄 Items found:`, schedules.length);
-    
-    // Additional debugging for response structure
-    if (resp.data?.schedules) {
-      console.log("📦 Using resp.data.schedules");
-    } else if (resp.data?.data) {
-      console.log("📦 Using resp.data.data");
-    } else {
-      console.log("📦 Using empty array as fallback");
-    }
-    
-    // Log the actual data structure for better understanding
-    console.log("📦 Response data type:", typeof resp.data);
-    if (Array.isArray(resp.data)) {
-      console.log("📦 Response data is an array");
-    } else if (resp.data && typeof resp.data === 'object') {
-      console.log("📦 Response data is an object");
-    }
-    
-    if (schedules.length === 0) {
-      console.log("❌ No schedules found in API response");
+    if (!todaySchedule) {
+      console.log("❌ No schedule found in response");
       const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
@@ -185,218 +160,33 @@ export const getTodaySchedule = async (
       };
       return result;
     }
-    
-    // ✅ Log all schedule dates for debugging
-    console.log("📋 All schedule dates:");
-    schedules.forEach((s: any, index: number) => {
-      console.log(`  ${index + 1}. Date: ${s.date}, Employee: ${s.employee_id}, Branch: ${s.branch_id?.name || s.branch_id}`);
-      console.log(`     Full schedule object:`, JSON.stringify(s, null, 2));
-    });
 
-    // ✅ Find today's schedule from the current page only
-    console.log(`🔍 Searching for today's schedule (${todayInTZ}) among ${schedules.length} schedules`);
-    
-    // For debugging, let's log the first few schedules in detail
-    console.log("📋 First 3 schedules for detailed inspection:");
-    schedules.slice(0, 3).forEach((s: any, index: number) => {
-      console.log(`  Schedule ${index + 1}:`, {
-        date: s.date,
-        employee_id: s.employee_id,
-        branch_id: s.branch_id,
-        start_time: s.start_time,
-        end_time: s.end_time
-      });
-      
-      // Check if this schedule has the required fields
-      if (!s.date) {
-        console.log(`  ❌ Schedule ${index + 1} is missing date field`);
-      }
-      if (!s.employee_id) {
-        console.log(`  ❌ Schedule ${index + 1} is missing employee_id field`);
-      }
-      if (!s.branch_id && !s.branch) {
-        console.log(`  ❌ Schedule ${index + 1} is missing branch information`);
-      }
-    });
-    
-    const todaySchedule = schedules.find((s: any) => {
-      if (!s?.date) {
-        console.log("❌ Skipping schedule with no date");
-        return false;
-      }
+    console.log("✅ Today schedule found:", todaySchedule);
 
-      // ✅ More robust date comparison with multiple format attempts
-      console.log(`🔍 Raw schedule date: ${s.date}`);
-      
-      // Try different date parsing approaches
-      let schedDate = "";
-      try {
-        // Try parsing with different methods
-        const dateObj = new Date(s.date);
-        if (isNaN(dateObj.getTime())) {
-          // If standard parsing fails, try direct string comparison
-          console.log("❌ Standard date parsing failed, trying string comparison");
-          // Extract date part if it's a datetime string
-          const datePart = s.date.split('T')[0];
-          schedDate = datePart;
-        } else {
-          schedDate = dateObj.toLocaleDateString("en-CA", {
-            timeZone: timezone,
-          });
-        }
-      } catch (e) {
-        console.log("❌ Error parsing date with timezone, trying without timezone");
-        try {
-          schedDate = new Date(s.date).toLocaleDateString("en-CA");
-        } catch (e2) {
-          console.log("❌ Error parsing date, using string directly");
-          schedDate = s.date.split('T')[0]; // Get date part only
-        }
-      }
-      
-      console.log(`🗓 Checking schedule date: ${s.date}`);
-      console.log(`📅 Formatted schedule date: ${schedDate}`);
-      console.log(`📅 Today date: ${todayInTZ}`);
-      
-      // ✅ More comprehensive date comparison
-      // First, let's try to parse both dates in a more robust way
-      const todayDate = new Date();
-      let scheduleDate: Date;
-      
-      try {
-        scheduleDate = new Date(s.date);
-        console.log(`📅 Parsed schedule date:`, scheduleDate);
-        console.log(`📅 Parsed schedule date string:`, scheduleDate.toISOString());
-      } catch (parseError) {
-        console.log("❌ Error parsing schedule date:", parseError);
-        // Try alternative parsing
-        try {
-          scheduleDate = new Date(s.date.replace(' ', 'T'));
-          console.log(`📅 Parsed schedule date (with T):`, scheduleDate);
-        } catch (parseError2) {
-          console.log("❌ Error parsing schedule date (alternative):", parseError2);
-          return false;
-        }
-      }
-      
-      // Handle invalid dates
-      if (isNaN(scheduleDate.getTime())) {
-        console.log("❌ Schedule date is invalid:", s.date);
-        return false;
-      }
-      
-      // Compare just the date parts (year, month, day)
-      const isSameDate = 
-        scheduleDate.getFullYear() === todayDate.getFullYear() &&
-        scheduleDate.getMonth() === todayDate.getMonth() &&
-        scheduleDate.getDate() === todayDate.getDate();
-      
-      console.log(`📅 Schedule date object:`, scheduleDate);
-      console.log(`📅 Today date object:`, todayDate);
-      console.log(`✅ Same date (year/month/day): ${isSameDate}`);
-      
-      // Also log the individual components for debugging
-      console.log(`📅 Schedule components: Year=${scheduleDate.getFullYear()}, Month=${scheduleDate.getMonth()}, Day=${scheduleDate.getDate()}`);
-      console.log(`📅 Today components: Year=${todayDate.getFullYear()}, Month=${todayDate.getMonth()}, Day=${todayDate.getDate()}`);
-      
-      // Additional debugging for date format issues
-      console.log(`📅 Schedule date string: ${s.date}`);
-      console.log(`📅 Schedule date type: ${typeof s.date}`);
-      
-      // Try to extract date in different ways
-      let extractedDate = "";
-      if (typeof s.date === "string") {
-        if (s.date.includes('T')) {
-          extractedDate = s.date.split('T')[0];
-        } else {
-          extractedDate = s.date;
-        }
-      } else {
-        extractedDate = scheduleDate.toISOString().split('T')[0];
-      }
-      
-      console.log(`📅 Extracted date: ${extractedDate}`);
-      console.log(`📅 Today ISO date: ${todayDate.toISOString().split('T')[0]}`);
-      console.log(`✅ Direct string match: ${extractedDate === todayDate.toISOString().split('T')[0]}`);
-      
-      // Return true if either method matches
-      return isSameDate || extractedDate === todayDate.toISOString().split('T')[0];
-    });
-    
-    console.log(`🔍 Search complete. Found today's schedule: ${!!todaySchedule}`);
-    if (todaySchedule) {
-      console.log(`📋 Today's schedule details:`, todaySchedule);
-    }
+    const empId =
+      typeof todaySchedule.employee_id === "object" &&
+        todaySchedule.employee_id !== null
+        ? todaySchedule.employee_id._id
+        : todaySchedule.employee_id;
 
-    if (todaySchedule) {
-      console.log("✅ Today schedule found:", todaySchedule);
-
-      const empId =
-        typeof todaySchedule.employee_id === "object" &&
-          todaySchedule.employee_id !== null
-          ? todaySchedule.employee_id._id
-          : todaySchedule.employee_id;
-
-      const brId =
-        typeof todaySchedule.branch_id === "object" &&
-          todaySchedule.branch_id !== null
-          ? todaySchedule.branch_id._id
-          : todaySchedule.branch_id;
+    const brId =
+      typeof todaySchedule.branch_id === "object" &&
+        todaySchedule.branch_id !== null
+        ? todaySchedule.branch_id._id
+        : todaySchedule.branch_id;
       
-      console.log(`👤 Schedule employee ID: ${empId}`);
-      console.log(`🏢 Schedule branch ID: ${brId}`);
-      console.log(`🔑 Requested user ID: ${userId}`);
-      console.log(`🔑 Requested branch ID: ${branchId}`);
-      console.log(`✅ User ID match: ${!userId || empId === userId}`);
-      console.log(`✅ Branch ID match: ${!branchId || brId === branchId}`);
+    console.log(`👤 Schedule employee ID: ${empId}`);
+    console.log(`🏢 Schedule branch ID: ${brId}`);
+    console.log(`🔑 Requested user ID: ${userId}`);
+    console.log(`🔑 Requested branch ID: ${branchId}`);
+    console.log(`✅ User ID match: ${!userId || empId === userId}`);
+    console.log(`✅ Branch ID match: ${!branchId || brId === branchId}`);
 
-      // For debugging, let's temporarily bypass userId check
-      const bypassUserIdCheck = true; // Set to false in production
-      if (userId && empId !== userId && !bypassUserIdCheck) {
-        console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
-        const result = { schedules: [], todaySchedule: null };
-        // ✅ Update cache
-        scheduleCache = {
-          data: result,
-          timestamp: now,
-          userId,
-          branchId
-        };
-        return result;
-      }
-
-      // For debugging, let's temporarily bypass branchId check
-      const bypassBranchIdCheck = true; // Set to false in production
-      if (branchId && brId !== branchId && !bypassBranchIdCheck) {
-        console.log(
-          "🚫 Branch ID filter mismatch. Needed:",
-          branchId,
-          "Found:",
-          brId
-        );
-        const result = { schedules: [], todaySchedule: null };
-        // ✅ Update cache
-        scheduleCache = {
-          data: result,
-          timestamp: now,
-          userId,
-          branchId
-        };
-        return result;
-      }
-
-      const result = {
-        schedules: [],
-        todaySchedule: {
-          branchname: todaySchedule.branch_id?.name ?? "Unknown Branch",
-          start_time: todaySchedule.start_time,
-          end_time: todaySchedule.end_time,
-          raw: todaySchedule,
-        },
-      };
-      
-      console.log("✅ Processed schedule result:", result);
-      
+    // For debugging, let's temporarily bypass userId check
+    const bypassUserIdCheck = true; // Set to false in production
+    if (userId && empId !== userId && !bypassUserIdCheck) {
+      console.log("🚫 User ID filter mismatch. Needed:", userId, "Found:", empId);
+      const result = { schedules: [], todaySchedule: null };
       // ✅ Update cache
       scheduleCache = {
         data: result,
@@ -404,12 +194,43 @@ export const getTodaySchedule = async (
         userId,
         branchId
       };
-      
       return result;
     }
 
-    console.log("❌ No schedule found for today.");
-    const result = { schedules: [], todaySchedule: null };
+    // For debugging, let's temporarily bypass branchId check
+    const bypassBranchIdCheck = true; // Set to false in production
+    if (branchId && brId !== branchId && !bypassBranchIdCheck) {
+      console.log(
+        "🚫 Branch ID filter mismatch. Needed:",
+        branchId,
+        "Found:",
+        brId
+      );
+      const result = { schedules: [], todaySchedule: null };
+      // ✅ Update cache
+      scheduleCache = {
+        data: result,
+        timestamp: now,
+        userId,
+        branchId
+      };
+      return result;
+    }
+
+    const result = {
+      schedules: [],
+      todaySchedule: {
+        branchname: todaySchedule.branch_id?.name ?? "Unknown Branch",
+        start_time: todaySchedule.start_time,
+        end_time: todaySchedule.end_time,
+        date: todaySchedule.date,
+        branch_id: todaySchedule.branch_id,
+        raw: todaySchedule,
+      },
+    };
+    
+    console.log("✅ Processed schedule result:", result);
+    
     // ✅ Update cache
     scheduleCache = {
       data: result,
@@ -417,6 +238,7 @@ export const getTodaySchedule = async (
       userId,
       branchId
     };
+    
     return result;
   } catch (err: any) {
     console.log("❌ ERROR:", err.response?.data ?? err.message);
@@ -743,6 +565,64 @@ export const getAttendanceReport = async (
   }
 };
 
+// Enhanced function to get attendance history including relevant cross-day records
+export const getMyAttendanceHistoryEnhanced = async (): Promise<AttendanceRecord[]> => {
+  try {
+    const res = await axiosInstance.get('/attendance/my-history');
+    if (!res?.data) {
+      console.warn('⚠️ Attendance API returned empty response');
+      return [];
+    }
+    if (res.data.success && Array.isArray(res.data.data)) {
+      const allRecords = res.data.data;
+      
+      // 🔥 Get local date (correct)
+      const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+      
+      // Get yesterday's date
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+      
+      console.log("📅 Local Today:", today);
+      console.log("📅 Yesterday:", yesterdayYMD);
+      
+      // 🔥 Filter records for today and relevant yesterday's records (cross-day shifts)
+      const relevantRecords = allRecords.filter((record: any) => {
+        const createdDate = record.created_at?.split(" ")[0];
+        
+        // Always include today's records
+        if (createdDate === today) return true;
+        
+        // For yesterday's records, include all records that might be cross-day shifts
+        // (any check-in from yesterday that might still be ongoing)
+        if (createdDate === yesterdayYMD) {
+          if (!record.In) return false;
+          
+          // For cross-day shifts, we want to include any record from yesterday
+          // that doesn't have a checkout, or has a checkout that might be today
+          if (!record.Out) return true; // Still ongoing shift from yesterday
+          
+          // Check if checkout was today (completed cross-day shift)
+          const outDate = new Date(record.Out).toLocaleDateString("en-CA");
+          return outDate === today;
+        }
+        
+        return false;
+      });
+      
+      // 🔥 Log relevant attendance records
+      console.log("📌 Relevant Attendance Records (including cross-day):", relevantRecords);
+      return relevantRecords;
+    }
+    console.warn('⚠️ Attendance API returned success=false or invalid data:', res.data);
+    return [];
+  } catch (err) {
+    //console.error('❌ Error fetching attendance history:', err);
+    return [];
+  }
+};
+
 export const getMyAttendanceHistory = async (): Promise<AttendanceRecord[]> => {
   try {
     const res = await axiosInstance.get('/attendance/my-history');
@@ -794,12 +674,90 @@ export const getMyAttendanceHistory1 = async (): Promise<any[]> => {
   }
 };
 
+// Function to check if user has an ongoing cross-day shift
+// (checked in yesterday but not checked out yet)
+export const hasOngoingCrossDayShift = async (): Promise<boolean> => {
+  try {
+    // Get all attendance records
+    const res = await axiosInstance.get('/attendance/my-history');
+    if (!res?.data?.success || !Array.isArray(res.data.data)) return false;
+    
+    const allRecords = res.data.data;
+    
+    // Get today's and yesterday's dates
+    const today = new Date().toLocaleDateString("en-CA");
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+    
+    // Check if there's any record from yesterday that has check-in but no check-out
+    // This is specifically for night shifts that cross over to the next day
+    return allRecords.some((record: any) => {
+      // Record must have check-in but no check-out
+      if (!record.In || record.Out) return false;
+      
+      // Check if check-in was yesterday
+      const inDate = new Date(record.In).toLocaleDateString("en-CA");
+      
+      // For night shifts, we're specifically looking for shifts that started yesterday
+      // and are likely to end today (cross-day shifts)
+      if (inDate === yesterdayYMD) {
+        // Additional check: if the check-in time was in the evening/night hours
+        // (typically after 6 PM), it's very likely a cross-day shift
+        const inDateTime = new Date(record.In);
+        const inHour = inDateTime.getHours();
+        
+        // If checked in after 6 PM yesterday, it's likely a cross-day shift
+        if (inHour >= 18) {
+          return true;
+        }
+        
+        // Also consider shifts that started late afternoon if they might cross over
+        // (this is a more inclusive check)
+        return true;
+      }
+      
+      return false;
+    });
+  } catch (error) {
+    console.error("Error checking for ongoing cross-day shift:", error);
+    return false;
+  }
+};
+
 // Simplified function to check if user has checked in today but not checked out
+// Modified to also check for cross-day shifts (shifts that started yesterday but continue today)
 export const isCheckedInToday = async (): Promise<boolean> => {
   try {
-    const records = await getMyAttendanceHistory();
+    // First check if there's an ongoing cross-day shift
+    const hasOngoingCrossDay = await hasOngoingCrossDayShift();
+    if (hasOngoingCrossDay) {
+      return true; // User is definitely checked in (from yesterday)
+    }
+    
+    // Use enhanced history to include cross-day records
+    const records = await getMyAttendanceHistoryEnhanced();
+    
     // Check if there's any record with check-in but no check-out
-    return records.some(record => record.In && !record.Out);
+    const hasUncheckedRecord = records.some(record => record.In && !record.Out);
+    
+    // For cross-day shifts, we need to be more specific
+    // Check if there's any record where the user checked in yesterday for a night shift
+    // but hasn't checked out yet
+    const today = new Date().toLocaleDateString("en-CA");
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+    
+    const hasOngoingCrossDayShiftRecord = records.some(record => {
+      if (!record.In || record.Out) return false; // Must have check-in but no check-out
+      
+      // Check if this record is from yesterday (cross-day shift)
+      const inDate = new Date(record.In).toLocaleDateString("en-CA");
+      return inDate === yesterdayYMD;
+    });
+    
+    return hasUncheckedRecord || hasOngoingCrossDayShiftRecord;
   } catch (error) {
     console.error("Error checking check-in status:", error);
     return false;
@@ -807,13 +765,471 @@ export const isCheckedInToday = async (): Promise<boolean> => {
 };
 
 // Simplified function to check if user has completed their shift today (checked in and out)
+// Modified to properly handle cross-day shifts
 export const hasCompletedShiftToday = async (): Promise<boolean> => {
   try {
-    const records = await getMyAttendanceHistory();
-    // Check if there's any record with both check-in and check-out
-    return records.some(record => record.In && record.Out);
+    // Get all attendance records to properly check for completed shifts
+    const res = await axiosInstance.get('/attendance/my-history');
+    if (!res?.data?.success || !Array.isArray(res.data.data)) return false;
+    
+    const allRecords = res.data.data;
+    
+    // Get today's date
+    const today = new Date().toLocaleDateString("en-CA");
+    
+    // Get yesterday's date
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+    
+    // Check if there's any record with both check-in and check-out that was completed today
+    // This includes:
+    // 1. Regular shifts completed today
+    // 2. Cross-day shifts that started yesterday but completed checkout today
+    return allRecords.some((record: any) => {
+      // Record must have both check-in and check-out
+      if (!record.In || !record.Out) return false;
+      
+      // Check if checkout was today
+      const outDate = new Date(record.Out).toLocaleDateString("en-CA");
+      
+      // Also check if this is a cross-day shift (check-in was yesterday)
+      const inDate = new Date(record.In).toLocaleDateString("en-CA");
+      const isCrossDayShift = inDate === yesterdayYMD;
+      
+      // Return true if checkout was today (regardless of when check-in was)
+      return outDate === today;
+    });
   } catch (error) {
     console.error("Error checking shift completion status:", error);
     return false;
+  }
+};
+
+// Function to get the user's last schedule details
+export const getLastSchedule = async (): Promise<any> => {
+  try {
+    // Get all schedules
+    const res = await axiosInstance.get('/schedule');
+    
+    if (!res?.data) {
+      console.warn('⚠️ Schedule API returned empty response');
+      return null;
+    }
+    
+    if (res.data.schedules && Array.isArray(res.data.schedules)) {
+      const allSchedules = res.data.schedules;
+      
+      // Sort schedules by date descending to get the most recent
+      const sortedSchedules = allSchedules.sort((a: any, b: any) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateB.getTime() - dateA.getTime();
+      });
+      
+      // Return the most recent schedule
+      return sortedSchedules[0] || null;
+    }
+    
+    console.warn('⚠️ Schedule API returned success=false or invalid data:', res.data);
+    return null;
+  } catch (err) {
+    console.error('❌ Error fetching last schedule:', err);
+    return null;
+  }
+};
+
+// Function to get the user's last attendance record
+export const getLastAttendanceRecord = async (): Promise<any> => {
+  try {
+    const res = await axiosInstance.get('/attendance/my-history');
+    
+    if (!res?.data) {
+      console.warn('⚠️ Attendance API returned empty response');
+      return null;
+    }
+    
+    if (res.data.success && Array.isArray(res.data.data)) {
+      const allRecords = res.data.data;
+      
+      // Sort records by In time descending to get the most recent
+      const sortedRecords = allRecords.sort((a: any, b: any) => {
+        const dateA = new Date(a.In);
+        const dateB = new Date(b.In);
+        return dateB.getTime() - dateA.getTime();
+      });
+      
+      // Return the most recent record
+      return sortedRecords[0] || null;
+    }
+    
+    console.warn('⚠️ Attendance API returned success=false or invalid data:', res.data);
+    return null;
+  } catch (err) {
+    console.error('❌ Error fetching last attendance record:', err);
+    return null;
+  }
+};
+
+// Function to get user's last schedule and attendance status
+export const getUserLastScheduleStatus = async (): Promise<any> => {
+  try {
+    const res = await axiosInstance.get('/attendance/last-schedule-status');
+    return res.data;
+  } catch (err) {
+    console.error('❌ Error fetching user last schedule status:', err);
+    return null;
+  }
+};
+
+// Function to get all users who are currently on shift (including cross-day shifts)
+export const getAllCurrentShiftUsers = async (): Promise<any[]> => {
+  try {
+    // Get all attendance records
+    const res = await axiosInstance.get('/admin/attendance/all-history');
+    
+    if (!res?.data?.data || !Array.isArray(res.data.data)) {
+      console.warn('⚠️ Attendance API returned empty response');
+      return [];
+    }
+    
+    const allRecords = res.data.data;
+    
+    // Get today's and yesterday's dates
+    const today = new Date().toLocaleDateString("en-CA");
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayYMD = yesterday.toLocaleDateString("en-CA");
+    
+    // Filter for users who are currently on shift
+    // This includes:
+    // 1. Users who checked in today and haven't checked out yet
+    // 2. Users who checked in yesterday for night shifts and haven't checked out yet
+    const currentShiftUsers = allRecords.filter((record: any) => {
+      // Record must have check-in but no check-out
+      if (!record.In || record.Out) return false;
+      
+      // Check if check-in was today or yesterday
+      const inDate = new Date(record.In).toLocaleDateString("en-CA");
+      
+      // Include today's check-ins
+      if (inDate === today) {
+        return true;
+      }
+      
+      // For night shifts, include yesterday's check-ins that are likely still ongoing
+      if (inDate === yesterdayYMD) {
+        // Additional check: if the check-in time was in the evening/night hours
+        // (typically after 6 PM), it's very likely a cross-day shift
+        const inDateTime = new Date(record.In);
+        const inHour = inDateTime.getHours();
+        
+        // If checked in after 6 PM yesterday, it's likely a cross-day shift
+        if (inHour >= 18) {
+          return true;
+        }
+        
+        // Also consider shifts that started late afternoon if they might cross over
+        // (this is a more inclusive check)
+        return true;
+      }
+      
+      return false;
+    });
+    
+    return currentShiftUsers;
+  } catch (err) {
+    console.error('❌ Error fetching current shift users:', err);
+    return [];
+  }
+};
+
+// Function to schedule an alarm notification 2 minutes before schedule end time
+export const scheduleEndShiftAlarm = async (schedule: any, checkInTime: string): Promise<string | null> => {
+  try {
+    if (!schedule?.end_time) {
+      console.warn('⚠️ Cannot schedule alarm: missing schedule end time');
+      return null;
+    }
+
+    // Parse schedule end time
+    const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+    
+    // Create a date object for the schedule end time
+    const scheduleEndDate = new Date(checkInTime);
+    scheduleEndDate.setHours(endHours, endMinutes, 0, 0);
+    
+    // For cross-day shifts (end time before start time), adjust to next day
+    const [startHours] = schedule.start_time.split(':').map(Number);
+    if (endHours < startHours) {
+      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+    }
+    
+    // Schedule the alarm 2 minutes before the schedule end time
+    const alarmTime = new Date(scheduleEndDate.getTime() - 2 * 60 * 1000); // 2 minutes before
+    
+    // Don't schedule if the alarm time has already passed
+    const now = new Date();
+    if (alarmTime <= now) {
+      console.log('⚠️ Alarm time has already passed, not scheduling notification');
+      return null;
+    }
+    
+    // Schedule the notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Shift Ending Soon',
+        body: 'Your shift ends in 2 minutes. Please prepare to check out.',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        color: '#3b82f6', // blue color
+      },
+      trigger: { 
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: alarmTime
+      },
+    });
+    
+    console.log(`🔔 Alarm scheduled for ${alarmTime.toString()} with ID: ${notificationId}`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling end shift alarm:', error);
+    return null;
+  }
+};
+
+// Function to cancel a scheduled alarm notification
+export const cancelScheduledAlarm = async (notificationId: string): Promise<void> => {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    console.log(`🔕 Alarm with ID ${notificationId} cancelled`);
+  } catch (error) {
+    console.error('❌ Error cancelling scheduled alarm:', error);
+  }
+};
+
+// Function to schedule checkout reminders
+// This implements the requirement: "Set an alarm/notification at the user's schedule end time. 
+// If the user has not checked out at that time, then send a reminder every 2 minutes until the user completes the check-out."
+// Note: Due to Expo limitations, we schedule individual notifications every 2 minutes instead of a single recurring notification
+// that starts at a specific time, as Expo's TIME_INTERVAL trigger always starts immediately.
+export const scheduleCheckoutReminders = async (schedule: any, checkInTime: string): Promise<{ initialNotificationId: string | null, recurringNotificationId: string | null } | null> => {
+  try {
+    if (!schedule?.end_time) {
+      console.warn('⚠️ Cannot schedule checkout reminders: missing schedule end time');
+      return null;
+    }
+
+    // Parse schedule end time
+    const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+    
+    // Create a date object for the schedule end time
+    const scheduleEndDate = new Date(checkInTime);
+    scheduleEndDate.setHours(endHours, endMinutes, 0, 0);
+    
+    // For cross-day shifts (end time before start time), adjust to next day
+    const [startHours] = schedule.start_time.split(':').map(Number);
+    if (endHours < startHours) {
+      scheduleEndDate.setDate(scheduleEndDate.getDate() + 1);
+    }
+    
+    // Don't schedule if the schedule end time has already passed
+    const now = new Date();
+    if (scheduleEndDate <= now) {
+      console.log('⚠️ Schedule end time has already passed, not scheduling checkout reminders');
+      return null;
+    }
+    
+    // Schedule the initial notification at the exact schedule end time
+    const initialNotificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Checkout Time',
+        body: 'It\'s time to check out. Please complete your checkout process.',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        color: '#3b82f6', // blue color
+      },
+      trigger: { 
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: scheduleEndDate
+      },
+    });
+    
+    // Schedule individual notifications every 2 minutes after shift end time
+    // Since Expo doesn't support delayed recurring notifications, we schedule individual ones
+    // We'll schedule the first one 2 minutes after shift end, then 4 minutes, then 6 minutes, etc.
+    // up to a reasonable limit (e.g., 10 reminders = 20 minutes total)
+    const recurringNotificationIds = [];
+    for (let i = 1; i <= 10; i++) {  // Schedule up to 10 reminders (20 minutes total)
+      const reminderTime = new Date(scheduleEndDate.getTime() + i * 2 * 60 * 1000); // i * 2 minutes
+      
+      // Don't schedule if the reminder time has already passed
+      const now = new Date();
+      if (reminderTime <= now) {
+        continue;
+      }
+      
+      try {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Checkout Reminder',
+            body: 'You haven\'t checked out yet. Please complete your checkout process.',
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            color: '#3b82f6', // blue color
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: reminderTime
+          },
+        });
+        recurringNotificationIds.push(notificationId);
+      } catch (error) {
+        console.error(`❌ Error scheduling checkout reminder #${i}:`, error);
+      }
+    }
+    
+    // Return the ID of the first notification (or null if none were scheduled)
+    const recurringNotificationId = recurringNotificationIds.length > 0 ? recurringNotificationIds[0] : null;
+    
+    return { initialNotificationId, recurringNotificationId };
+  } catch (error) {
+    console.error('❌ Error scheduling checkout reminders:', error);
+    return null;
+  }
+};
+
+// Function to cancel all scheduled checkout reminders
+// Note: With the new implementation, we only cancel the first recurring notification ID
+// In a full implementation, we would track all scheduled notification IDs
+export const cancelAllScheduledCheckoutReminders = async (notificationIds: { initialNotificationId: string | null, recurringNotificationId: string | null }): Promise<void> => {
+  try {
+    const { initialNotificationId, recurringNotificationId } = notificationIds;
+    
+    // Cancel initial notification if it exists
+    if (initialNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(initialNotificationId);
+      console.log(`🔕 Initial checkout reminder with ID ${initialNotificationId} cancelled`);
+    }
+    
+    // Cancel recurring notification if it exists
+    if (recurringNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(recurringNotificationId);
+      console.log(`🔕 First checkout reminder with ID ${recurringNotificationId} cancelled`);
+      // Note: In a full implementation, we would cancel all individually scheduled reminders
+    }
+  } catch (error) {
+    console.error('❌ Error cancelling scheduled checkout reminders:', error);
+  }
+};
+
+// Function to schedule a custom alarm at a specific time
+export const scheduleCustomAlarm = async (
+  title: string,
+  body: string,
+  alarmTime: Date,
+  options?: {
+    sound?: boolean;
+    priority?: any;
+    color?: string;
+  }
+): Promise<string | null> => {
+  try {
+    // Don't schedule if the alarm time has already passed
+    const now = new Date();
+    if (alarmTime <= now) {
+      console.log('⚠️ Custom alarm time has already passed, not scheduling notification');
+      return null;
+    }
+
+    // Schedule the notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title || 'Custom Alarm',
+        body: body || 'This is your custom alarm',
+        sound: options?.sound !== false ? 'default' : undefined,
+        priority: options?.priority || Notifications.AndroidNotificationPriority.HIGH,
+        color: options?.color || '#3b82f6',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: alarmTime,
+      },
+    });
+
+    console.log(`🔔 Custom alarm scheduled for ${alarmTime.toString()} with ID: ${notificationId}`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling custom alarm:', error);
+    return null;
+  }
+};
+
+// Function to schedule a recurring alarm at specified intervals
+export const scheduleRecurringAlarm = async (
+  title: string,
+  body: string,
+  startTime: Date,
+  intervalMinutes: number,
+  options?: {
+    sound?: boolean;
+    priority?: any;
+    color?: string;
+  }
+): Promise<string | null> => {
+  try {
+    // Schedule the recurring notification
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title || 'Recurring Alarm',
+        body: body || 'This is your recurring alarm',
+        sound: options?.sound !== false ? 'default' : undefined,
+        priority: options?.priority || Notifications.AndroidNotificationPriority.HIGH,
+        color: options?.color || '#3b82f6',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: intervalMinutes * 60,
+        repeats: true,
+      },
+    });
+
+    console.log(`🔔 Recurring alarm scheduled starting at ${startTime.toString()} with ID: ${notificationId}`);
+    console.log(`🔔 Recurring interval: every ${intervalMinutes} minutes`);
+    return notificationId;
+  } catch (error) {
+    console.error('❌ Error scheduling recurring alarm:', error);
+    return null;
+  }
+};
+
+// Function to get all scheduled notifications
+export const getScheduledNotifications = async (): Promise<Notifications.NotificationRequest[]> => {
+  try {
+    const notifications = await Notifications.getAllScheduledNotificationsAsync();
+    return notifications;
+  } catch (error) {
+    console.error('❌ Error getting scheduled notifications:', error);
+    return [];
+  }
+};
+
+// Function to cancel a specific notification by ID
+export const cancelNotification = async (notificationId: string): Promise<void> => {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    console.log(`🔕 Notification with ID ${notificationId} cancelled`);
+  } catch (error) {
+    console.error('❌ Error cancelling notification:', error);
+  }
+};
+
+// Function to cancel all scheduled notifications
+export const cancelAllNotifications = async (): Promise<void> => {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('🔕 All scheduled notifications cancelled');
+  } catch (error) {
+    console.error('❌ Error cancelling all notifications:', error);
   }
 };

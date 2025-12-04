@@ -169,7 +169,7 @@ const DashboardScreen = (props: any) => {
       if (typeof s.employee_id === 'object' && s.employee_id !== null) {
         const role = (s.employee_id as any).role ?? (s.employee_id as any)?.role;
         if (typeof role === 'string') {
-          return role === 'user';
+          return role === 'user' || role === 'staff';
         }
       }
       // fallback: try match against usersState by id
@@ -177,14 +177,14 @@ const DashboardScreen = (props: any) => {
         (s.employee_id as any)._id ?? s.employee_id : s.employee_id;
       if (id) {
         const found = usersState.find((u) => u._id === id || (u as any).id === id);
-        return found?.role === 'user';
+        return found?.role === 'user' || found?.role === 'staff';
       }
     }
     return false;
   };
 
   // Global totals (only role === 'user')
-  const totalStaff = useMemo(() => usersState.filter((u) => u.role === 'user').length, [usersState]);
+  const totalStaff = useMemo(() => usersState.filter((u) => u.role === 'user' || u.role === 'staff').length, [usersState]);
 
   // Staff on shift today (unique user count where schedule date == today and employee role === 'user')
   const todaysUniqueStaffCount = useMemo(() => {
