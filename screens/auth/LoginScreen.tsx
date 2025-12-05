@@ -177,10 +177,10 @@ export default function LoginScreen() {
         // At this point, errors is a Record<string, string | string[]>
         const errorsRecord = errorData.errors as Record<string, string | string[]>;
         return Object.keys(errorsRecord).flatMap(k => {
-          // Validate key exists before accessing to avoid Object Injection Sink
-          if (!Object.prototype.hasOwnProperty.call(errorsRecord, k)) return [];
-          // Safe access after validation
-          const v = errorsRecord[k];
+          // Safe access using Object.entries to avoid Object Injection Sink
+          const entry = Object.entries(errorsRecord).find(([key]) => key === k);
+          if (!entry) return [];
+          const v = entry[1];
           if (Array.isArray(v)) return v.map(item => String(item));
           if (v) return [String(v)];
           return [];

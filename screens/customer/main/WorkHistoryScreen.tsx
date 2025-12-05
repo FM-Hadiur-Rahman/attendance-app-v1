@@ -146,10 +146,10 @@ const groupSchedulesByWeek = (entries: AttendanceItem[]) => {
   Object.keys(groups)
     .filter(k => k !== "Today" && k !== "This Week")
     .sort((a, b) => {
-      // Safe access using helper function to avoid Object Injection Sink
+      // Safe access using Object.entries to avoid Object Injection Sink
       const getGroup = (key: string): AttendanceItem[] | null => {
-        if (!Object.prototype.hasOwnProperty.call(groups, key)) return null;
-        return groups[key];
+        const entry = Object.entries(groups).find(([k]) => k === key);
+        return entry ? entry[1] : null;
       };
       const groupB = getGroup(b);
       const groupA = getGroup(a);
@@ -158,7 +158,12 @@ const groupSchedulesByWeek = (entries: AttendanceItem[]) => {
       if (!dateA || !dateB) return 0;
       return new Date(dateA).getTime() - new Date(dateB).getTime();
     })
-    .forEach(k => finalSections.push({ title: k, data: groups[k] }));
+    .forEach(k => {
+      const entry = Object.entries(groups).find(([key]) => key === k);
+      if (entry) {
+        finalSections.push({ title: k, data: entry[1] });
+      }
+    });
 
   return finalSections;
 };
@@ -433,12 +438,12 @@ const fetchBranchAddresses = async (branchesList: Branch[]) => {
   }, [branches]);
 
   const currentLang = langId || "en";
-  // Safe access to translations to avoid Object Injection Sink
+  // Safe access to translations using Object.entries to avoid Object Injection Sink
   const getTranslation = (lang: string): Record<string, string> => {
-    if (Object.prototype.hasOwnProperty.call(translations, lang)) {
-      return (translations as Translations)[lang];
-    }
-    return (translations as Translations)["en"];
+    const entry = Object.entries(translations as Translations).find(([k]) => k === lang);
+    if (entry) return entry[1];
+    const defaultEntry = Object.entries(translations as Translations).find(([k]) => k === "en");
+    return defaultEntry ? defaultEntry[1] : {};
   };
   const lang = getTranslation(currentLang);
 
@@ -649,10 +654,11 @@ useEffect(() => {
 
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
             const branchObj = typeof item.branch === 'object' ? item.branch : null;
-            // Safe access to branchNames to avoid Object Injection Sink
+            // Safe access to branchNames using Object.entries to avoid Object Injection Sink
             const getBranchNameFromMap = (branchId: string | undefined): string | null => {
-              if (!branchId || !Object.prototype.hasOwnProperty.call(branchNames, branchId)) return null;
-              return branchNames[branchId];
+              if (!branchId) return null;
+              const entry = Object.entries(branchNames).find(([k]) => k === branchId);
+              return entry ? entry[1] : null;
             };
             const branchNameFromMap = getBranchNameFromMap(itemBranchId);
             const branchName = branchObj?.name || branchNameFromMap || "Unknown Branch";
