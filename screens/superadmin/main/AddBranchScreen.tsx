@@ -1,5 +1,5 @@
 // src/screens/AddBranchScreen.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,57 +13,62 @@ import {
   ActivityIndicator,
   RefreshControl,
   findNodeHandle,
+  BackHandler,
+  Dimensions,
 } from 'react-native';
 import colors from '../../../styles/Colors';
 import Header from '../../../components/Header';
 import translations from "../../../assets/translations.json";
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Button1 } from '../../../components/Button';
 import fonts from '../../../styles/Fonts';
 import InputBox from '../../../components/InputBox';
 import Popup from '../../../components/Popup';
 import Toast, { showSuccessToast, toastConfig } from '../../../components/Toast';
-
-import axiosInstance from '../../../api/axiosInstance';
-import { getBranches, createBranch } from '../../../api/Branchs';
-import { register1 } from '../../../api/auth/authService';
+import { getBranches, createBranch, Branch, BranchCreatePayload } from '../../../api/Branchs';
+import { register1, RegisterPayload } from '../../../api/auth/authService';
+import { getUsers, ProfileUser } from '../../../api/profile';
 
 const PHONE_RULES: Record<string, { min: number; max: number; example?: string }> = {
-  '94':  { min: 9,  max: 9,  example: '7XXXXXXXX' },
-  '49':  { min: 7,  max: 11, example: 'variable (up to 11)' },
-  '33':  { min: 9,  max: 9,  example: '9 digits after +33' },
-  '44':  { min: 10, max: 10, example: '10 digits after +44' },
-  '966': { min: 9,  max: 9,  example: '9 digits after +966' },
-  '7':   { min: 10, max: 10, example: '10 digits after +7' },
-  '90':  { min: 10, max: 10, example: '10 digits after +90' },
+  '94': { min: 9, max: 9, example: '7XXXXXXXX' },
+  '49': { min: 7, max: 11, example: 'variable (up to 11)' },
+  '33': { min: 9, max: 9, example: '9 digits after +33' },
+  '44': { min: 10, max: 10, example: '10 digits after +44' },
+  '966': { min: 9, max: 9, example: '9 digits after +966' },
+  '7': { min: 10, max: 10, example: '10 digits after +7' },
+  '90': { min: 10, max: 10, example: '10 digits after +90' },
 };
 const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 
-const AddBranchScreen: React.FC = (props: any) => {
+type RouteParams = {
+  userId?: string;
+  langId?: string;
+};
+type Props = {
+  userId?: string;
+  langId?: string;
+};
+const AddBranchScreen: React.FC<Props> = ({ userId: propUserId, langId: propLangId }) => {
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const route = useRoute<RouteProp<Record<string, RouteParams>, string>>();
 
-  const propUserId = props?.userId;
-  const propLangId = props?.langId;
-  const routeUserId = route.params?.userId ?? route.params?.id;
-  const routeLangId = route.params?.langId ?? route.params?.language;
-  const userId = propUserId || routeUserId;
-  const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const routeUserId = route.params?.userId;
+  const routeLangId = route.params?.langId;
+  const userId = propUserId ?? routeUserId;
+  const langId = propLangId ?? routeLangId ?? 'en';
+  const lang = (translations as any)[langId];
 
   // refs for keyboard next navigation & measuring
-  const branchRef = useRef<TextInput | any>(null);
-  const managerRef = useRef<TextInput | any>(null);
-  const emailRef = useRef<TextInput | any>(null);
-  const phoneRef = useRef<TextInput | any>(null);
-  const longitudeRef = useRef<TextInput | any>(null);
-  const latitudeRef = useRef<TextInput | any>(null);
-
-  const usernameRef = useRef<TextInput | any>(null);
-  const passwordRef = useRef<TextInput | any>(null);
-  const confirmPasswordRef = useRef<TextInput | any>(null);
-
-  const scrollViewRef = useRef<ScrollView | any>(null);
+  const branchRef = useRef<TextInput | null>(null);
+  const managerRef = useRef<TextInput | null>(null);
+  const emailRef = useRef<TextInput | null>(null);
+  const phoneRef = useRef<TextInput | null>(null);
+  const longitudeRef = useRef<TextInput | null>(null);
+  const latitudeRef = useRef<TextInput | null>(null);
+  const usernameRef = useRef<TextInput | null>(null);
+  const passwordRef = useRef<TextInput | null>(null);
+  const confirmPasswordRef = useRef<TextInput | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
 
   const [step, setStep] = useState<number>(1);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -93,19 +98,23 @@ const AddBranchScreen: React.FC = (props: any) => {
 
   // new states
   const [creatingBranch, setCreatingBranch] = useState(false);
-  const [createdBranch, setCreatedBranch] = useState<any | null>(null);
   const [showPopup, setShowPopup] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // add near other refs / state
+  const keyboardHeightRef = useRef<number>(0);
+  const scrollOffsetRef = useRef<number>(0);
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+  const windowHeight = useRef<number>(Dimensions.get('window').height).current;
+
   // cache branches & users, and checking flags
-  const [allBranches, setAllBranches] = useState<any[]>([]);
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [checkingBranchName, setCheckingBranchName] = useState(false);
+  const [allBranches, setAllBranches] = useState<Branch[]>([]);
+  const [allUsers, setAllUsers] = useState<ProfileUser[]>([]);
   const [checkingUsername, setCheckingUsername] = useState(false);
 
   // store the branch payload locally to create later when user confirms
-  const [pendingBranchPayload, setPendingBranchPayload] = useState<any | null>(null);
+  const [pendingBranchPayload, setPendingBranchPayload] = useState<BranchCreatePayload | null>(null);
 
   const validatePassword = (password: string): boolean => {
     const re = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -169,12 +178,45 @@ const AddBranchScreen: React.FC = (props: any) => {
     return '';
   };
 
+  useEffect(() => {
+    const onShow = (e: any) => {
+      const h = e?.endCoordinates?.height ?? 0;
+      keyboardHeightRef.current = h;
+      setKeyboardHeight(h);
+    };
+    const onHide = () => {
+      keyboardHeightRef.current = 0;
+      setKeyboardHeight(0);
+    };
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const subShow = Keyboard.addListener(showEvent, onShow);
+    const subHide = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
   const validateField = (field: string) => {
     let error = '';
     switch (field) {
-      case 'branchName':
-        if (!branchName.trim()) error = lang.Branch_name_is_Required;
+      case 'branchName': {
+        const name = (branchName || '').trim();
+        if (!name) {
+          error = lang.Branch_name_is_Required;
+        } else {
+          // synchronous existence check against cached branches
+          const exists = allBranches.some(
+            (b) => String(b.name || '').trim().toLowerCase() === name.toLowerCase()
+          );
+          if (exists) error = lang.Branch_already_exists;
+        }
         break;
+      }
       case 'managerName':
         if (!managerName.trim()) error = lang.Manager_name_is_Required;
         break;
@@ -263,7 +305,6 @@ const AddBranchScreen: React.FC = (props: any) => {
     setConfirmPassword('');
     setErrors({});
     setTouched({});
-    setCreatedBranch(null);
     setPendingBranchPayload(null);
     setStep(1);
   };
@@ -287,15 +328,11 @@ const AddBranchScreen: React.FC = (props: any) => {
     }
   };
 
-  // fetch users for username availability check (GET /users)
-  const fetchAllUsers = async () => {
+  // fetch users via typed API helper (returns ProfileUser[])
+  const fetchAllUsers = async (): Promise<void> => {
     try {
-      const res = await axiosInstance.get('/users');
-      const data = res?.data;
-      if (Array.isArray(data)) setAllUsers(data);
-      else if (Array.isArray(data?.users)) setAllUsers(data.users);
-      else if (data?.data && Array.isArray(data.data)) setAllUsers(data.data);
-      else setAllUsers([]);
+      const users = await getUsers();
+      setAllUsers(Array.isArray(users) ? users : []);
     } catch (err) {
       console.error('Failed to fetch users for checks', err);
       setAllUsers([]);
@@ -308,23 +345,45 @@ const AddBranchScreen: React.FC = (props: any) => {
   }, []);
 
   // helper to scroll the focused input above keyboard
-  const scrollToInput = (ref: React.RefObject<any>) => {
+  const scrollToInput = (ref: React.RefObject<any>, extraPadding = 12) => {
+    // small delay so keyboard has started opening and layout settled
     setTimeout(() => {
       try {
-        const node = findNodeHandle(ref.current);
-        if (!node) {
-          scrollViewRef.current?.scrollTo({ y: 200, animated: true });
-          return;
-        }
-        ref.current?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
-          const targetY = Math.max(0, y - 120);
-          scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+        if (!ref?.current || !scrollViewRef.current) return;
+
+        // measure input position on screen
+        ref.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          const inputBottom = y + height;
+          const kbHeight = keyboardHeightRef.current || keyboardHeight || 0;
+          const keyboardTop = windowHeight - kbHeight;
+
+          // if we don't have a keyboard height yet, use a fallback margin
+          if (kbHeight <= 0) {
+            const fallback = Math.max(0, y - 120);
+            scrollViewRef.current?.scrollTo({ y: fallback, animated: true });
+            return;
+          }
+
+          // how much the input overlaps the keyboard
+          const overlap = inputBottom - keyboardTop;
+
+          if (overlap > -extraPadding) {
+            // want inputBottom to be keyboardTop - extraPadding
+            const desiredScreenY = inputBottom - overlap - extraPadding; // not directly used
+            // compute target offset relative to current scroll
+            const currentScroll = scrollOffsetRef.current || 0;
+            const targetOffset = Math.max(0, currentScroll + overlap + extraPadding);
+            scrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
+          }
+          // otherwise input already above keyboard — do nothing
         });
       } catch (e) {
+        // fallback: simple scroll to y-120
         scrollViewRef.current?.scrollTo({ y: 200, animated: true });
       }
-    }, 250);
+    }, 50);
   };
+
 
   // live branch name check (debounced)
   useEffect(() => {
@@ -334,7 +393,6 @@ const AddBranchScreen: React.FC = (props: any) => {
     }
 
     setTouched(prev => ({ ...prev, branchName: true }));
-    setCheckingBranchName(true);
     const t = setTimeout(() => {
       const found = (allBranches || []).find(
         (b) => String(b.name || '').trim().toLowerCase() === branchName.trim().toLowerCase()
@@ -344,7 +402,6 @@ const AddBranchScreen: React.FC = (props: any) => {
       } else {
         setErrors(prev => ({ ...prev, branchName: '' }));
       }
-      setCheckingBranchName(false);
     }, 600);
 
     return () => clearTimeout(t);
@@ -359,7 +416,7 @@ const AddBranchScreen: React.FC = (props: any) => {
     const latNum = parseFloat(latitude);
     const lonNum = parseFloat(longitude);
     if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
-      setErrors(prev => ({ ...prev, latitudeLongitude: lang.LatitudeLongitude_must_be_numeric}));
+      setErrors(prev => ({ ...prev, latitudeLongitude: lang.LatitudeLongitude_must_be_numeric }));
       return;
     }
 
@@ -372,7 +429,7 @@ const AddBranchScreen: React.FC = (props: any) => {
     });
 
     if (found) {
-      setErrors(prev => ({ ...prev, latitudeLongitude: lang.A_branch_with_these_coordinates_already_exists}));
+      setErrors(prev => ({ ...prev, latitudeLongitude: lang.A_branch_with_these_coordinates_already_exists }));
     } else {
       setErrors(prev => ({ ...prev, latitudeLongitude: '' }));
     }
@@ -410,52 +467,49 @@ const AddBranchScreen: React.FC = (props: any) => {
     Keyboard.dismiss();
 
     // 1) run local validation
-     if (!validateAllStep1()) {
-    // no toast — only console so developer can inspect
-    console.warn('goToStep2: validation failed', {
-      errors,
-      branchName,
-      managerName,
-      email,
-      phone,
-      phoneRaw,
-      longitude,
-      latitude,
-    });
-    return;
-  }
+    if (!validateAllStep1()) {
+      // no toast — only console so developer can inspect
+      console.warn('goToStep2: validation failed', {
+        errors,
+        branchName,
+        managerName,
+        email,
+        phone,
+        phoneRaw,
+        longitude,
+        latitude,
+      });
+      return;
+    }
 
-    // disallow if live errors present for branch name or coords or email/phone
-    // if (errors.branchName) return;
-    // if (errors.latitudeLongitude) return;
-    // if (errors.email) return;
-    // if (errors.phone) return;
-      if (errors.branchName) {
-    console.warn('goToStep2 blocked: branchName error:', errors.branchName);
-    return;
-  }
-  if (errors.latitudeLongitude) {
-    console.warn('goToStep2 blocked: latitudeLongitude error:', errors.latitudeLongitude);
-    return;
-  }
-  if (errors.email) {
-    console.warn('goToStep2 blocked: email error:', errors.email);
-    return;
-  }
-  if (errors.phone) {
-    console.warn('goToStep2 blocked: phone error:', errors.phone);
-    return;
-  }
+    if (errors.branchName) {
+      console.warn('goToStep2 blocked: branchName error:', errors.branchName);
+      return;
+    }
+    if (errors.latitudeLongitude) {
+      console.warn('goToStep2 blocked: latitudeLongitude error:', errors.latitudeLongitude);
+      return;
+    }
+    if (errors.email) {
+      console.warn('goToStep2 blocked: email error:', errors.email);
+      return;
+    }
+    if (errors.phone) {
+      console.warn('goToStep2 blocked: phone error:', errors.phone);
+      return;
+    }
 
     // Prepare branch payload and keep it in state for later creation on confirmation
     const phoneForApi = `${selectedCountry.code}${phoneRaw}`;
-    const payload = {
+    const payload: BranchCreatePayload = {
       name: branchName,
       latitude: latitude || '',
       longitude: longitude || '',
       phone: phoneForApi,
       email: email || '',
     };
+    setPendingBranchPayload(payload);
+
 
     setPendingBranchPayload(payload);
 
@@ -497,7 +551,6 @@ const AddBranchScreen: React.FC = (props: any) => {
       // 1) create branch
       const created = await createBranch(pendingBranchPayload);
       newBranch = created;
-      setCreatedBranch(created);
       setAllBranches(prev => (created ? [created, ...prev] : prev));
     } catch (err: any) {
       console.error('Failed to create branch during confirm:', err);
@@ -513,26 +566,26 @@ const AddBranchScreen: React.FC = (props: any) => {
     // 2) create user using branch id
     setCreatingUser(true);
     try {
-      const payloadForUser = {
+      const payloadForUser: RegisterPayload = {
         fullname: managerName || username,
-        branch: newBranch._id,
-        username: username,
-        email: email && !validateEmailValue(email) ? email : `${username}@example.com`,
-        password: password,
-        role: "admin",
-        position: "manager",
+        branch: String(newBranch._id),
+        username,
+        email: (email && !validateEmailValue(email)) ? email : `${username}@example.com`,
+        password,
+        position: 'manager',
         phone: `${selectedCountry.code}${phoneRaw}`,
+        role: 'admin',
       };
 
       console.log('Creating manager user with payload:', payloadForUser);
-      const resp = await register1(payloadForUser as any);
+      const resp = await register1(payloadForUser);
       console.log('Manager created:', resp);
 
       // server may return created user in resp.user or resp
       const createdUser = resp.user ?? resp;
 
-          // **Only** success toast here (branch + user created)
-    showSuccessToast(lang.Branch_Created_successfully);
+      // **Only** success toast here (branch + user created)
+      showSuccessToast(lang.Branch_Created_successfully);
 
       // Navigate, similar to your previous flow
       navigation.navigate('Footer_S', {
@@ -546,11 +599,11 @@ const AddBranchScreen: React.FC = (props: any) => {
       });
 
       console.log('Navigating to Footer_S with', {
-  selectedTab: 'Branch',
-  branchId: newBranch?._id,
-  createdUserId: createdUser?.id,
-  toastMessage: lang.Branch_Created_successfully,
-});
+        selectedTab: 'Branch',
+        branchId: newBranch?._id,
+        createdUserId: createdUser?.id,
+        toastMessage: lang.Branch_Created_successfully,
+      });
 
       // reset UI
       clearAllFields();
@@ -580,6 +633,22 @@ const AddBranchScreen: React.FC = (props: any) => {
     ];
   };
 
+  // handle back button on phone/ back_b icon press
+  const handleBackPress = useCallback(() => {
+    step === 2 ? setStep(1) : navigation.goBack();
+  }, [step, navigation]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step === 2) {
+        setStep(1);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [step]);
+
   return (
     <View style={styles.screen}>
       <Header
@@ -590,12 +659,12 @@ const AddBranchScreen: React.FC = (props: any) => {
           url: require('../../../assets/icons/back_b.png'),
           width: 24,
           height: 24,
-          onPress: () => navigation.goBack(),
+          onPress: handleBackPress,
         }}
         center={{ type: 'text', value: lang.Add_branch, color: colors.text }}
       />
       <KeyboardAvoidingView
-        style={{ flex: 1}}
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 110 : 140}
       >
@@ -607,11 +676,16 @@ const AddBranchScreen: React.FC = (props: any) => {
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
             keyboardDismissMode="interactive"
+            onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+            scrollEventThrottle={16}
           >
+
             {/* Step indicator */}
             <View style={styles.step}>
-              <View style={[styles.line, { backgroundColor: colors.primary, marginRight: 20 }]} />
-              <View style={[styles.line, { backgroundColor: step >= 2 ? colors.primary : colors.progressBarBackground }]} />
+              <View style={[styles.line,
+              { backgroundColor: colors.primary, marginRight: 20 }]} />
+              <View style={[styles.line,
+              { backgroundColor: step >= 2 ? colors.primary : colors.progressBarBackground }]} />
             </View>
 
             {/* Content placeholder for the current step */}
@@ -635,7 +709,21 @@ const AddBranchScreen: React.FC = (props: any) => {
                         errorMessage={touched.branchName ? (errors.branchName) : ''}
                         returnKeyType="next"
                         onFocus={() => { setFieldTouched('branchName'); scrollToInput(branchRef); }}
-                        onBlur={() => validateField('branchName')}
+                        onBlur={() => {
+                          setFieldTouched('branchName');
+                          validateField('branchName');
+                          // run immediate existence check so the user sees "already exists" without waiting for debounce
+                          if (branchName && branchName.trim().length >= 2) {
+                            const found = allBranches.find(
+                              (b) => String(b.name || '').trim().toLowerCase() === branchName.trim().toLowerCase()
+                            );
+                            if (found) {
+                              setErrors(prev => ({ ...prev, branchName: lang.Branch_already_exists }));
+                            } else {
+                              setErrors(prev => ({ ...prev, branchName: '' }));
+                            }
+                          }
+                        }}
                         onSubmitEditing={() => focusNext(managerRef)}
                       />
                     </View>
@@ -648,7 +736,9 @@ const AddBranchScreen: React.FC = (props: any) => {
                         value={managerName}
                         setValue={(text: string) => {
                           setManagerName(text);
-                          if (!text && touched.managerName) setErrors(prev => ({ ...prev, managerName: 'Manager name is Required' }));
+                          if (!text && touched.managerName)
+                            setErrors(prev =>
+                              ({ ...prev, managerName: 'Manager name is Required' }));
                           else setErrors(prev => ({ ...prev, managerName: '' }));
                         }}
                         errorMessage={touched.managerName ? errors.managerName : ''}
@@ -714,7 +804,7 @@ const AddBranchScreen: React.FC = (props: any) => {
                                 setErrors(prev => ({ ...prev, phone: lang.phone_required }));
                               } else if (normalized.length < newRule.min) {
                                 if (newRule.min === newRule.max) {
-                                  setErrors(prev => ({ ...prev, phone: `Please complete all ${newRule.max} digits` }));
+                                  setErrors(prev => ({ ...prev, phone: `${lang.Please_complete_all} ${newRule.max} ${lang.digits}` }));
                                 } else {
                                   setErrors(prev => ({ ...prev, phone: `${lang.enterAtLeast || 'Enter at least'} ${newRule.min} ${lang.digits || 'digits'}` }));
                                 }
@@ -774,13 +864,6 @@ const AddBranchScreen: React.FC = (props: any) => {
                         keyboardType="numeric"
                       />
                     </View>
-
-                    {/* show loader when creating branch (only relevant if user somehow initiates branch creation here) */}
-                    {/* {creatingBranch ? (
-                      <View style={{  alignItems: 'center' }}>
-                        <ActivityIndicator size="large" color={colors.primary} />
-                      </View>
-                    ) : null} */}
                   </View>
                 </View>
               ) : (
@@ -859,17 +942,10 @@ const AddBranchScreen: React.FC = (props: any) => {
                         }}
                       />
                     </View>
-
-                    {/* {creatingUser ? (
-                      <View style={{ alignItems: 'center' }}>
-                        <ActivityIndicator size="large" color={colors.primary} />
-                      </View>
-                    ) : null} */}
                   </View>
                 </View>
               )}
             </View>
-
             {/* space at bottom so fixed button doesn't overlap content */}
             <View style={{ height: 180 }} />
           </ScrollView>
@@ -912,7 +988,7 @@ const AddBranchScreen: React.FC = (props: any) => {
         title={lang.confirm_save_staff}
         titleStyle={{ color: colors.primary }}
       >
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop:20 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 20 }}>
           <Button1
             text={lang.yes}
             backgroundColor={''}
@@ -936,7 +1012,7 @@ const AddBranchScreen: React.FC = (props: any) => {
           </View>
         </View>
       )}
-       <Toast config={toastConfig} />
+      <Toast config={toastConfig} />
     </View>
   );
 };
@@ -950,6 +1026,7 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingHorizontal: 20,
+    marginBottom: '15%'
   },
   step: {
     marginTop: 20,
@@ -964,7 +1041,7 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     marginTop: 20,
-    paddingBottom: 100, 
+    paddingBottom: 100,
   },
   fixedButton: {
     position: "absolute",
@@ -973,7 +1050,7 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     backgroundColor: 'transparent',
-    color:colors.secondary,
+    color: colors.secondary,
   },
   detail: {
     marginBottom: 20
@@ -992,7 +1069,7 @@ const styles = StyleSheet.create({
   inputfields: {
     marginTop: 20
   },
-    buttonRow: {
+  buttonRow: {
     backgroundColor: colors.secondary,
     paddingVertical: 10,
     width: '100%',
@@ -1006,7 +1083,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     width: '100%',
   },
-    loadingOverlay: {
+  loadingOverlay: {
     position: 'absolute',
     left: 0, right: 0, top: 0, bottom: 0,
     justifyContent: 'center',
