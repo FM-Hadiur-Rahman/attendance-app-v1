@@ -52,7 +52,7 @@ const PrivacyScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    setTimeout(() => { setRefreshing(false); }, 1000);
   }, []);
 
   const parseBody = (body: string) => {

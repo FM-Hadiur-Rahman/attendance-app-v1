@@ -15,13 +15,21 @@ import CartBox from './CartBox';
 import { getBranchById, getAllBranches } from '../api/Branchs';
 
 
+interface ContactLang {
+  phoneNumber?: string;
+  call?: string;
+  email?: string;
+  mail?: string;
+  Contact_us?: string;
+}
+
 export interface ContactCardProps {
   icon: ImageSourcePropType;
   label: string;
   value: string;
   buttonTitle: string;
   onPress: () => void;
-  lang?: any;
+  lang?: ContactLang;
 }
 const translations = require('../assets/translations.json');
 
@@ -69,9 +77,7 @@ const ContactCard = ({
   value,
   buttonTitle,
   onPress,
-}: ContactCardProps) => {
-
-  return (
+}: ContactCardProps) => (
     <CartBox
       borderRadius={12}
       backgroundColor={colors.background}
@@ -116,8 +122,7 @@ const ContactCard = ({
         />
       </View>
     </CartBox>
-  );
-};
+);
 
 export const GroupedContactList = ({
   data,
@@ -125,7 +130,7 @@ export const GroupedContactList = ({
   branchId,
 }: {
   data?: ContactCardProps[];
-  lang?: any;
+  lang?: ContactLang;
   branchId?: string | null;
 }) => {
   const { width } = useWindowDimensions();
@@ -171,7 +176,7 @@ export const GroupedContactList = ({
         //console.log('GroupedContactList -> fetching all branches fallback');
         const all = await getAllBranches();
         if (!mounted) return;
-        const first = (all || []).find((x: any) => x?.email || x?.phone);
+        const first = all.find((x) => x.email || x.phone);
         if (first) {
           setResolvedBranch({
             _id: first._id,
@@ -189,15 +194,14 @@ export const GroupedContactList = ({
       }
     };
 
-    resolve();
+    void resolve();
     return () => {
       mounted = false;
     };
   }, [branchId]);
 
   // build concrete items replacing dummy values when branch info available
-  const itemsToRender: ContactCardProps[] = React.useMemo(() => {
-    return templateItems.map(it => {
+  const itemsToRender: ContactCardProps[] = React.useMemo(() => templateItems.map(it => {
       const newItem = { ...it };
 
       // Replace phone/email values if branch info is available
@@ -222,8 +226,7 @@ export const GroupedContactList = ({
         }
       }
       return newItem;
-    });
-  }, [templateItems, resolvedBranch, lang]);
+    }), [templateItems, resolvedBranch, lang]);
 
   return (
     <View
@@ -234,7 +237,7 @@ export const GroupedContactList = ({
         },
       ]}
     >
-      <Text style={styles.groupHeader}>{lang.Contact_us}</Text>
+      <Text style={styles.groupHeader}>{lang?.Contact_us ?? 'Contact us'}</Text>
 
       {itemsToRender.map((item, index) => (
         <ContactCard key={index} {...item} />
@@ -258,7 +261,7 @@ const styles = StyleSheet.create({
   },
   groupHeader: {
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.bold as any,
+    fontWeight: fonts.weight.bold,
     marginBottom: 12,
     color: colors.text,
     width: '100%'
@@ -286,7 +289,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: fonts.size.m,
     color: colors.text,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
   },
   value: {
     fontSize: fonts.size.m,

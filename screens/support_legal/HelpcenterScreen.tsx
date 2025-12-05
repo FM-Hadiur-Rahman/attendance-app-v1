@@ -86,7 +86,7 @@ const HelpCenterScreen: React.FC = () => {
         // fallback: fetch all branches and pick first with an email
         console.log('HelpCenterScreen -> fetching all branches as fallback');
         const all = await getAllBranches();
-        const firstWithEmail = (all || []).find((b: any) => b?.email);
+        const firstWithEmail = (all || []).find((b) => b?.email);
         if (firstWithEmail?.email) {
           if (mounted) {
             setBranchEmail(String(firstWithEmail.email));
@@ -106,7 +106,7 @@ const HelpCenterScreen: React.FC = () => {
       }
     };
 
-    resolveBranchEmail();
+    void resolveBranchEmail();
     return () => { mounted = false; };
   }, [incomingBranchId]);
 
@@ -169,7 +169,7 @@ const HelpCenterScreen: React.FC = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    setTimeout(() => { setRefreshing(false); }, 1000);
   }, []);
 
   return (
@@ -208,7 +208,7 @@ const HelpCenterScreen: React.FC = () => {
               placeholder={lang.name_placeholder ?? 'eg; John'}
               value={formData.name}
               style={{ width: '100%' }}
-              setValue={text => handleChange('name', text)}
+              setValue={text => { handleChange('name', text); }}
               borderColor={errors.name ? colors.error_text : colors.primary}
             />
             {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
@@ -217,7 +217,7 @@ const HelpCenterScreen: React.FC = () => {
               label={lang.email_label ?? 'Email'}
               placeholder={lang.example_gmail ?? 'example@gmail.com'}
               value={formData.email}
-              setValue={text => handleChange('email', text)}
+              setValue={text => { handleChange('email', text); }}
               borderColor={errors.email ? colors.error_text : colors.primary}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -230,7 +230,7 @@ const HelpCenterScreen: React.FC = () => {
               multiline
               inputStyle={{ height: 120 }}
               value={formData.message}
-              setValue={text => handleChange('message', text)}
+              setValue={text => { handleChange('message', text); }}
               borderColor={errors.message ? colors.error_text : colors.primary}
             />
             {errors.message && <Text style={styles.errorText}>{errors.message}</Text>}
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   entire_group: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, alignItems: 'center' },
   title: { fontSize: fonts.size.l, fontWeight: fonts.weight.semibold, color: colors.text, marginTop: 20, marginBottom: 12, fontFamily: fonts.family.regular, alignSelf: 'flex-start' },
   errorText: { color: colors.error_text, fontSize: 12, alignSelf: 'flex-start', marginBottom: 6 },
-  contactListWrap: { width: '100%', marginTop: 0 },
+  contactListWrap: { width: '100%', marginTop:0, bottom:20 },
   buttonWrap: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary, paddingTop: 20 },
   inputsContainer: { width: '100%', paddingHorizontal: 0 },
 });

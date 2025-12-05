@@ -5,6 +5,7 @@ import {
   TextInput,
   StyleSheet,
   Image,
+  ImageSourcePropType,
   TextStyle,
   ViewStyle,
   TouchableWithoutFeedback,
@@ -21,7 +22,7 @@ interface SearchBarProps {
   onChangeText?: (text: string) => void;
   containerStyle?: ViewStyle;
   inputStyle?: TextStyle;
-  iconSource?: any;
+  iconSource?: ImageSourcePropType;
   iconStyle?: ViewStyle;
   placeholderColor?: string;
   textColor?: string;
@@ -50,7 +51,8 @@ const SearchBar = forwardRef<TextInput, SearchBarProps>(
     const { width } = useWindowDimensions();
     const isTablet = width >= 600;
     const innerPadding = isTablet ? 16 : 12;
-    const inputRef = ref || useRef<TextInput>(null);
+    const internalRef = useRef<TextInput>(null);
+    const inputRef = ref || internalRef;
 
     return (
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -115,7 +117,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any, 
+    fontWeight: fonts.weight.regular as TextStyle['fontWeight'], 
     paddingVertical: 0,
   },
 });

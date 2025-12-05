@@ -66,7 +66,7 @@ const FlashScreen = () => {
       }
     };
 
-    checkLoginStatus();
+    void checkLoginStatus();
   }, [navigation]);
 
   return (

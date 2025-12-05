@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   Image,
+  ImageSourcePropType,
   Modal,
   Pressable,
   ScrollView,
@@ -13,7 +14,12 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { RefreshControl } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  NavigationProp,
+  RouteProp,
+} from "@react-navigation/native";
 import CartBox from "../../../components/CartBox";
 import Popup from "../../../components/Popup";
 import { Button1 } from "../../../components/Button";
@@ -28,14 +34,64 @@ import { logout as apiLogout } from "../../../api/auth/authService";
 import { clearAllAuthData } from "../../../api/auth/authToken";
 import { getBranchId } from "../../../api/profile";
 
-export default function ProfileScreen(props: any) {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+type ProfileRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: string;
+  language?: string;
+};
 
-  // support both prop-based injection (from Footer_C) and route params
-  const propUserId = props?.userId;
-  const propLangId = props?.langId;
-  const setLangIdProp = props?.setLangId; // optional callback from parent (Footer_C)
+type NavigationPayload = {
+  id?: string;
+  langId?: string;
+  branchId: string | null;
+  email?: string;
+};
+
+type ProfileNavigationParams = {
+  ProfileScreen: ProfileRouteParams;
+  LoginScreen: { langId: string };
+  HelpCenterScreen: NavigationPayload | undefined;
+  AboutScreen: NavigationPayload | undefined;
+  PrivacyScreen: NavigationPayload | undefined;
+  TermsScreen: NavigationPayload | undefined;
+};
+
+type SectionItemScreen =
+  | "HelpCenterScreen"
+  | "AboutScreen"
+  | "PrivacyScreen"
+  | "TermsScreen"
+  | null;
+
+type SectionItem = {
+  label: string;
+  labelname: string;
+  icon: ImageSourcePropType;
+  screen: SectionItemScreen;
+};
+
+type Section = {
+  name: string;
+  title: string;
+  items: SectionItem[];
+};
+
+type ProfileScreenProps = {
+  userId?: string;
+  langId?: string;
+  setLangId?: (langId: string) => void;
+};
+
+export default function ProfileScreen({
+  userId: propUserId,
+  langId: propLangId,
+  setLangId: setLangIdProp,
+}: ProfileScreenProps) {
+  const navigation =
+    useNavigation<NavigationProp<ProfileNavigationParams>>();
+  const route = useRoute<RouteProp<ProfileNavigationParams, "ProfileScreen">>();
+
   const [branchId, setBranchId] = useState<string | null>(null);
   // fallback to route params (some places use `id`, others `userId`)
   const routeUserId = route.params?.userId ?? route.params?.id;
@@ -88,7 +144,7 @@ export default function ProfileScreen(props: any) {
     },
   ];
 
-  const sections = [
+  const sections: Section[] = [
     {
       name: lang.personal_information,
       title: "General",
@@ -102,7 +158,7 @@ export default function ProfileScreen(props: any) {
         {
           label: "Position",
           labelname: lang.position || "Position",
-          icon: require("../../../assets/icons/p_profile_b.png"),
+          icon: require("../../../assets/icons/p_position_b.png"),
           screen: null,
         },
         {
@@ -114,7 +170,7 @@ export default function ProfileScreen(props: any) {
         {
           label: "Phone number",
           labelname: lang.phone || "Phone Number",
-          icon: require("../../../assets/icons/p_profile_b.png"),
+          icon: require("../../../assets/icons/p_phone_b.png"),
           screen: null,
         },
       ],
@@ -186,12 +242,14 @@ export default function ProfileScreen(props: any) {
         }
       }
       // If your API returns an image field, setProfileImage(profile.image) here
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Could not load profile";
       console.error("loadProfile error", err);
       if (showErrors) {
         Alert.alert(
           "Profile load failed",
-          err?.toString?.() ?? "Could not load profile"
+          message
         );
       }
     } finally {
@@ -201,7 +259,7 @@ export default function ProfileScreen(props: any) {
 
   useEffect(() => {
     // fetch profile on mount
-    loadProfile(false);
+    void loadProfile(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -313,7 +371,7 @@ export default function ProfileScreen(props: any) {
               )}
               <TouchableOpacity
                 style={styles.editIconContainer}
-                onPress={() => setModalVisible(true)}
+                onPress={() => { setModalVisible(true); }}
               >
                 <Image
                   source={require("../../../assets/icons/p_edit.png")}
@@ -393,7 +451,7 @@ export default function ProfileScreen(props: any) {
 
           {/* Logout */}
           <CartBox
-            onPress={() => setLogoutPopupVisible(true)} // show popup
+            onPress={() => { setLogoutPopupVisible(true); }} // show popup
             paddingLeft={20}
             paddingTop={12}
             paddingBottom={12}
@@ -417,11 +475,11 @@ export default function ProfileScreen(props: any) {
         animationType="slide"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => { setModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)}
+          onPress={() => { setModalVisible(false); }}
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
@@ -475,7 +533,7 @@ export default function ProfileScreen(props: any) {
         animationType="slide"
         transparent={true}
         visible={languageModalVisible}
-        onRequestClose={() => setLanguageModalVisible(false)}
+        onRequestClose={() => { setLanguageModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
@@ -501,7 +559,7 @@ export default function ProfileScreen(props: any) {
                   tempLanguage === langOpt.code ? colors.primary : colors.border
                 }
                 marginBottom={12}
-                onPress={() => setTempLanguage(langOpt.code)}
+                onPress={() => { setTempLanguage(langOpt.code); }}
               >
                 <View style={styles.languageBox}>
                   <Image source={langOpt.flag} style={styles.logoutIcon} />
@@ -535,7 +593,7 @@ export default function ProfileScreen(props: any) {
 
       <Popup
         visible={logoutPopupVisible}
-        onClose={() => setLogoutPopupVisible(false)}
+        onClose={() => { setLogoutPopupVisible(false); }}
         popupBorderColor={colors.error_text}
         dismissOnOverlayPress={false}
         title="Logout?"
@@ -560,7 +618,7 @@ export default function ProfileScreen(props: any) {
           />
           <Button1
             text={lang.no}
-            onPress={() => setLogoutPopupVisible(false)}
+            onPress={() => { setLogoutPopupVisible(false); }}
             backgroundColor={colors.error_text}
             width={"48%"}
             textStyle={{ color: colors.secondary }}

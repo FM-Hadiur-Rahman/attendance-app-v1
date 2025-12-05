@@ -96,9 +96,9 @@ const Header: React.FC<HeaderProps> = ({
       content.containerStyle,
       content.marginLeft !== undefined ? { marginLeft: content.marginLeft } : {},
       content.marginRight !== undefined ? { marginRight: content.marginRight } : {},
-    ] as any;
+    ];
 
-    const Wrapper = (content as any).onPress ? TouchableOpacity : View;
+    const Wrapper = (content as ImageContent).onPress ? TouchableOpacity : View;
 
     switch (content.type) {
       case 'image': {

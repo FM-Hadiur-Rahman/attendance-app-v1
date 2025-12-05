@@ -2,9 +2,11 @@
 import React from 'react';
 import {
   Image,
+  ImageSourcePropType,
   Platform,
   StyleSheet,
   Text,
+  TextStyle,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -21,29 +23,42 @@ const toastStyles: Record<
     bg: string;
     textColor: string;
     borderColor?: string;
-    icon?: any; // optional icon require() or uri
-    fontWeight?: string | number;
+    icon?: ImageSourcePropType; // optional icon require() or uri
+    fontWeight?: TextStyle['fontWeight'];
     fontSize?: number;
   }
 > = {
   success: {
     bg: colors.secondary,
     textColor: colors.primary,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.l,
   },
   warning: {
     bg: colors.secondary,
     textColor: colors.sub_background2,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.l,
   },
   error: {
     bg: colors.secondary,
     textColor: colors.error_toast_bg,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     fontSize: fonts.size.l,
   },
+};
+
+const getToastStyle = (type: ToastType) => {
+  switch (type) {
+    case 'success':
+      return toastStyles.success;
+    case 'warning':
+      return toastStyles.warning;
+    case 'error':
+      return toastStyles.error;
+    default:
+      return toastStyles.success;
+  }
 };
 
 const CustomToast = ({
@@ -52,7 +67,7 @@ const CustomToast = ({
 }: BaseToastProps & { type: ToastType }) => {
   const { width } = useWindowDimensions();
 
-  const style = (toastStyles as any)[type] ?? toastStyles.success;
+  const style = getToastStyle(type);
 
   // responsive values
   const isTablet = width > 600;
@@ -100,7 +115,7 @@ const CustomToast = ({
             color: style.textColor,
             fontSize,
             fontFamily: fonts.family.medium,
-            fontWeight: style.fontWeight ?? (fonts.weight.medium as any),
+            fontWeight: style.fontWeight ?? fonts.weight.medium,
             textAlign: 'center',
           },
         ]}
