@@ -815,11 +815,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 19,
   },
-  modalButton: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
   modalButtonText: {
     fontSize: fonts.size.m,
     fontWeight: fonts.weight.regular,

@@ -201,8 +201,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
   const starttime = useRef<TextInput | null>(null);
   const duration = useRef<TextInput | null>(null);
 
-  const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
-    return users.map((u) => {
+  const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => users.map((u) => {
       const extendedUser = u as ProfileUser & { _id?: string; id?: string; fullName?: string; name?: string; username?: string };
       const id = extendedUser._id ?? extendedUser.id ?? "";
       const fullname = extendedUser.fullname || extendedUser.fullName || extendedUser.name || extendedUser.username || id;
@@ -216,11 +215,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
       }
       return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
     });
-  };
-  const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
-    return branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? (b as { _id?: string; id?: string }).id) ?? ""), name: (((b as { name?: string; branch_name?: string }).name ?? (b as { name?: string; branch_name?: string }).branch_name) ?? ""), raw: b }));
-
-  };
+  const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => branches.map((b) => ({ id: (((b as { _id?: string; id?: string })._id ?? (b as { _id?: string; id?: string }).id) ?? ""), name: (((b as { name?: string; branch_name?: string }).name ?? (b as { name?: string; branch_name?: string }).branch_name) ?? ""), raw: b }));
   const normalizeSchedules = (schedules: ScheduleItem[] = []): NormalizedSchedule[] => {
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     const computeFromStartAndDuration = (start: string, dur: number) => {
@@ -539,7 +534,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
       (typeof weekOffset === "number" && weekOffset !== 0)
         ? (selectedDayYmd || selectedDisplayYmd || null)
         : (selectedDisplayYmd || selectedDayYmd || null);
-    let normalizedDate = String(targetDate).split("T")[0];
+    const normalizedDate = String(targetDate).split("T")[0];
     if (!normalizedDate) {
       showErrorToast("No valid date selected for schedule (abort)");
       console.error("[AddSchedule] abort: targetDate is null", { weekOffset, selectedDayYmd, selectedDisplayYmd });
@@ -1347,7 +1342,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
                       placeholder="HH:MM"
                       value={timeFrom}
                       setValue={(v: string) => {
-                        let digits = v.replace(/[^0-9]/g, "");
+                        const digits = v.replace(/[^0-9]/g, "");
                         let hh = "";
                         let mm = "";
                         if (digits.length > 0) {
@@ -1540,7 +1535,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
                 }
                 const prevToCurrentWeekSchedules = Object.values(tempMap);
                 const userChangeKeys = new Set(userChanges.map((u) => `${u.user_id}-${u.date}`));
-                let templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
+                const templatesToKeep = prevToCurrentWeekSchedules.filter((t) => {
                   const key = `${t.user_id}-${t.date}`;
                   return !userChangeKeys.has(key);
                 });

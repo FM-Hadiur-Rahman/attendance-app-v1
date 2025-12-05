@@ -1128,12 +1128,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: 8,
   },
-  noDataText: {
-    textAlign: "center",
-    color: colors.subtext,
-    marginTop: 8,
-    marginBottom: 12,
-  },
   branchHeader: {
     flexDirection: "row",
     alignItems: "center",

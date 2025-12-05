@@ -489,8 +489,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
   };
 
   // ---------- transform raw rows into enriched items ----------
-  const enriched = useMemo(() => {
-    return (attendanceData || []).map((r) => {
+  const enriched = useMemo(() => (attendanceData || []).map((r) => {
       // r likely has:
       // { actualIn, actualOut, branchId, branchName, date, employeeId, endStatus, fullname, scheduledEnd, scheduledStart, startStatus, username }
       const dateYmd = normalizeDateToYMD(r.date ?? r.startStatus ?? "");
@@ -646,8 +645,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
         diffVsScheduleText,
         status,
       } as EnrichedRecord;
-    });
-  }, [attendanceData]);
+    }), [attendanceData]);
 
   // determine selected-date range -> filter enriched accordingly
   const todayRecords = useMemo(() => {
@@ -991,8 +989,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
                       : "No records for selected month"}
                 </Text>
               ) : (
-                displayedRecords.map((r, index) => {
-                  return (
+                displayedRecords.map((r, index) => (
                     <CartBox
                       key={`${r.id}-${r.date}-${index}-${r.checkInTime || r.checkOutTime || ''}`}
                       containerStyle={styles.detail_cartbox}
@@ -1098,8 +1095,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
                         </View>
                       </View>
                     </CartBox>
-                  );
-                })
+                ))
               )}
             </View>
           </ScrollView>
@@ -1131,17 +1127,6 @@ const styles = StyleSheet.create({
   searchWrap: { marginBottom: 12 },
   inputWrap: { paddingBottom: 8 },
   buttonWrap: { paddingBottom: 20 },
-  recordCard: {
-    backgroundColor: "#fff",
-    marginHorizontal: 12,
-    marginVertical: 6,
-    padding: 12,
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
   details: {},
   detail_cartbox: {
     width: "100%",
@@ -1169,12 +1154,6 @@ const styles = StyleSheet.create({
   },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
   time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
-  duration: {
-    color: colors.primary,
-    fontWeight: "500",
-    fontSize: 14,
-    marginLeft: 8,
-  },
   status_early: {
     fontWeight: fonts.weight.regular,
     color: colors.status_early,
@@ -1208,29 +1187,12 @@ const styles = StyleSheet.create({
     marginRight: 7,
     textAlign: "center",
   },
-  status_noschedule: {
-    fontWeight: fonts.weight.regular,
-    color: colors.subtext,
-    fontSize: fonts.size.xs,
-    paddingVertical: 2,
-    paddingHorizontal: 12,
-    backgroundColor: "#00000006",
-    borderRadius: 10,
-    marginRight: 7,
-    textAlign: "center",
-  },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
   profileImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     resizeMode: "cover",
-  },
-  branchHeader: {
-    flexDirection: "row",
-    marginBottom: 10,
-    alignSelf: "flex-start",
-    width: "90%",
   },
   branchRow: {
     flexDirection: "row",

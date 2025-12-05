@@ -319,8 +319,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
       setLoading(true);
       const dateYMD = dateToYMD(date);
       console.log('🔄 Loading schedules for dateYMD:', dateYMD);
-      let loggedUserBranchId: string | null;
-      loggedUserBranchId = extractBranchId(user.branch) ?? null;
+      const loggedUserBranchId: string | null = extractBranchId(user.branch) ?? null;
 
       if (!loggedUserBranchId) {
         console.warn("WorkScheduleScreen: logged user has no branch - hiding schedules");
@@ -359,10 +358,8 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
       );
       const filtered = data.filter((s) => {
         // resolve scheduleBranchId (if schedule has branch_id)
-        let scheduleBranchId: string | undefined;
-        scheduleBranchId = extractBranchId(s.branch_id ?? null) ?? undefined;
-        let empId: string | undefined;
-        empId = extractEmployeeId(s.employee_id ?? null) ?? undefined;
+        const scheduleBranchId: string | undefined = extractBranchId(s.branch_id ?? null) ?? undefined;
+        const empId: string | undefined = extractEmployeeId(s.employee_id ?? null) ?? undefined;
         let employeeProfileBranchId: string | undefined;
         if (empId && typeof empId === 'string' && Object.prototype.hasOwnProperty.call(profileCache, empId) && profileCache[empId]) {
           const prof = profileCache[empId];
@@ -383,8 +380,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
       // Extract used profiles for the filtered schedules
       const usedProfiles: Record<string, ProfileWithBranch> = {};
       filtered.forEach((s) => {
-        let empId: string | undefined;
-        empId = extractEmployeeId(s.employee_id ?? null) ?? undefined;
+        const empId: string | undefined = extractEmployeeId(s.employee_id ?? null) ?? undefined;
         if (empId && typeof empId === 'string' && Object.prototype.hasOwnProperty.call(profileCache, empId) && profileCache[empId]) {
           const profileForUser = profileCache[empId];
           if (profileForUser) {

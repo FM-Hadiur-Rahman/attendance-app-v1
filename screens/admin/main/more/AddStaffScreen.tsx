@@ -19,15 +19,8 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import {
-  useNavigation,
-  useRoute,
-  NavigationProp,
-  RouteProp,
-} from "@react-navigation/native";
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import Header from "../../../../components/Header";
 import CartBox from "../../../../components/CartBox";
@@ -42,7 +35,7 @@ import { showErrorToast, showSuccessToast } from "../../../../components/Toast";
 // API helpers
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axiosInstance from "../../../../api/axiosInstance";
-import { register as authRegister, RegisterPayload } from "../../../../api/auth/authService";
+import { register as authRegister } from "../../../../api/auth/authService";
 import {
   getBranchId,
   getBranchById,
@@ -50,7 +43,6 @@ import {
   getUserById,
   postSchedulesBulk,
   getLoggedInUserBranch,
-  ProfileUser,
 } from "../../../../api/profile";
 import { sendNotificationToUser } from "../../../../api/notification/firebaseNotifications";
 
@@ -71,7 +63,7 @@ const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 type ScheduleEntry = {
   startTime: string;
   endTime: string;
-  duration?: number; 
+  duration?: number; // in hours (optional)
   date?: string | null; // YYYY-MM-DD (optional)
 };
 
@@ -83,57 +75,13 @@ type SchedulePayload = {
   duration?: number; // hours (optional)
 };
 
-type CountryItem = {
-  id: number;
-  name: string;
-  code: string;
-  flag: ReturnType<typeof require>;
-};
-
-type CreatedUser = {
-  id: string;
-  email: string;
-  username: string;
-  role: string;
-};
-
-type AddStaffScreenParams = {
-  userId?: string;
-  langId?: string;
-  onSave?: (user: CreatedUser & { password?: undefined }) => void;
-};
-
-type RootStackParamList = {
-  AddStaffScreen: AddStaffScreenParams;
-  Code: {
-    initialSelectedId?: number;
-    onSelect: (item: CountryItem) => void;
-  };
-};
-
-type AddStaffScreenProps = {
-  userId?: string;
-  langId?: string;
-};
-
-type FormErrors = {
-  [key: string]: string;
-};
-
-type KeyboardEvent = {
-  endCoordinates?: {
-    height?: number;
-  };
-};
-
-const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const route = useRoute<RouteProp<RootStackParamList, "AddStaffScreen">>();
+const AddStaffScreen: React.FC = (props: any) => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [refreshing, setRefreshing] = useState(false);
   const { userId, langId, onSave } = route.params || {};
   const currentLang = langId || "en";
-  const langKey = (langId && langId in translations ? langId : "en") as keyof typeof translations;
-  const lang = translations[langKey];
+  const lang = (translations as any)[langId] || (translations as any)["en"];
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,7 +99,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       if (!Array.isArray(users)) return false;
 
       const target = usernameToCheck.trim();
-      const found = users.some((u: ProfileUser) => {
+      const found = users.some((u: any) => {
         if (!u) return false;
         const e = (u.username ?? "").toString();
         return e === target;
@@ -173,7 +121,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       if (!Array.isArray(users)) return false;
 
       const target = emailToCheck.trim().toLowerCase();
-      const found = users.some((u: ProfileUser) => {
+      const found = users.some((u: any) => {
         if (!u) return false;
         const e = (u.email ?? u.username ?? "").toString().trim().toLowerCase();
         return e === target;
@@ -286,8 +234,8 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
     return days;
   };
   const weekDates = getWeekDates();
-  const onShowNativeTimePicker = () => { setShowTimePicker(true); };
-  const onNativeTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
+  const onShowNativeTimePicker = () => setShowTimePicker(true);
+  const onNativeTimeChange = (event: any, selected?: Date) => {
     setShowTimePicker(false);
     if (!selected) return;
     const hh = pad2(selected.getHours());
@@ -470,7 +418,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
   };
 
   const getPhoneRuleForSelected = () => {
-    const codeDigits = (selectedCountry.code || "").replace(/\D/g, "");
+    const codeDigits = (selectedCountry?.code || "").replace(/\D/g, "");
     return PHONE_RULES[codeDigits] || DEFAULT_PHONE_RULE;
   };
 
@@ -532,7 +480,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
     if (!result.canceled) {
       setProfileImage(result.assets[0].uri);
 
-      setErrors((prev: FormErrors) => ({ ...prev, profileImage: "" }));
+      setErrors((prev: any) => ({ ...prev, profileImage: "" }));
 
       setModalVisible(false);
     }
@@ -553,13 +501,13 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       setProfileImage(result.assets[0].uri);
 
       // clear error if previously set
-      setErrors((prev: FormErrors) => ({ ...prev, profileImage: "" }));
+      setErrors((prev: any) => ({ ...prev, profileImage: "" }));
 
       setModalVisible(false);
     }
   };
   // error states
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [touched, setTouched] = useState<{ [key: string]: boolean }>({});
 
   const validateFieldp = (field: string) => {
@@ -598,7 +546,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
   // validate step 1
   const validateStep1 = (): boolean => {
     let valid = true;
-    let newErrors: FormErrors = {};
+    let newErrors: any = {};
 
     if (!fullName) {
       newErrors.fullName = lang.full_name_required;
@@ -649,7 +597,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
   // validate step 2
   const validateStep2 = async (): Promise<boolean> => {
     let valid = true;
-    let newErrors: FormErrors = {};
+    let newErrors: any = {};
 
     if (!username) {
       newErrors.username = lang.username_required;
@@ -877,7 +825,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
       const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
   
-      const onShow = (e: KeyboardEvent) => {
+      const onShow = (e: any) => {
         const h = e?.endCoordinates?.height ?? 0;
         setKeyboardHeight(h);
       };
@@ -1109,7 +1057,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       branchIdToUse = null;
     }
 
-    const payload: RegisterPayload = {
+    const payload: any = {
       fullname: fullName,
       branch: branchIdToUse ?? "",
       username: username,
@@ -1117,6 +1065,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       password: password,
       position: position,
       phone: finalPhone,
+      role: "",
     };
 
     // Save current admin token & userId so we can restore later
@@ -1195,14 +1144,10 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
               prevToken ?? undefined
             );
             console.log("Schedule bulk response:", scheduleResp);
-          } catch (scheduleErr) {
-            const errorMessage =
-              scheduleErr && typeof scheduleErr === "object" && "response" in scheduleErr
-                ? scheduleErr.response
-                : scheduleErr;
+          } catch (scheduleErr: any) {
             console.warn(
               "Failed to POST schedules after creating employee:",
-              errorMessage
+              scheduleErr?.response ?? scheduleErr
             );
             showErrorToast("Failed to save schedules (saved user).");
           }
@@ -1299,7 +1244,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
         }
       );
       navigation.goBack();
-    } catch (err) {
+    } catch (err: any) {
       setConfirmPopupVisible(false);
       setErrors((prev) => ({
         ...prev,
@@ -1309,25 +1254,10 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
       }));
       setUsernameExists(true);
 
-      const errorObj = err && typeof err === "object" ? err : {};
-      const responseData =
-        "response" in errorObj &&
-        errorObj.response &&
-        typeof errorObj.response === "object" &&
-        "data" in errorObj.response
-          ? errorObj.response.data
-          : null;
       const message =
-        (responseData &&
-          typeof responseData === "object" &&
-          "message" in responseData &&
-          typeof responseData.message === "string"
-          ? responseData.message
-          : null) ||
-        (responseData && typeof responseData === "string" ? responseData : null) ||
-        ("message" in errorObj && typeof errorObj.message === "string"
-          ? errorObj.message
-          : null) ||
+        err?.response?.data?.message ??
+        err?.response?.data ??
+        err?.message ??
         "Failed to create staff";
 
       showErrorToast(String(message));
@@ -1451,7 +1381,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
                     )}
                   </View>
                   <View style={styles.addprofile}>
-                   <TouchableOpacity onPress={() => { setModalVisible(true); }}>
+                    <TouchableOpacity onPress={() => setModalVisible(true)}>
                       <Text
                         style={[
                           styles.addPhoto,
@@ -1561,14 +1491,14 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
                   label="Phone"
                   placeholder={`123 456 789`}
                   value={phone}
-                  setValue={(text: string) => { onPhoneChange(text); }}
+                  setValue={(text: string) => onPhoneChange(text)}
                   errorMessage={touched.phone ? errors.phone : ""}
                   leftIcon={selectedCountry.flag}
                   leftIcon2={require("../../../../assets/icons/down_b.png")}
                   onLeftIconPress={() =>
                     navigation.navigate("Code", {
                       initialSelectedId: selectedCountry.id,
-                      onSelect: (item: CountryItem) => {
+                      onSelect: (item: any) => {
                         setSelectedCountry(item);
                         const newRule =
                           PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
@@ -1619,7 +1549,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
                   onLeftIcon2Press={() =>
                     navigation.navigate("Code", {
                       initialSelectedId: selectedCountry.id,
-                      onSelect: (item: CountryItem) => {
+                      onSelect: (item: any) => {
                         setSelectedCountry(item);
                         const newRule =
                           PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
@@ -1706,7 +1636,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
                           style={{ flex: 1 }}
                           activeOpacity={0.8}
                           onPress={() => {
-                            void openAddModalForDate(ymd);
+                            openAddModalForDate(ymd);
                           }}
                         >
                           <CartBox width="auto" containerStyle={styles.time}>
