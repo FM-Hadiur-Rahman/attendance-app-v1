@@ -51,7 +51,8 @@ const SearchBar = forwardRef<TextInput, SearchBarProps>(
     const { width } = useWindowDimensions();
     const isTablet = width >= 600;
     const innerPadding = isTablet ? 16 : 12;
-    const inputRef = ref || useRef<TextInput>(null);
+    const internalRef = useRef<TextInput>(null);
+    const inputRef = ref || internalRef;
 
     return (
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>

@@ -77,9 +77,7 @@ const ContactCard = ({
   value,
   buttonTitle,
   onPress,
-}: ContactCardProps) => {
-
-  return (
+}: ContactCardProps) => (
     <CartBox
       borderRadius={12}
       backgroundColor={colors.background}
@@ -124,8 +122,7 @@ const ContactCard = ({
         />
       </View>
     </CartBox>
-  );
-};
+);
 
 export const GroupedContactList = ({
   data,
@@ -204,8 +201,7 @@ export const GroupedContactList = ({
   }, [branchId]);
 
   // build concrete items replacing dummy values when branch info available
-  const itemsToRender: ContactCardProps[] = React.useMemo(() => {
-    return templateItems.map(it => {
+  const itemsToRender: ContactCardProps[] = React.useMemo(() => templateItems.map(it => {
       const newItem = { ...it };
 
       // Replace phone/email values if branch info is available
@@ -230,8 +226,7 @@ export const GroupedContactList = ({
         }
       }
       return newItem;
-    });
-  }, [templateItems, resolvedBranch, lang]);
+    }), [templateItems, resolvedBranch, lang]);
 
   return (
     <View

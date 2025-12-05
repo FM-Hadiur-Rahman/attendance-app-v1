@@ -232,12 +232,4 @@ const Button3: React.FC<Button3Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  badge: {
-    position: 'absolute',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
-
 export default Button3;

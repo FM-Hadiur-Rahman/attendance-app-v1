@@ -327,30 +327,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.secondary },
   scrollContainer: { paddingBottom: 0 },
   scrollBody: { backgroundColor: colors.secondary, paddingTop: 20, paddingHorizontal: 20, paddingBottom: "25%" },
-  group1: { marginBottom: 20 },
-  groupTitle: { color: colors.text, fontWeight: fonts.weight.regular , fontSize: fonts.size.m },
-  groupSubtitle: { color: colors.search, fontWeight: fonts.weight.regular , fontSize: fonts.size.s, marginTop: 6 },
-
-  /* modal styles reused from your other screens */
-  modalOverlay: { flex: 1, justifyContent: "flex-end" },
-  modalOverlayAbsolute: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
-  modalContainer: {
-    backgroundColor: colors.secondary,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 30,
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  modalHandle: { width: 40, height: 6, backgroundColor: colors.modal_line, borderRadius: 10, alignSelf: "center", marginBottom: 12 },
-  modalTitle: { fontSize: fonts.size.l, fontWeight: fonts.weight.medium, textAlign: "center", marginBottom: 8 },
-
-  footerButtonWrap: { position: "absolute", left: 20, right: 20, bottom: 0, paddingTop: 10, paddingBottom: 30, backgroundColor: colors.secondary },
   each_day: { flexDirection: "row", width: '100%', marginBottom: 20, alignItems: "center", },
   day: { borderColor: colors.primary, borderWidth: 1, borderRadius: 12, backgroundColor: colors.secondary, marginRight: 10, paddingTop: 11, paddingBottom: 11, width: 52, alignItems: "center" },
   day_text: { color: colors.primary, fontSize: fonts.size.s, fontWeight: fonts.weight.regular  },
@@ -359,31 +335,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 12,
     backgroundColor: colors.secondary, flex: 1, justifyContent: "center", alignItems: 'center'
   },
-  plus: { width: 16, height: 16 },
-
-  // overlay (full-screen pressable backdrop)
-  overlayBackdrop: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
-  overlayContainer: {
-    position: "absolute",
-    backgroundColor: colors.secondary,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-    // shadow
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  suggestionItemInline: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  suggestionText: { color: colors.text, fontSize: fonts.size.m },
   branch: {
     width: 16, height: 16, marginRight: 4
   },

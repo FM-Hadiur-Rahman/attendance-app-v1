@@ -418,7 +418,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const now = new Date();
     
     // ✅ Check if current time is past the scheduled end time
-    let scheduleEndDate = new Date(
+    const scheduleEndDate = new Date(
       `${tzDate}T${todaySchedule.end_time}:00`
     );
     
@@ -454,7 +454,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       const now = new Date();
       
       // ✅ Check if current time is past the scheduled end time
-      let scheduleEndDate = new Date(
+      const scheduleEndDate = new Date(
         `${tzDate}T${todaySchedule.end_time}:00`
       );
       
@@ -669,7 +669,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         // If we have today's schedule and check-in time, enable checkout at schedule end time
         if (todaySchedule?.end_time && inMoment) {
           const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          const scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
           if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
           
           // Enable checkout starting from schedule end time
@@ -694,7 +694,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           // First try to use today's schedule if available
           if (todaySchedule?.end_time) {
             const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-            let shiftEndMoment = inMoment
+            const shiftEndMoment = inMoment
               .clone()
               .set({ hour: eh, minute: em, second: 0 });
             if (shiftEndMoment.isBefore(inMoment)) shiftEndMoment.add(1, "day");
@@ -871,7 +871,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           // Check if the schedule end time has passed
           const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
           const [eh, em] = lastSchedule.end_time.split(":").map(Number);
-          let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+          const scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
           if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
           
           // Enable checkout if schedule end time has passed
@@ -938,7 +938,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       if (todaySchedule?.end_time && checkInTime) {
         const inMoment = moment(checkInTime, "HH:mm");
         const [eh, em] = todaySchedule.end_time.split(":").map(Number);
-        let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+        const scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
         if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
         
         // Enable checkout starting from schedule end time
@@ -964,7 +964,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
           if (lastSchedule && lastAttendance && lastAttendance.In && !lastAttendance.Out) {
             const inMoment = moment(lastAttendance.In, "YYYY-MM-DD HH:mm:ss");
             const [eh, em] = lastSchedule.end_time.split(":").map(Number);
-            let scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
+            const scheduleEnd = inMoment.clone().set({ hour: eh, minute: em, second: 0 });
             if (scheduleEnd.isBefore(inMoment)) scheduleEnd.add(1, "day");
             
             // Enable checkout starting from schedule end time
@@ -1085,13 +1085,10 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     return formatTime12h(parse12hToDate(s) ?? new Date());
   };
 
-  const getBranchIdFromSchedule = () => {
-    return (
-      getBranchReferenceId(todaySchedule?.raw.branch_id) ??
-      getBranchReferenceId(todaySchedule?.branch?.rawBranch) ??
-      null
-    );
-  };
+  const getBranchIdFromSchedule = () =>
+    getBranchReferenceId(todaySchedule?.raw.branch_id) ??
+    getBranchReferenceId(todaySchedule?.branch?.rawBranch) ??
+    null;
 
   // ✅ Add manual schedule fetch function for debugging
   const fetchScheduleManually = async () => {
@@ -2125,11 +2122,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     flexDirection: "row",
     paddingBottom: 16,
-  },
-  statusText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
   },
   infoBox: {
     width: "100%",

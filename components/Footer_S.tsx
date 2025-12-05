@@ -213,7 +213,7 @@ const Footer_S = () => {
   }, []);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    const interval: NodeJS.Timeout | null = null;
     const pingServer = async () => {
       try {
       } catch (err: any) {

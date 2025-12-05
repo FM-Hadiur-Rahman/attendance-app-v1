@@ -871,9 +871,6 @@ const styles = StyleSheet.create({
     height: 16,
     marginRight: 4
   },
-  branchInfo: {
-    flexDirection: "row"
-  },
   branchName: {
     fontSize: fonts.size.m,
     fontFamily: fonts.family.regular,
