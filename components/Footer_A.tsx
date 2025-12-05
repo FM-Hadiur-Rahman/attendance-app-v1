@@ -95,9 +95,9 @@ const Footer_A = () => {
       (resp: AxiosResponse) => resp,
       async (error: AxiosError) => {
         try {
-          const status = error?.response?.status;
-          const data = error?.response?.data as { message?: string } | undefined;
-          const message = (error?.message || data?.message || JSON.stringify(data || '') || '').toString();
+          const status = error.response?.status;
+          const data = error.response?.data as { message?: string } | undefined;
+          const message = (error.message || data?.message || JSON.stringify(data || '') || '').toString();
 
           const isAuthError =
             status === 401 ||

@@ -201,7 +201,7 @@ export default function ScheduleScreen({ userId: propUserId, langId: propLangId 
                 const scheduleBranchId = String(staffSchedule.branchId);
                 const userBranchField: BranchField = (userObj as ProfileUser & { branch?: BranchField }).branch;
                 const userBranchId = String(
-                  typeof userBranchField === "string" ? userBranchField : userBranchField?._id ?? ""
+                  typeof userBranchField === "string" ? userBranchField : userBranchField._id ?? ""
                 );
 
                 if (scheduleBranchId && scheduleBranchId !== userBranchId) {

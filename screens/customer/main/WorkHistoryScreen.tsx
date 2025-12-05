@@ -146,8 +146,11 @@ const groupSchedulesByWeek = (entries: AttendanceItem[]) => {
   Object.keys(groups)
     .filter(k => k !== "Today" && k !== "This Week")
     .sort((a, b) => {
-      const dateA = groups[b][0]?.In;
-      const dateB = groups[a][0]?.In;
+      // Validate keys exist before accessing to avoid Object Injection Sink
+      const groupB = Object.prototype.hasOwnProperty.call(groups, b) ? groups[b] : null;
+      const groupA = Object.prototype.hasOwnProperty.call(groups, a) ? groups[a] : null;
+      const dateA = groupB?.[0]?.In;
+      const dateB = groupA?.[0]?.In;
       if (!dateA || !dateB) return 0;
       return new Date(dateA).getTime() - new Date(dateB).getTime();
     })
@@ -426,7 +429,7 @@ const fetchBranchAddresses = async (branchesList: Branch[]) => {
   }, [branches]);
 
   const currentLang = langId || "en";
-  const lang = (translations as Translations)[currentLang] || (translations as Translations)["en"];
+  const lang = (translations as Translations)[currentLang] ?? (translations as Translations)["en"];
 
   // ---------------- totals derived from schedules ----------------
   const totalToText = (mins: number) => {
@@ -635,10 +638,14 @@ useEffect(() => {
 
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
             const branchObj = typeof item.branch === 'object' && item.branch !== null ? item.branch : null;
-            const branchName = branchObj?.name || (itemBranchId ? branchNames[itemBranchId] : "Unknown Branch");
+            // Validate key exists before accessing to avoid Object Injection Sink
+            const branchNameFromMap = itemBranchId && Object.prototype.hasOwnProperty.call(branchNames, itemBranchId) 
+              ? branchNames[itemBranchId] 
+              : null;
+            const branchName = branchObj?.name || branchNameFromMap || "Unknown Branch";
             const branchAddress =
               (itemBranchId && branchAddresses[itemBranchId]) ||
-              (branchObj?.latitude !== undefined && branchObj?.longitude !== undefined
+              (branchObj && branchObj.latitude !== undefined && branchObj.longitude !== undefined
                 ? `${branchObj.latitude}, ${branchObj.longitude}`
                 : "Address not available");
 

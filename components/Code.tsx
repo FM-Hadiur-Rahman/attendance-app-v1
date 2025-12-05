@@ -49,7 +49,7 @@ const Code: React.FC<CodesCProps> = (props) => {
 
   const route = useRoute<RouteProp<RootStackParamList, 'Country_CodeScreen'>>();
   const { selectedLang } = (route.params as { selectedLang: string; }) || { selectedLang: 'en'};
-  const lang = (translations as any)[selectedLang] || (translations)['en'];
+  const lang = translations[selectedLang as keyof typeof translations] || translations['en'];
 
   // Allow props OR route.params
   const onSelect = props.onSelect || route.params?.onSelect;

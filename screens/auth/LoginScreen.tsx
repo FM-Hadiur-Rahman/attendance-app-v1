@@ -177,6 +177,8 @@ export default function LoginScreen() {
         // At this point, errors is a Record<string, string | string[]>
         const errorsRecord = errorData.errors as Record<string, string | string[]>;
         return Object.keys(errorsRecord).flatMap(k => {
+          // Validate key exists before accessing to avoid Object Injection Sink
+          if (!Object.prototype.hasOwnProperty.call(errorsRecord, k)) return [];
           const v = errorsRecord[k];
           if (Array.isArray(v)) return v.map(item => String(item));
           if (v) return [String(v)];
@@ -335,7 +337,7 @@ export default function LoginScreen() {
       // Backend failure handling
       const errorData = data as LoginErrorResponse;
       const errsArray = safeParseErrors(errorData);
-      const rawMessage = (errorData && (errorData.message || errorData.error)) ? String(errorData.message || errorData.error) : '';
+      const rawMessage = (errorData.message || errorData.error) ? String(errorData.message || errorData.error) : '';
 
       // If it looks like auth failure, clear both inputs and skip next validation
       if (looksLikeAuthFailure(resp.status, errsArray, rawMessage)) {
@@ -394,7 +396,7 @@ export default function LoginScreen() {
     } catch (err: unknown) {
       console.warn('Login error (exception)', err);
       const apiError = err as ApiError;
-      const msg = apiError?.response?.data?.message || apiError?.message || 'Login failed';
+      const msg = apiError.response?.data?.message || apiError.message || 'Login failed';
 
       // If exception appears to be auth-related, clear both fields and skip validation
       if (/invalid credentials|user not found|incorrect password|wrong password|invalid username|invalid email|unauthorized/i.test(String(msg))) {

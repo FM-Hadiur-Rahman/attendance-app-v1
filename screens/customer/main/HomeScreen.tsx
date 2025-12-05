@@ -258,7 +258,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     const branchPayload = branchRawOrObj as BranchPayload;
     const addressCoords =
       hasCoordinateAddress(branchPayload.address)
-        ? branchPayload.address?.coordinates
+        ? branchPayload.address.coordinates
         : undefined;
     const candidates: Array<CoordinatesArray | undefined> = [
       branchPayload.location?.coordinates,
@@ -270,7 +270,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       candidates.push(
         branchPayload.raw.location?.coordinates,
         hasCoordinateAddress(branchPayload.raw.address)
-          ? branchPayload.raw.address?.coordinates
+          ? branchPayload.raw.address.coordinates
           : undefined
       );
     }
@@ -317,7 +317,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     let mounted = true;
     const fetchAndResolve = async () => {
       const branchId =
-        getBranchReferenceId(todaySchedule?.raw?.branch_id) ??
+        getBranchReferenceId(todaySchedule?.raw.branch_id) ??
         getBranchReferenceId(todaySchedule?.branch?.rawBranch) ??
         null;
       if (!branchId) return;
@@ -1087,7 +1087,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
 
   const getBranchIdFromSchedule = () => {
     return (
-      getBranchReferenceId(todaySchedule?.raw?.branch_id) ??
+      getBranchReferenceId(todaySchedule?.raw.branch_id) ??
       getBranchReferenceId(todaySchedule?.branch?.rawBranch) ??
       null
     );
@@ -1261,7 +1261,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // ✅ Handle specific 403 error with user-friendly message
       if (apiError.response?.status === 403) {
         // Check for specific error messages
-        const errorMessage = apiError.response?.data?.message;
+        const errorMessage = apiError.response.data?.message;
         if (errorMessage && errorMessage.includes("already have an active session")) {
           showErrorToast("You already have an active session. Please checkout first.");
         } else {
@@ -1382,7 +1382,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
       // ✅ Handle specific 403 error with user-friendly message
       if (apiError.response?.status === 403) {
         // Check for specific error messages
-        const errorMessage = apiError.response?.data?.message;
+        const errorMessage = apiError.response.data?.message;
         if (errorMessage && errorMessage.includes("already have an active session")) {
           showErrorToast("You already have an active session. Please try again.");
         } else {

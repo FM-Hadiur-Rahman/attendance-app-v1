@@ -48,13 +48,26 @@ const toastStyles: Record<
   },
 };
 
+const getToastStyle = (type: ToastType) => {
+  switch (type) {
+    case 'success':
+      return toastStyles.success;
+    case 'warning':
+      return toastStyles.warning;
+    case 'error':
+      return toastStyles.error;
+    default:
+      return toastStyles.success;
+  }
+};
+
 const CustomToast = ({
   text1,
   type,
 }: BaseToastProps & { type: ToastType }) => {
   const { width } = useWindowDimensions();
 
-  const style = (toastStyles)[type] ?? toastStyles.success;
+  const style = getToastStyle(type);
 
   // responsive values
   const isTablet = width > 600;
