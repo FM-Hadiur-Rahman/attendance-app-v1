@@ -25,6 +25,7 @@ export interface RegisterPayload {
   password: string;
   username: string;
   branch: string;
+  role?: string;
 }
 
 export interface AuthResponse {
