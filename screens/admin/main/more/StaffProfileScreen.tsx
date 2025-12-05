@@ -46,10 +46,7 @@ import { countryList, CountryItem } from "../../../../components/Code";
 import { exportMonthlyAttendanceXLSX } from "../../../../components/AttendanceXLSX";
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; // Optional, but recommended for safe areas
 
-export const getUserWorkSummaryLocal = (userId: string) => {
-  // Kept for compatibility if you have local mock data — but we now prefer server API.
-  return { totalDays: 0, totalTime: "0h 0m" };
-};
+export const getUserWorkSummaryLocal = (userId: string) => ({ totalDays: 0, totalTime: "0h 0m" });
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -120,7 +117,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const { id, userId: navUserId, langId } = route.params || {};
   const currentLang = (langId || "en") as LangId;
   const langKey = currentLang as keyof typeof translations;
-  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
+  const lang = translations[langKey] || translations["en"];
 
   const insets = useSafeAreaInsets(); // If using safe-area-context; else use { top: 0 }
 
@@ -253,7 +250,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const getUserIdFromProfile = (u?: ProfileUser | ExtendedProfileUser | null): string => {
     if (!u) return "";
     const extended = u as ExtendedProfileUser;
-    return extended.id || extended._id || "";
+    return extended.id ?? extended._id ?? "";
   };
   const formatHHMMSimple = (hhmm?: string, fallbackMinutes?: number) => {
     if (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm)) {
@@ -565,9 +562,9 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const parsePhoneForInput = (phone?: string) => {
     if (!phone) return { code: selectedCountry.code, local: "" };
 
-    let str = phone.trim();
+    const str = phone.trim();
     const hasPlus = str.startsWith("+");
-    let digits = str.replace(/\D/g, "");
+    const digits = str.replace(/\D/g, "");
     if (hasPlus) {
     }
 
@@ -987,7 +984,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
               <Text style={styles.infoLabel}>{lang.password}</Text>
             </View>
             <Text style={styles.infoValue}>
-              {"*".repeat(currentUser ? ((currentUser as ExtendedProfileUser).password?.length || 5) : 5)}
+              {"*".repeat((currentUser as ExtendedProfileUser)?.password?.length || 5)}
             </Text>
           </View>
         </CartBox>
@@ -1292,12 +1289,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 export default StaffProfileScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.secondary,
-    paddingHorizontal: 20,
-  },
-
   profileContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -1306,11 +1297,6 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     position: "relative",
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
   },
   editIconContainer: {
     position: "absolute",
