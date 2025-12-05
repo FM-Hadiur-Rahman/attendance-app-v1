@@ -590,7 +590,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
   // validate step 1
   const validateStep1 = (): boolean => {
     let valid = true;
-    let newErrors: FormErrors = {};
+    const newErrors: FormErrors = {};
 
     if (!fullName) {
       newErrors.fullName = lang.full_name_required;
@@ -641,7 +641,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
   // validate step 2
   const validateStep2 = async (): Promise<boolean> => {
     let valid = true;
-    let newErrors: FormErrors = {};
+    const newErrors: FormErrors = {};
 
     if (!username) {
       newErrors.username = lang.username_required;
@@ -937,9 +937,7 @@ const AddStaffScreen: React.FC<AddStaffScreenProps> = (props) => {
     setAddScheduleModalVisible(true);
   };
 
-  const hasWeeklySchedule = React.useMemo(() => {
-    return FULL_WEEKDAYS.some((d) => !!schedules[d]);
-  }, [schedules]);
+  const hasWeeklySchedule = React.useMemo(() => FULL_WEEKDAYS.some((d) => !!schedules[d]), [schedules]);
 
   // Reset all Step-2 schedule related fields
   const resetStep2Fields = () => {
