@@ -179,7 +179,7 @@ export const GroupedContactList = ({
         //console.log('GroupedContactList -> fetching all branches fallback');
         const all = await getAllBranches();
         if (!mounted) return;
-        const first = all.find((x) => x?.email || x?.phone);
+        const first = all.find((x) => x.email || x.phone);
         if (first) {
           setResolvedBranch({
             _id: first._id,

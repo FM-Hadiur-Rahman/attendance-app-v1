@@ -168,7 +168,7 @@ export default function LoginScreen() {
     if (Array.isArray(data)) return data.map(it => (typeof it === 'string' ? it : JSON.stringify(it)));
     
     // Type guard to check if data is LoginErrorResponse
-    if (typeof data === 'object' && data !== null) {
+    if (typeof data === 'object') {
       const errorData = data as LoginErrorResponse;
       if (errorData.errors && typeof errorData.errors === 'object') {
         if (Array.isArray(errorData.errors)) {
@@ -179,6 +179,7 @@ export default function LoginScreen() {
         return Object.keys(errorsRecord).flatMap(k => {
           // Validate key exists before accessing to avoid Object Injection Sink
           if (!Object.prototype.hasOwnProperty.call(errorsRecord, k)) return [];
+          // Safe access after validation
           const v = errorsRecord[k];
           if (Array.isArray(v)) return v.map(item => String(item));
           if (v) return [String(v)];

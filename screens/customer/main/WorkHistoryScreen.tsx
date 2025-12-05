@@ -146,9 +146,13 @@ const groupSchedulesByWeek = (entries: AttendanceItem[]) => {
   Object.keys(groups)
     .filter(k => k !== "Today" && k !== "This Week")
     .sort((a, b) => {
-      // Validate keys exist before accessing to avoid Object Injection Sink
-      const groupB = Object.prototype.hasOwnProperty.call(groups, b) ? groups[b] : null;
-      const groupA = Object.prototype.hasOwnProperty.call(groups, a) ? groups[a] : null;
+      // Safe access using helper function to avoid Object Injection Sink
+      const getGroup = (key: string): AttendanceItem[] | null => {
+        if (!Object.prototype.hasOwnProperty.call(groups, key)) return null;
+        return groups[key];
+      };
+      const groupB = getGroup(b);
+      const groupA = getGroup(a);
       const dateA = groupB?.[0]?.In;
       const dateB = groupA?.[0]?.In;
       if (!dateA || !dateB) return 0;
@@ -429,7 +433,14 @@ const fetchBranchAddresses = async (branchesList: Branch[]) => {
   }, [branches]);
 
   const currentLang = langId || "en";
-  const lang = (translations as Translations)[currentLang] ?? (translations as Translations)["en"];
+  // Safe access to translations to avoid Object Injection Sink
+  const getTranslation = (lang: string): Record<string, string> => {
+    if (Object.prototype.hasOwnProperty.call(translations, lang)) {
+      return (translations as Translations)[lang];
+    }
+    return (translations as Translations)["en"];
+  };
+  const lang = getTranslation(currentLang);
 
   // ---------------- totals derived from schedules ----------------
   const totalToText = (mins: number) => {
@@ -637,11 +648,13 @@ useEffect(() => {
             );
 
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
-            const branchObj = typeof item.branch === 'object' && item.branch !== null ? item.branch : null;
-            // Validate key exists before accessing to avoid Object Injection Sink
-            const branchNameFromMap = itemBranchId && Object.prototype.hasOwnProperty.call(branchNames, itemBranchId) 
-              ? branchNames[itemBranchId] 
-              : null;
+            const branchObj = typeof item.branch === 'object' ? item.branch : null;
+            // Safe access to branchNames to avoid Object Injection Sink
+            const getBranchNameFromMap = (branchId: string | undefined): string | null => {
+              if (!branchId || !Object.prototype.hasOwnProperty.call(branchNames, branchId)) return null;
+              return branchNames[branchId];
+            };
+            const branchNameFromMap = getBranchNameFromMap(itemBranchId);
             const branchName = branchObj?.name || branchNameFromMap || "Unknown Branch";
             const branchAddress =
               (itemBranchId && branchAddresses[itemBranchId]) ||
