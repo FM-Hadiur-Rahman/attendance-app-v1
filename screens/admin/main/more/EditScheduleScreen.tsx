@@ -219,16 +219,16 @@ export default function EditScheduleScreen(props: EditScheduleScreenProps) {
                     : rawEmployee && typeof rawEmployee === 'object' && '_id' in rawEmployee
                         ? String(rawEmployee._id)
                         : '';
-            const branch_raw = s.branch_id ?? null;
+            const branch_raw = s.branch_id;
             const branch_id =
                 typeof branch_raw === 'string'
                     ? branch_raw
-                    : branch_raw && typeof branch_raw === 'object' && '_id' in branch_raw
+                    : typeof branch_raw === 'object' && '_id' in branch_raw
                         ? String(branch_raw._id)
                         : '';
             const start_time = s.start_time ?? (s as { start?: string }).start ?? (s as { from_time?: string }).from_time ?? '';
             const duration = (s as { duration?: number }).duration ?? (s as { hours?: number }).hours ?? (s as { dur?: number }).dur ?? 0;
-            const apiEnd = s.end_time ?? (s as { end?: string }).end ?? '';
+            const apiEnd = s.end_time || (s as { end?: string }).end || '';
             const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
             const dateYmd = toLocalYmd(s.date ?? (s as { day?: string }).day ?? '');
             return {
@@ -581,12 +581,12 @@ export default function EditScheduleScreen(props: EditScheduleScreenProps) {
             }
             // Normalize backend schedule to NormalizedSchedule format
             const normalizedSchedule: NormalizedSchedule = normalizeSchedules([backendSchedule])[0] ?? {
-                id: backendSchedule._id ?? "",
-                user_id: typeof backendSchedule.employee_id === "string" ? backendSchedule.employee_id : (backendSchedule.employee_id as { _id?: string })?._id ?? "",
-                branch_id: typeof backendSchedule.branch_id === "string" ? backendSchedule.branch_id : (backendSchedule.branch_id as { _id?: string })?._id ?? "",
-                start_time: backendSchedule.start_time ?? "",
+                id: backendSchedule._id || "",
+                user_id: typeof backendSchedule.employee_id === "string" ? backendSchedule.employee_id : (backendSchedule.employee_id as { _id?: string })?._id || "",
+                branch_id: typeof backendSchedule.branch_id === "string" ? backendSchedule.branch_id : (backendSchedule.branch_id as { _id?: string })._id || "",
+                start_time: backendSchedule.start_time || "",
                 duration: 0,
-                end_time: backendSchedule.end_time ?? "",
+                end_time: backendSchedule.end_time || "",
                 date: String(backendSchedule.date ?? "").split("T")[0],
                 raw: backendSchedule,
             };

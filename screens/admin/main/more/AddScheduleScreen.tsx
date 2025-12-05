@@ -159,7 +159,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
   const userId = propUserId || routeUserId || null;
   const langId = (propLangId || routeLangId || "en") as LangId;
   const langKey = langId as keyof typeof translations;
-  const lang = translations[langKey] || translations["en"];
+  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
   const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
   const screenBranchId: string = (route.params?.branch_id as string) ?? (route.params?.branchId as string) ?? "";
   // loading states
@@ -205,7 +205,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
     return users.map((u) => {
       const extendedUser = u as ProfileUser & { _id?: string; id?: string; fullName?: string; name?: string; username?: string };
       const id = extendedUser._id ?? extendedUser.id ?? "";
-      const fullname = extendedUser.fullname ?? extendedUser.fullName ?? extendedUser.name ?? extendedUser.username ?? id;
+      const fullname = extendedUser.fullname || extendedUser.fullName || extendedUser.name || extendedUser.username || id;
       let branch_id = "";
       if (typeof u.branch === 'string') {
         branch_id = u.branch;
@@ -262,7 +262,7 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
         day?: string;
       };
       const id = extendedSchedule._id ?? extendedSchedule.id ?? extendedSchedule.schedule_id ?? '';
-      const rawEmployee = extendedSchedule.employee_id ?? extendedSchedule.user_id ?? extendedSchedule.employee ?? null;
+      const rawEmployee = extendedSchedule.employee_id || extendedSchedule.user_id || extendedSchedule.employee || null;
       const user_id = typeof rawEmployee === 'string' 
         ? rawEmployee 
         : (rawEmployee && typeof rawEmployee === 'object' && (rawEmployee._id ?? rawEmployee.id)) 
@@ -274,11 +274,11 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
         ? branch_raw 
         : (branch_raw && typeof branch_raw === 'object' && (branch_raw._id ?? branch_raw.id)) 
           ?? '';
-      const start_time = extendedSchedule.start_time ?? extendedSchedule.start ?? extendedSchedule.from_time ?? '';
+      const start_time = extendedSchedule.start_time || extendedSchedule.start || extendedSchedule.from_time || '';
       const duration = extendedSchedule.duration ?? extendedSchedule.hours ?? extendedSchedule.dur ?? 0;
       const apiEnd = extendedSchedule.end_time ?? extendedSchedule.end ?? '';
       const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
-      const dateYmd = toLocalYmd(extendedSchedule.date ?? extendedSchedule.day ?? '');
+      const dateYmd = toLocalYmd(extendedSchedule.date || extendedSchedule.day || '');
       return {
         id: String(id),
         user_id: String(user_id || ''),
@@ -614,17 +614,18 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
         const copy = prev.map((p) => ({ ...p }));
         if (payload.id) {
           const idx = copy.findIndex((s) => String(s.id) === String(payload.id));
-          if (idx !== -1) {
+          if (idx !== -1 && idx >= 0 && idx < copy.length) {
+            const existingSchedule = copy[idx];
             const updated: NormalizedSchedule = { 
-              ...copy[idx], 
-              user_id: payload.user_id ?? copy[idx].user_id, 
-              branch_id: payload.branch_id ?? copy[idx].branch_id,
+              ...existingSchedule, 
+              user_id: payload.user_id || existingSchedule.user_id, 
+              branch_id: payload.branch_id || existingSchedule.branch_id,
               start_time: payload.start_time,
               duration: payload.duration,
               date: payload.date,
               updateDate: new Date().toISOString() 
             };
-            if (!updated.raw && copy[idx].raw) updated.raw = copy[idx].raw;
+            if (!updated.raw && existingSchedule.raw) updated.raw = existingSchedule.raw;
             copy[idx] = updated;
             setChangeLog((c) => [...c, { type: "update", schedule: updated }]);
           } else {
@@ -666,14 +667,15 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
       setLocalSchedules((prev = []) => {
         const copy = prev.map((s) => ({ ...s }));
         const idx = copy.findIndex((sch) => String(sch.id) === String(modalEditingId));
-        if (idx !== -1) {
+        if (idx !== -1 && idx >= 0 && idx < copy.length) {
+          const existingSchedule = copy[idx];
           copy[idx] = {
-            ...copy[idx],
-            user_id: payload.user_id ?? copy[idx].user_id,
+            ...existingSchedule,
+            user_id: payload.user_id || existingSchedule.user_id,
             start_time: payload.start_time,
             duration: payload.duration,
             date: payload.date,
-            branch_id: payload.branch_id ?? copy[idx].branch_id,
+            branch_id: payload.branch_id || existingSchedule.branch_id,
             updateDate: new Date().toISOString(),
           };
           setChangeLog((c) => [...c, { type: "update", schedule: copy[idx] }]);
@@ -861,8 +863,8 @@ export default function AddScheduleScreen(props: AddScheduleScreenProps) {
         // debug list: id, iso, localYmd
         const debugList = rawArr.map((r: ScheduleItem) => {
           const extended = r as ScheduleItem & { day?: string; createdAt?: string; _id?: string; id?: string };
-          const iso = extended.date ?? extended.day ?? extended.createdAt ?? null;
-          const id = extended._id ?? extended.id ?? undefined;
+          const iso = extended.date || extended.day || extended.createdAt || null;
+          const id = extended._id || extended.id || undefined;
           return { id, iso, localYmd: toLocalYmdFromIso(iso ?? undefined) };
         });
         console.log(`[DEBUG] raw items (id, iso, localYmd) for offset=${offsetWeeks}`, debugList);

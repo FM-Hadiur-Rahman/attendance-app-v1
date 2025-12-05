@@ -256,7 +256,7 @@ const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
   const userId = propUserId || routeUserId;
   const langId = (propLangId || routeLangId || "en") as LangId;
   const langKey = langId as keyof typeof translations;
-  const lang = translations[langKey] || translations["en"];
+  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
 
   const [query, setQuery] = useState<string>("");
   const [mode, setMode] = useState<"day" | "week" | "month">("day");

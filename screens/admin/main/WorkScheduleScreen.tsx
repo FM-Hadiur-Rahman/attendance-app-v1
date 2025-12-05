@@ -185,8 +185,12 @@ const extractBranchName = (
     if (branch.title) return branch.title;
   }
   const branchId = extractBranchId(branch);
-  if (branchId && map[branchId]) return map[branchId];
-  if (branchId) return map[branchId] ?? "Unknown Branch";
+  if (branchId && typeof branchId === 'string' && Object.prototype.hasOwnProperty.call(map, branchId)) {
+    return map[branchId];
+  }
+  if (branchId && typeof branchId === 'string' && branchId in map) {
+    return map[branchId] ?? "Unknown Branch";
+  }
   return "Unknown Branch";
 };
 
@@ -227,7 +231,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
 
   // translation dictionary for this screen (translations imported at the top)
   const langKey = (langId in translations ? langId : "en") as keyof typeof translations;
-  const lang = translations[langKey];
+  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
 
   const [displayDate, setDisplayDate] = useState<Date>(new Date());
   const [schedules, setSchedules] = useState<ScheduleEntity[]>([]);
@@ -346,7 +350,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
         employeeIds.map(async (id) => {
           try {
             const p = await getUserById(id);
-            profileCache[id] = (p as ProfileWithBranch) || null;
+            profileCache[id] = p ? (p as ProfileWithBranch) : null;
           } catch (err) {
             profileCache[id] = null;
             console.warn("getUserById failed for", id, err);
@@ -360,7 +364,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
         let empId: string | undefined;
         empId = extractEmployeeId(s.employee_id ?? null) ?? undefined;
         let employeeProfileBranchId: string | undefined;
-        if (empId && profileCache[empId]) {
+        if (empId && typeof empId === 'string' && Object.prototype.hasOwnProperty.call(profileCache, empId) && profileCache[empId]) {
           const prof = profileCache[empId];
           if (prof?.branch) {
             employeeProfileBranchId = extractBranchId(prof.branch) ?? undefined;
@@ -370,7 +374,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
         if (!resolvedEmployeeBranchId) return false;
 
         // Filter by role
-        if (empId && profileCache[empId] && profileCache[empId]?.role !== "user")
+        if (empId && typeof empId === 'string' && Object.prototype.hasOwnProperty.call(profileCache, empId) && profileCache[empId] && profileCache[empId]?.role !== "user")
           return false;
 
         return String(resolvedEmployeeBranchId) === String(loggedUserBranchId);
@@ -381,7 +385,7 @@ const WorkScheduleScreen: React.FC<WorkScheduleProps> = (props) => {
       filtered.forEach((s) => {
         let empId: string | undefined;
         empId = extractEmployeeId(s.employee_id ?? null) ?? undefined;
-        if (empId && profileCache[empId]) {
+        if (empId && typeof empId === 'string' && Object.prototype.hasOwnProperty.call(profileCache, empId) && profileCache[empId]) {
           const profileForUser = profileCache[empId];
           if (profileForUser) {
             usedProfiles[empId] = profileForUser;

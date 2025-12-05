@@ -647,7 +647,7 @@ const showConfirmDialog = () => {
               if (b) {
                 const userBranchId = b._id;
                 if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
-                  branchNameToShow = b.name ?? null;
+                  branchNameToShow = b.name || null;
                 }
               }
             }

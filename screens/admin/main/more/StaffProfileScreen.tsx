@@ -120,7 +120,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const { id, userId: navUserId, langId } = route.params || {};
   const currentLang = (langId || "en") as LangId;
   const langKey = currentLang as keyof typeof translations;
-  const lang = translations[langKey] || translations["en"];
+  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
 
   const insets = useSafeAreaInsets(); // If using safe-area-context; else use { top: 0 }
 
@@ -253,7 +253,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const getUserIdFromProfile = (u?: ProfileUser | ExtendedProfileUser | null): string => {
     if (!u) return "";
     const extended = u as ExtendedProfileUser;
-    return extended.id ?? extended._id ?? "";
+    return extended.id || extended._id || "";
   };
   const formatHHMMSimple = (hhmm?: string, fallbackMinutes?: number) => {
     if (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm)) {
@@ -987,7 +987,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
               <Text style={styles.infoLabel}>{lang.password}</Text>
             </View>
             <Text style={styles.infoValue}>
-              {"*".repeat((currentUser as ExtendedProfileUser)?.password?.length || 5)}
+              {"*".repeat(currentUser ? ((currentUser as ExtendedProfileUser).password?.length || 5) : 5)}
             </Text>
           </View>
         </CartBox>
