@@ -102,7 +102,7 @@ const LanguageScreen: React.FC = () => {
               styles.langCard,
               selected === "en" && styles.langCardSelected,
             ]}
-            onPress={() => setSelected("en")}
+            onPress={() => { setSelected("en"); }}
           >
             <View style={styles.langRow}>
               <Image
@@ -125,7 +125,7 @@ const LanguageScreen: React.FC = () => {
               styles.langCard,
               selected === "de" && styles.langCardSelected,
             ]}
-            onPress={() => setSelected("de")}
+            onPress={() => { setSelected("de"); }}
           >
             <View style={styles.langRow}>
               <Image

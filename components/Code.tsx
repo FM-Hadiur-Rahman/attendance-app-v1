@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import {
   Image,
+  ImageSourcePropType,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,7 +24,7 @@ export interface CountryItem {
   id: number;
   name: string;
   code: string;
-  flag: any;
+  flag: ImageSourcePropType;
 }
 
 export interface CodesCProps {
@@ -48,7 +49,7 @@ const Code: React.FC<CodesCProps> = (props) => {
 
   const route = useRoute<RouteProp<RootStackParamList, 'Country_CodeScreen'>>();
   const { selectedLang } = (route.params as { selectedLang: string; }) || { selectedLang: 'en'};
-  const lang = (translations as any)[selectedLang] || (translations as any)['en'];
+  const lang = (translations as any)[selectedLang] || (translations)['en'];
 
   // Allow props OR route.params
   const onSelect = props.onSelect || route.params?.onSelect;
@@ -119,7 +120,7 @@ const choose = (item: CountryItem) => {
                 height: isTablet ? 56 : 42,
               },
             ]}
-            onPress={() => choose(item)}
+            onPress={() => { choose(item); }}
             activeOpacity={0.7}
           >
             <Image

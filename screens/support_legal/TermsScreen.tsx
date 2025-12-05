@@ -55,7 +55,7 @@ const TermsScreen = () => {
   // Refresh function
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
+    setTimeout(() => { setRefreshing(false); }, 1500);
   }, []);
 
   return (

@@ -1,7 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as XLSX from "xlsx";
-import { getAttendanceReport } from "../api/attendanceReport";
+import { getAttendanceReport, AttendanceReportRow } from "../api/attendanceReport";
 import { showErrorToast, showSuccessToast } from "./Toast";
 
 export const exportMonthlyAttendanceXLSX = async (employeeId: string) => {
@@ -37,7 +37,7 @@ export const exportMonthlyAttendanceXLSX = async (employeeId: string) => {
       Object.keys(item).forEach((key) => {
         if (["employeeId", "username", "branchId"].includes(key)) return;
 
-        let value = (item as Record<string, any>)[key] ?? "";
+        let value = (item[key as keyof AttendanceReportRow] ?? "") as string;
 
         // If key is actualIn or actualOut, extract only time
         if ((key === "actualIn" || key === "actualOut") && value) {

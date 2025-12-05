@@ -5,6 +5,7 @@ import {
   TextInput,
   StyleSheet,
   Image,
+  ImageSourcePropType,
   TextStyle,
   ViewStyle,
   TouchableWithoutFeedback,
@@ -21,7 +22,7 @@ interface SearchBarProps {
   onChangeText?: (text: string) => void;
   containerStyle?: ViewStyle;
   inputStyle?: TextStyle;
-  iconSource?: any;
+  iconSource?: ImageSourcePropType;
   iconStyle?: ViewStyle;
   placeholderColor?: string;
   textColor?: string;
@@ -115,7 +116,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any, 
+    fontWeight: fonts.weight.regular as TextStyle['fontWeight'], 
     paddingVertical: 0,
   },
 });

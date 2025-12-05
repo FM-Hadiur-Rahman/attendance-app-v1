@@ -10,7 +10,9 @@ import {
   BackHandler,
   ToastAndroid,
 } from 'react-native';
-import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useRoute, useFocusEffect, useNavigation, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { AxiosResponse, AxiosError } from 'axios';
 import HomeScreen from '../screens/admin/main/HomeScreen';
 import AttendancerecordScreen from '../screens/admin/main/AttendancerecordScreen';
 import WorkScheduleScreen from '../screens/admin/main/WorkScheduleScreen';
@@ -32,12 +34,28 @@ interface ScreenProps {
   onConsumedToast?: () => void;
 }
 
+type Footer_ARouteParams = {
+  userId?: string | null;
+  langId?: string;
+  selectedTab?: string;
+  refresh?: boolean;
+  toastMessage?: string | null;
+};
+
+type RootStackParamList = {
+  Footer_A: Footer_ARouteParams;
+  LoginScreen: { langId?: string };
+};
+
+type Footer_ARouteProp = RouteProp<RootStackParamList, 'Footer_A'>;
+type Footer_ANavigationProp = StackNavigationProp<RootStackParamList, 'Footer_A'>;
+
 const Footer_A = () => {
   const [selectedTab, setSelectedTab] = useState<string>('Home');
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
-  const route = useRoute<any>();
-  const navigation = useNavigation<any>();
+  const route = useRoute<Footer_ARouteProp>();
+  const navigation = useNavigation<Footer_ANavigationProp>();
 
   const [userIdState, setUserIdState] = useState<string | null>(route.params?.userId ?? null);
   const [currentLangId, setCurrentLangId] = useState<string>(route.params?.langId ?? 'en');
@@ -74,11 +92,11 @@ const Footer_A = () => {
     }
 
     const id = axiosInstance.interceptors.response.use(
-      (resp: any) => resp,
-      async (error: any) => {
+      (resp: AxiosResponse) => resp,
+      async (error: AxiosError) => {
         try {
           const status = error?.response?.status;
-          const data = error?.response?.data;
+          const data = error?.response?.data as { message?: string } | undefined;
           const message = (error?.message || data?.message || JSON.stringify(data || '') || '').toString();
 
           const isAuthError =
@@ -100,7 +118,7 @@ const Footer_A = () => {
             showWarningToast('Session expired. Please login again.');
             navigation.reset({
               index: 0,
-              routes: [{ name: 'LoginScreen' as never, params: { langId: (route?.params?.langId ?? 'en') } as never }],
+              routes: [{ name: 'LoginScreen', params: { langId: (route?.params?.langId ?? 'en') } }],
             });
           }
         } catch (e) {
@@ -181,7 +199,7 @@ const Footer_A = () => {
       };
 
       const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => sub.remove();
+      return () => { sub.remove(); };
     }, [])
   );
 
@@ -196,9 +214,9 @@ const Footer_A = () => {
             langId={currentLangId}
             setLangId={setCurrentLangId}
             routeRefresh={routeRefreshFlag}
-            onConsumedRefresh={() => setRouteRefreshFlag(false)}
+            onConsumedRefresh={() => { setRouteRefreshFlag(false); }}
             toastMessage={toastMessage}
-            onConsumedToast={() => setToastMessage(null)}
+            onConsumedToast={() => { setToastMessage(null); }}
           />
         ) : null}
       </View>

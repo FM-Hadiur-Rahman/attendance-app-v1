@@ -8,7 +8,8 @@ import {
   useWindowDimensions,
   Platform,
 } from 'react-native';
-import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import colors from '../styles/Colors';
 import DashboardScreen from '../screens/superadmin/main/DashboardScreen';
 import BranchScreen from '../screens/superadmin/main/BranchScreen';
@@ -17,21 +18,42 @@ import Toast, { showWarningToast, toastConfig } from './Toast';
 
 import { getToken, clearAllAuthData } from '../api/auth/authToken';
 import axiosInstance from '../api/axiosInstance';
+import { Branch } from '../api/Branchs';
+import { ProfileUser } from '../api/profile';
 
 // Define the props interface for screen components
 interface ScreenProps {
   userId?: string | null;
   langId?: string;
   setLangId?: React.Dispatch<React.SetStateAction<string>>;
-  branch?: any;
-  createdUser?: any;
+  branch?: Branch;
+  createdUser?: ProfileUser;
 }
+
+type Footer_SRouteParams = {
+  userId?: string | null;
+  langId?: string;
+  selectedTab?: string;
+  branch?: Branch;
+  createdUser?: ProfileUser;
+  toastMessage?: string;
+  role?: string;
+};
+
+type RootStackParamList = {
+  Footer_S: Footer_SRouteParams;
+  LoginScreen: { langId?: string };
+  AddBranchScreen: { userId?: string | null; langId?: string };
+};
+
+type Footer_SRouteProp = RouteProp<RootStackParamList, 'Footer_S'>;
+type Footer_SNavigationProp = StackNavigationProp<RootStackParamList, 'Footer_S'>;
 
 const Footer_S = () => {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const isTablet = SCREEN_WIDTH >= 768;
-  const route = useRoute<any>();
-  const navigation = useNavigation<any>();
+  const route = useRoute<Footer_SRouteProp>();
+  const navigation = useNavigation<Footer_SNavigationProp>();
 
   const userId = route.params?.userId;
   const langId = route.params?.langId ?? 'en';
@@ -126,7 +148,7 @@ const Footer_S = () => {
         return true;
       };
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => subscription.remove();
+      return () => { subscription.remove(); };
     }, [])
   );
 
@@ -159,7 +181,7 @@ const Footer_S = () => {
     }
 
     const id = axiosInstance.interceptors.response.use(
-      (response: any) => response, // pass through successful responses
+      (response) => response, // pass through successful responses
       (error: any) => {
         // examine error shape (axios) and decide if it's an auth error
         const status = error?.response?.status;
@@ -174,7 +196,7 @@ const Footer_S = () => {
           /jwt/i.test(message) && /expired|invalid/i.test(message);
 
         if (isAuthError) {
-          handleInvalidToken(message);
+          void handleInvalidToken(message);
           return Promise.reject(error);
         }
         return Promise.reject(error);
@@ -198,7 +220,7 @@ const Footer_S = () => {
         const status = err?.response?.status;
         const msg = err?.response?.data?.message || err?.message || '';
         if (status === 401 || /token invalid|token expired|invalid or expired/i.test(msg)) {
-          handleInvalidToken(`ping: ${msg}`);
+          void handleInvalidToken(`ping: ${msg}`);
         }
       }
     };
@@ -285,7 +307,7 @@ const Footer_S = () => {
         ]}
       >
         <Image
-          source={tabConfig.find(t => t.key === 'AddBranch')!.icon}
+          source={tabConfig.find(t => t.key === 'AddBranch')?.icon}
           style={{ width: ADD_BTN_SIZE, height: ADD_BTN_SIZE, resizeMode: 'contain' }}
         />
       </TouchableOpacity>

@@ -14,6 +14,7 @@ import {
   Animated,
   Dimensions,
   Platform, StatusBar,
+  ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,7 +27,7 @@ const base = deviceWidth / 440;
 // BUTTON 1 
 export interface Button1Props {
   text?: string;
-  iconSource?: any;
+  iconSource?: ImageSourcePropType;
   onPress?: (e: GestureResponderEvent) => void;
   containerStyle?: ViewStyle;
   backgroundColor?: string;
@@ -94,7 +95,7 @@ const styles1 = StyleSheet.create({
   text: {
     fontFamily: fonts.family.medium,
     fontSize: fonts.size.l,
-    fontWeight: fonts.weight.medium as any,
+    fontWeight: fonts.weight.medium,
     color: colors.secondary,
     paddingVertical:10.5,
   },
@@ -113,7 +114,7 @@ const styles1 = StyleSheet.create({
 /* -------------------- Button3  -------------------- */
 
 export interface Button3Props {
-  iconSource?: any;
+  iconSource?: ImageSourcePropType;
   initialX?: number;
   initialY?: number;
   width?: number;

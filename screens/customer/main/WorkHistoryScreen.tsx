@@ -18,7 +18,7 @@ import translations from "../../../assets/translations.json";
 import * as Location from "expo-location";
 import { getMonthlySchedules, getMonthlySchedules1, getMyAttendanceHistory, getMyAttendanceHistory1 } from "../../../api/checkin_checkout";
 import { getProfile, ProfileUser } from "../../../api/profile";
-import { getAllBranches } from "../../../api/Branchs";
+import { getAllBranches, Branch } from "../../../api/Branchs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /* ---------- interfaces ---------- */
@@ -27,7 +27,43 @@ interface Props {
   langId?: string;
 }
 
-const normalizeBranchIdValue = (v: any): string | undefined => {
+type BranchIdValue = 
+  | string 
+  | null 
+  | undefined 
+  | { _id?: string; id?: string; branch_id?: string; branchId?: string };
+
+interface AttendanceItem {
+  id?: string;
+  _id?: string;
+  In?: string;
+  Out?: string;
+  actualIn?: string;
+  actualOut?: string;
+  date?: string;
+  dateOut?: string;
+  branch_id?: string | { _id?: string; name?: string };
+  branch?: string | { _id?: string; id?: string; name?: string; latitude?: number; longitude?: number };
+  branchId?: string;
+  employeeId?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+interface SectionData {
+  title: string;
+  data: AttendanceItem[];
+}
+
+type Translations = Record<string, Record<string, string>>;
+
+interface BranchLocation {
+  type?: 'Point';
+  coordinates?: [number, number];
+  address?: string;
+}
+
+const normalizeBranchIdValue = (v: BranchIdValue): string | undefined => {
   if (!v) return undefined;
   if (typeof v === "string") return v;
   if (typeof v === "object") {
@@ -57,12 +93,12 @@ const calcDuration = (checkIn: Date, checkOut?: Date) => {
  *
  * This handles various date property names (In, actualIn, date) and uses UTC-safe normalization.
  */
-const groupSchedulesByWeek = (entries: any[]) => {
-  if (!entries?.length) return [];
+const groupSchedulesByWeek = (entries: AttendanceItem[]) => {
+  if (!entries.length) return [];
 
   const todayYMD = new Date().toISOString().split("T")[0];
 
-  const groups: Record<string, any[]> = {};
+  const groups: Record<string, AttendanceItem[]> = {};
 
   const formatWeekRange = (start: Date, end: Date) => {
     const opt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
@@ -103,13 +139,18 @@ const groupSchedulesByWeek = (entries: any[]) => {
     }
   });
 
-  const finalSections: { title: string; data: any[] }[] = [];
+  const finalSections: SectionData[] = [];
   if (groups["Today"]) finalSections.push({ title: "Today", data: groups["Today"] });
   if (groups["This Week"]) finalSections.push({ title: "This Week", data: groups["This Week"] });
 
   Object.keys(groups)
     .filter(k => k !== "Today" && k !== "This Week")
-    .sort((a, b) => new Date(groups[b][0].In).getTime() - new Date(groups[a][0].In).getTime())
+    .sort((a, b) => {
+      const dateA = groups[b][0]?.In;
+      const dateB = groups[a][0]?.In;
+      if (!dateA || !dateB) return 0;
+      return new Date(dateA).getTime() - new Date(dateB).getTime();
+    })
     .forEach(k => finalSections.push({ title: k, data: groups[k] }));
 
   return finalSections;
@@ -125,13 +166,13 @@ const WorkHistoryScreen: React.FC<Props> = ({ langId }) => {
   const [branchAddresses, setBranchAddresses] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<ProfileUser | null>(null);
   const [branchNames, setBranchNames] = useState<Record<string, string>>({});
-  const [branches, setBranches] = useState<any[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [branchDistances, setBranchDistances] = useState<Record<string, number>>({});
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<ProfileUser | null>(null);
 
-  const [schedules, setSchedules] = useState<any[]>([]);
-  const [sections, setSections] = useState<{ title: string; data: any[] }[]>([]);
+  const [schedules, setSchedules] = useState<AttendanceItem[]>([]);
+  const [sections, setSections] = useState<SectionData[]>([]);
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const [tempSections, setTempSections] = useState(sections);
@@ -162,7 +203,7 @@ const onRefresh = useCallback(() => {
       const prof = await getProfile();
       setCurrentUser(prof);
 
-      if (prof?._id) {
+      if (prof._id) {
         const monthSchedules = await getMonthlySchedules1({
           userId: prof._id,
           userBranchId: prof.branch,
@@ -191,9 +232,16 @@ const onRefresh = useCallback(() => {
   useEffect(() => {
     const loadUser = async () => {
       const data = await AsyncStorage.getItem("user");
-      if (data) setUser(JSON.parse(data));
+      if (data) {
+        try {
+          const parsedUser = JSON.parse(data) as ProfileUser;
+          setUser(parsedUser);
+        } catch (err) {
+          console.error("Failed to parse user from AsyncStorage:", err);
+        }
+      }
     };
-    loadUser();
+    void loadUser();
   }, []);
 
   // fetch profile on mount
@@ -207,7 +255,7 @@ const onRefresh = useCallback(() => {
       }
     };
 
-    fetchUser();
+    void fetchUser();
   }, []);
 
   // fetch schedules when profile is available
@@ -239,7 +287,7 @@ const onRefresh = useCallback(() => {
       }
     };
 
-    fetchSchedules();
+    void fetchSchedules();
     return () => {
       isMounted = false;
     };
@@ -258,11 +306,11 @@ useEffect(() => {
       const addressesMap: Record<string, string> = {};
 
       all.forEach((b) => {
-        if (!b?._id) return;
+        if (!b._id) return;
 
         namesMap[b._id] = b.name || "Unnamed Branch";
 
-        const loc = b.location as any; // ⬅️ Safely allow address
+        const loc = b.location as BranchLocation | undefined;
 
         const address: string | undefined = loc?.address;
 
@@ -286,7 +334,7 @@ useEffect(() => {
     }
   };
 
-  fetchBranchData();
+  void fetchBranchData();
 }, []);
 
 
@@ -318,11 +366,11 @@ useEffect(() => {
       }
     };
 
-    if (branches.length > 0) fetchDistances();
+    if (branches.length > 0) void fetchDistances();
   }, [branches]);
 
   // reverse geocode readable addresses for branches (will respect permission)
-const fetchBranchAddresses = async (branchesList: any[]) => {
+const fetchBranchAddresses = async (branchesList: Branch[]) => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== "granted") {
     console.warn("Location permission denied");
@@ -374,11 +422,11 @@ const fetchBranchAddresses = async (branchesList: any[]) => {
       }
     };
 
-    loadAddresses();
+    void loadAddresses();
   }, [branches]);
 
   const currentLang = langId || "en";
-  const lang = (translations as any)[currentLang] || translations["en"];
+  const lang = (translations as Translations)[currentLang] || (translations as Translations)["en"];
 
   // ---------------- totals derived from schedules ----------------
   const totalToText = (mins: number) => {
@@ -487,7 +535,7 @@ const visibleSections = useMemo(() => {
 
 
 useEffect(() => {
-  loadSchedules();
+  void loadSchedules();
 }, []);
 
 
@@ -586,11 +634,12 @@ useEffect(() => {
             );
 
             const showBranchInfo = !!(itemBranchId && loggedBranchId && itemBranchId !== loggedBranchId);
-            const branchName = item.branch?.name || (itemBranchId ? branchNames[itemBranchId] : "Unknown Branch");
+            const branchObj = typeof item.branch === 'object' && item.branch !== null ? item.branch : null;
+            const branchName = branchObj?.name || (itemBranchId ? branchNames[itemBranchId] : "Unknown Branch");
             const branchAddress =
               (itemBranchId && branchAddresses[itemBranchId]) ||
-              (item.branch?.latitude && item.branch?.longitude
-                ? `${item.branch.latitude}, ${item.branch.longitude}`
+              (branchObj?.latitude !== undefined && branchObj?.longitude !== undefined
+                ? `${branchObj.latitude}, ${branchObj.longitude}`
                 : "Address not available");
 
             const inDate = item.In ? new Date(item.In) : item.actualIn ? new Date(item.actualIn) : null;

@@ -8,8 +8,8 @@ import {
   RefreshControl,
   StyleSheet
 } from "react-native";
-import { useRoute } from "@react-navigation/native";
-import { getProfile } from "../../../api/profile";
+import { useRoute, RouteProp } from "@react-navigation/native";
+import { getProfile, ProfileUser } from "../../../api/profile";
 import { getWeeklySchedules } from "../../../api/checkin_checkout";
 import Header from "../../../components/Header";
 import CartBox from "../../../components/CartBox";
@@ -17,15 +17,45 @@ import colors from "../../../styles/Colors";
 import translations from "../../../assets/translations.json";
 import fonts from "../../../styles/Fonts";
 
-export default function ScheduleScreen(props: any) {
-  const route = useRoute<any>();
-  const userId = props?.userId || route.params?.userId || route.params?.id || null;
-  const langId = props?.langId || route.params?.langId || route.params?.language || "en";
+type ScheduleRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: string;
+  language?: string;
+};
+
+type ScheduleScreenProps = {
+  userId?: string;
+  langId?: string;
+};
+
+type BranchField = string | { _id?: string; name?: string } | null | undefined;
+type BranchInfo = { _id: string; name: string };
+
+type WeeklySchedule = {
+  id: string;
+  userId: string;
+  username?: string;
+  branchId?: string;
+  branchName?: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  day_of_week: string;
+};
+
+const isBranchObject = (value: BranchField): value is { _id?: string; name?: string } =>
+  typeof value === "object" && value !== null;
+
+export default function ScheduleScreen({ userId: propUserId, langId: propLangId }: ScheduleScreenProps) {
+  const route = useRoute<RouteProp<Record<string, ScheduleRouteParams>, string>>();
+  const userId = propUserId || route.params?.userId || route.params?.id || null;
+  const langId = propLangId || route.params?.langId || route.params?.language || "en";
   const currentLang = langId || "en";
   const lang = translations[currentLang as keyof typeof translations] || translations["en"];
-  const [weeklySchedules, setWeeklySchedules] = useState<any[]>([]);
-  const [localUsers, setLocalUsers] = useState<any[]>([]);
-  const [localBranches, setLocalBranches] = useState<any[]>([]);
+  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>([]);
+  const [localUsers, setLocalUsers] = useState<ProfileUser[]>([]);
+  const [localBranches, setLocalBranches] = useState<BranchInfo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
 
@@ -86,11 +116,17 @@ export default function ScheduleScreen(props: any) {
       setLocalUsers([user]);
       
       // Fix the branch access by checking the type properly
-      const branchObj = typeof user.branch === 'object' && user.branch !== null 
-        ? { _id: user.branch, name: user.branch } 
-        : typeof user.branch === 'string' 
-          ? { _id: user.branch, name: '' } 
-          : null;
+      const branchField: BranchField = (user as typeof user & { branch?: BranchField }).branch;
+
+      let branchObj: BranchInfo | null = null;
+      if (isBranchObject(branchField)) {
+        const id = branchField._id;
+        if (id) {
+          branchObj = { _id: String(id), name: String(branchField.name ?? id) };
+        }
+      } else if (typeof branchField === "string") {
+        branchObj = { _id: branchField, name: "" };
+      }
       
       if (branchObj) {
         setLocalBranches([branchObj]);
@@ -99,7 +135,7 @@ export default function ScheduleScreen(props: any) {
       setSelectedStaffId(user._id);
 
       const data = await getWeeklySchedules({ userId: user._id });
-      setWeeklySchedules(data);
+      setWeeklySchedules(data as WeeklySchedule[]);
     } catch (err) {
       console.error("❌ Error fetching weekly schedules:", err);
     } finally {
@@ -112,12 +148,12 @@ export default function ScheduleScreen(props: any) {
   }, [fetchWeeklySchedules]);
 
   // Derived: schedules grouped by date
-  const localSchedulesByDate: Record<string, any[]> = weeklySchedules.reduce((acc, sched) => {
+  const localSchedulesByDate: Record<string, WeeklySchedule[]> = weeklySchedules.reduce((acc, sched) => {
     const ymd = dateToYMD(new Date(sched.date));
     if (!acc[ymd]) acc[ymd] = [];
     acc[ymd].push(sched);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, WeeklySchedule[]>);
 
   const onRefresh = async () => {
     await fetchWeeklySchedules();
@@ -163,7 +199,10 @@ export default function ScheduleScreen(props: any) {
               let branchNameForSchedule = "";
               if (staffSchedule && userObj) {
                 const scheduleBranchId = String(staffSchedule.branchId);
-                const userBranchId = String(typeof userObj.branch === "string" ? userObj.branch : userObj.branch?._id);
+                const userBranchField: BranchField = (userObj as ProfileUser & { branch?: BranchField }).branch;
+                const userBranchId = String(
+                  typeof userBranchField === "string" ? userBranchField : userBranchField?._id ?? ""
+                );
 
                 if (scheduleBranchId && scheduleBranchId !== userBranchId) {
                   branchNameForSchedule = staffSchedule.branchName ?? "";

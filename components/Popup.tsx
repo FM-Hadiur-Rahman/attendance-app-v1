@@ -88,7 +88,7 @@ const Popup: React.FC<PopupProps> = ({
       const timer = setTimeout(() => {
         onClose();
       }, 2000);
-      return () => clearTimeout(timer);
+      return () => { clearTimeout(timer); };
     }
   }, [visible, children, onClose]);
 
@@ -237,14 +237,14 @@ const styles = StyleSheet.create({
   },
   titleDefault: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+fontWeight: fonts.weight.regular,
     color: colors.primary,
     textAlign: 'center',
     marginBottom: 8,
   },
   messageDefault: {
     fontSize: fonts.size.s,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
     textAlign: 'center',
     marginBottom: 12,
@@ -288,13 +288,13 @@ const styles = StyleSheet.create({
   },
   optionBoxHeadingDefault: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.text,
     marginBottom: 6,
   },
   optionBoxSubtitleDefault: {
     fontSize: fonts.size.m,
-    fontWeight: fonts.weight.regular as any,
+    fontWeight: fonts.weight.regular,
     color: colors.subtext,
   },
 });

@@ -18,6 +18,7 @@ import {
   useRoute,
   RouteProp,
 } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Button1 } from '../../components/Button';
 import colors from '../../styles/Colors';
 import fonts from '../../styles/Fonts';
@@ -34,8 +35,53 @@ type RouteParams = {
   LoginScreen: { langId?: LangId };
 };
 
+// Navigation param list for LoginScreen
+type LoginNavigationParamList = {
+  Footer_A: { userId: string | null; langId?: LangId; role: string };
+  Footer_C: { userId: string | null; langId?: LangId; role: string };
+  Footer_S: { userId: string | null; langId?: LangId; role: string };
+};
+
+// User type that supports both id and _id
+type LoginUser = {
+  id?: string;
+  _id?: string;
+  username?: string;
+  email?: string;
+  role?: string;
+  [key: string]: unknown;
+};
+
+// API response types
+type LoginSuccessResponse = {
+  token?: string;
+  accessToken?: string;
+  access_token?: string;
+  user?: LoginUser;
+  data?: {
+    user?: LoginUser;
+  };
+  role?: string;
+};
+
+type LoginErrorResponse = {
+  message?: string;
+  error?: string;
+  errors?: Record<string, string | string[]> | string[];
+};
+
+type LoginApiResponse = LoginSuccessResponse & LoginErrorResponse;
+
+// Error type for catch blocks
+type ApiError = {
+  response?: {
+    data?: LoginErrorResponse;
+  };
+  message?: string;
+};
+
 export default function LoginScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<StackNavigationProp<LoginNavigationParamList>>();
   const route = useRoute<RouteProp<RouteParams, 'LoginScreen'>>();
   const langId: LangId | undefined = route.params?.langId;
   const lang = translations[(langId as string) || 'en'] ?? translations['en'];
@@ -112,24 +158,34 @@ export default function LoginScreen() {
       if (Platform.OS !== 'android') return;
       const onBackPress = () => true;
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => subscription.remove();
+      return () => { subscription.remove(); };
     }, [])
   );
 
   // utility: safely parse errors from server
-  const safeParseErrors = (data: any): string[] => {
+  const safeParseErrors = (data: LoginErrorResponse | unknown): string[] => {
     if (!data) return [];
     if (Array.isArray(data)) return data.map(it => (typeof it === 'string' ? it : JSON.stringify(it)));
-    if (data.errors && typeof data.errors === 'object') {
-      return Object.keys(data.errors).flatMap(k => {
-        const v = data.errors[k];
-        if (Array.isArray(v)) return v;
-        if (v) return [String(v)];
-        return [];
-      });
+    
+    // Type guard to check if data is LoginErrorResponse
+    if (typeof data === 'object' && data !== null) {
+      const errorData = data as LoginErrorResponse;
+      if (errorData.errors && typeof errorData.errors === 'object') {
+        if (Array.isArray(errorData.errors)) {
+          return errorData.errors.map(it => (typeof it === 'string' ? it : JSON.stringify(it)));
+        }
+        // At this point, errors is a Record<string, string | string[]>
+        const errorsRecord = errorData.errors as Record<string, string | string[]>;
+        return Object.keys(errorsRecord).flatMap(k => {
+          const v = errorsRecord[k];
+          if (Array.isArray(v)) return v.map(item => String(item));
+          if (v) return [String(v)];
+          return [];
+        });
+      }
+      if (errorData.message) return [String(errorData.message)];
+      if (errorData.error) return [String(errorData.error)];
     }
-    if (data.message) return [String(data.message)];
-    if (data.error) return [String(data.error)];
     return [];
   };
 
@@ -217,9 +273,9 @@ export default function LoginScreen() {
 
       // success path
       if (resp.status === 200 || resp.status === 201) {
-        // NOTE: using `any` for user since we removed the typed import
-        const token: string | undefined = data.token || data.accessToken || data.access_token;
-        const user: any = data.user || data.data?.user;
+        const responseData = data as LoginSuccessResponse;
+        const token: string | undefined = responseData.token || responseData.accessToken || responseData.access_token;
+        const user: LoginUser | undefined = responseData.user || responseData.data?.user;
 
         if (!token || !user) {
           setEmailOrUsername('');
@@ -233,7 +289,7 @@ export default function LoginScreen() {
         }
 
         // Save token + userId
-        const userId = user.id ?? (user as any)._id ?? null;
+        const userId = user.id ?? user._id ?? null;
         await saveToken(token);
         if (userId) await saveUserId(userId);
 
@@ -256,8 +312,8 @@ export default function LoginScreen() {
 
         // Add delay to let toast show
         setTimeout(() => {
-          const role = user.role ?? data.role ?? 'employee';
-          const routeMap: Record<string, string> = {
+          const role = user.role ?? responseData.role ?? 'employee';
+          const routeMap: Record<string, keyof LoginNavigationParamList> = {
             admin: 'Footer_A',
             employee: 'Footer_C',
             superadmin: 'Footer_S',
@@ -270,15 +326,16 @@ export default function LoginScreen() {
 
           setEmailOrUsername('');
           setPassword('');
-          navigation.navigate(routeName as never, params as never);
+          navigation.navigate(routeName, params);
         }, 1500); // 1.5 seconds delay – adjust as needed (e.g., 1000 for 1 sec)
 
         return;
       }
 
       // Backend failure handling
-      const errsArray = safeParseErrors(data);
-      const rawMessage = (data && (data.message || data.error)) ? String(data.message || data.error) : '';
+      const errorData = data as LoginErrorResponse;
+      const errsArray = safeParseErrors(errorData);
+      const rawMessage = (errorData && (errorData.message || errorData.error)) ? String(errorData.message || errorData.error) : '';
 
       // If it looks like auth failure, clear both inputs and skip next validation
       if (looksLikeAuthFailure(resp.status, errsArray, rawMessage)) {
@@ -334,9 +391,10 @@ export default function LoginScreen() {
       safeShowErrorToast(`Server returned ${resp.status}`);
       console.warn('Login failed (fallback)', { status: resp.status, data: resp.data });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Login error (exception)', err);
-      const msg = err?.response?.data?.message || err?.message || 'Login failed';
+      const apiError = err as ApiError;
+      const msg = apiError?.response?.data?.message || apiError?.message || 'Login failed';
 
       // If exception appears to be auth-related, clear both fields and skip validation
       if (/invalid credentials|user not found|incorrect password|wrong password|invalid username|invalid email|unauthorized/i.test(String(msg))) {
@@ -389,7 +447,7 @@ export default function LoginScreen() {
               value={password}
               setValue={handlePasswordChange}
               rightIcon={showPassword ? require('../../assets/icons/eye_open.png') : require('../../assets/icons/eye_close.png')}
-              onRightIconPress={() => setShowPassword(s => !s)}
+              onRightIconPress={() => { setShowPassword(s => !s); }}
               errorMessage={passwordError || ''}
               ref={passwordRef}
               returnKeyType="done"
