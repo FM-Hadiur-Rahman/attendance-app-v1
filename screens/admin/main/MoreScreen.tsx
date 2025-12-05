@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { RefreshControl } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, NavigationProp, RouteProp } from "@react-navigation/native";
 import CartBox from "../../../components/CartBox";
 import Popup from "../../../components/Popup";
 import { Button1 } from "../../../components/Button";
@@ -37,9 +37,85 @@ import { clearAllAuthData } from "../../../api/auth/authToken";
 
 import { getBranchId } from "../../../api/profile";
 
-export default function MoreScreen(props: any) {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+// ============================================================
+// Type Definitions
+// ============================================================
+
+type LangId = "en" | "de";
+
+type MoreScreenRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: LangId;
+  language?: string;
+};
+
+type RootStackParamList = {
+  MoreScreen: MoreScreenRouteParams;
+  HelpCenterScreen: {
+    userId?: string;
+    branchId?: string | null;
+    langId?: string;
+    email?: string;
+  };
+  AboutScreen: {
+    userId?: string;
+    branchId?: string | null;
+    langId?: string;
+    email?: string;
+  };
+  PrivacyScreen: {
+    userId?: string;
+    branchId?: string | null;
+    langId?: string;
+    email?: string;
+  };
+  TermsScreen: {
+    userId?: string;
+    branchId?: string | null;
+    langId?: string;
+    email?: string;
+  };
+  LoginScreen: {
+    langId?: string;
+  };
+};
+
+type MoreScreenProps = {
+  userId?: string;
+  langId?: LangId;
+  setLangId?: (lang: string) => void;
+};
+
+type KeyboardEvent = {
+  endCoordinates?: {
+    height?: number;
+  };
+};
+
+type ErrorWithMessage = {
+  message?: string;
+  toString?: () => string;
+};
+
+type ScreenName = "HelpCenterScreen" | "AboutScreen" | "PrivacyScreen" | "TermsScreen";
+
+type SectionItem = {
+  label: string;
+  labelname: string;
+  icon: ReturnType<typeof require>;
+  screen: ScreenName | null;
+};
+
+type Section = {
+  name: string;
+  title: string;
+  items: SectionItem[];
+};
+
+export default function MoreScreen(props: MoreScreenProps) {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "MoreScreen">>();
 
   // support both prop-based injection (from Footer_C) and route params
   const propUserId = props?.userId;
@@ -66,7 +142,8 @@ export default function MoreScreen(props: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propLangId]);
 
-  const lang = translations[selectedLanguage as keyof typeof translations] || translations["en"];
+  const langKey = selectedLanguage as keyof typeof translations;
+  const lang = translations[langKey] || translations["en"];
 
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string>(""); // no change to UI
@@ -98,7 +175,7 @@ export default function MoreScreen(props: any) {
     },
   ];
 
-  const sections = [
+  const sections: Section[] = [
     {
       name: lang.personal_information,
       title: "General",
@@ -187,12 +264,13 @@ export default function MoreScreen(props: any) {
         }
       }
       // If your API returns an image field, setProfileImage(profile.image) here
-    } catch (err: any) {
-      console.error("loadProfile error", err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("loadProfile error", error);
       if (showErrors) {
         Alert.alert(
           "Profile load failed",
-          err?.toString?.() ?? "Could not load profile"
+          error?.toString?.() ?? "Could not load profile"
         );
       }
     } finally {
@@ -202,7 +280,7 @@ export default function MoreScreen(props: any) {
 
   useEffect(() => {
     // fetch profile on mount
-    loadProfile(false);
+    void loadProfile(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -240,11 +318,11 @@ export default function MoreScreen(props: any) {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-    const onShow = (e: any) => {
+    const onShow = (e: KeyboardEvent) => {
       const h = e?.endCoordinates?.height ?? 0;
       setKeyboardHeight(h);
     };
-    const onHide = () => setKeyboardHeight(0);
+    const onHide = () => { setKeyboardHeight(0); };
 
     const showSub = Keyboard.addListener(showEvent, onShow);
     const hideSub = Keyboard.addListener(hideEvent, onHide);
@@ -280,8 +358,9 @@ export default function MoreScreen(props: any) {
     try {
       // try informing backend and clearing local storage via AuthService
       await apiLogout();
-    } catch (err) {
-      console.warn("Backend logout failed (ignored):", err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn("Backend logout failed (ignored):", error);
       // ensure tokens are removed locally even if backend fails
       await clearAllAuthData();
     } finally {
@@ -336,7 +415,7 @@ export default function MoreScreen(props: any) {
               )}
               <TouchableOpacity
                 style={styles.editIconContainer}
-                onPress={() => setModalVisible(true)}
+                onPress={() => { setModalVisible(true); }}
               >
                 <Image
                   source={require("../../../assets/icons/p_edit.png")}
@@ -372,7 +451,8 @@ export default function MoreScreen(props: any) {
                       setFullnameInput(fullName); // set current value
                       setFullnameModalVisible(true);
                     } else if (item.screen) {
-                      navigation.navigate(item.screen, {
+                      const screenName = item.screen as ScreenName;
+                      navigation.navigate(screenName, {
                         userId: userId,
                         branchId: branchId,
                         langId: selectedLanguage, // pass langId
@@ -409,7 +489,7 @@ export default function MoreScreen(props: any) {
 
           {/* Logout */}
           <CartBox
-            onPress={() => setLogoutPopupVisible(true)} // show popup
+            onPress={() => { setLogoutPopupVisible(true); }}
             paddingLeft={20}
             paddingTop={12}
             paddingBottom={12}
@@ -433,11 +513,11 @@ export default function MoreScreen(props: any) {
         animationType="slide"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => { setModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)}
+          onPress={() => { setModalVisible(false); }}
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
@@ -492,11 +572,11 @@ export default function MoreScreen(props: any) {
         animationType="slide"
         transparent={true}
         visible={fullnameModalVisible}
-        onRequestClose={() => setFullnameModalVisible(false)}
+        onRequestClose={() => { setFullnameModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setFullnameModalVisible(false)}
+          onPress={() => { setFullnameModalVisible(false); }}
         >
           {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
           <KeyboardAvoidingView
@@ -504,7 +584,7 @@ export default function MoreScreen(props: any) {
             style={{ flex: 1, justifyContent: "flex-end" }}
             keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
           >
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
               <View
                 style={[
                   styles.modalContainer,
@@ -547,10 +627,11 @@ export default function MoreScreen(props: any) {
 
                       // Optionally refresh to be safe:
                       // await loadProfile(false);
-                    } catch (err: any) {
-                      console.error("Failed to update fullname", err);
-                      //Alert.alert('Update failed', err?.toString?.() ?? 'Could not update fullname');
-                      showErrorToast(err?.message ?? "Could not update fullname");
+                    } catch (err: unknown) {
+                      const error = err as ErrorWithMessage;
+                      console.error("Failed to update fullname", error);
+                      //Alert.alert('Update failed', error?.toString?.() ?? 'Could not update fullname');
+                      showErrorToast(error?.message ?? "Could not update fullname");
                     }
                   }}
                   containerStyle={{ alignSelf: "center", marginTop: 10 }}
@@ -566,11 +647,11 @@ export default function MoreScreen(props: any) {
         animationType="slide"
         transparent={true}
         visible={languageModalVisible}
-        onRequestClose={() => setLanguageModalVisible(false)}
+        onRequestClose={() => { setLanguageModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setLanguageModalVisible(false)}
+          onPress={() => { setLanguageModalVisible(false); }}
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHandle} />
@@ -592,7 +673,7 @@ export default function MoreScreen(props: any) {
                   tempLanguage === langOpt.code ? colors.primary : colors.border
                 }
                 marginBottom={12}
-                onPress={() => setTempLanguage(langOpt.code)}
+                onPress={() => { setTempLanguage(langOpt.code); }}
               >
                 <View style={styles.languageBox}>
                   <Image source={langOpt.flag} style={styles.logoutIcon} />
@@ -625,7 +706,7 @@ export default function MoreScreen(props: any) {
 
       <Popup
         visible={logoutPopupVisible}
-        onClose={() => setLogoutPopupVisible(false)}
+        onClose={() => { setLogoutPopupVisible(false); }}
         popupBorderColor={colors.error_text}
         dismissOnOverlayPress={false}
         title="Logout?"
@@ -650,7 +731,7 @@ export default function MoreScreen(props: any) {
           />
           <Button1
             text={lang.no}
-            onPress={() => setLogoutPopupVisible(false)}
+            onPress={() => { setLogoutPopupVisible(false); }}
             backgroundColor={colors.error_text}
             width={"48%"}
             textStyle={{ color: colors.secondary }}

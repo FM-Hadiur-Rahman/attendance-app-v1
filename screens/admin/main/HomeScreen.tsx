@@ -21,15 +21,15 @@ import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
-import { useNavigation, useRoute, useIsFocused } from "@react-navigation/native";
-import { getUserById, getUsers } from "../../../api/profile";
+import { useNavigation, useRoute, useIsFocused, NavigationProp, RouteProp } from "@react-navigation/native";
+import { getUserById, getUsers, ProfileUser } from "../../../api/profile";
 import { getSchedulesForDate, ScheduleItem } from "../../../api/schedules";
 import { getAttendanceAllHistory, AttendanceHistoryItem, forceCheckout } from "../../../api/attendanceAllHistory";
 import { getBranchById } from "../../../api/Branchs";
 import Popup from "../../../components/Popup";
 import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
 
 const { width: deviceWidth } = Dimensions.get("window");
@@ -103,15 +103,6 @@ const normalizeToHHMM = (t?: string) => {
   return `${hh}:${mm}`;
 };
 
-// build a local Date from "YYYY-MM-DD" and "HH:MM" then return its ISO (UTC) string
-const buildIsoFromDateAndHHMM = (ymd: string, hhmm: string) => {
-  const [y, m, d] = ymd.split("-").map(s => parseInt(s, 10));
-  const [hh, mm] = hhmm.split(":").map(s => parseInt(s || "0", 10));
-  // create local Date with components (year, monthIndex, day, hour, minute, second)
-  const local = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
-  return local.toISOString();
-};
-
 // convert "HH:MM" to minutes-from-midnight
 const hhmmToMinutesStrict = (hhmm: string) => {
   if (!hhmm) return 0;
@@ -152,6 +143,44 @@ const parseAttendanceDatetime = (s: string | undefined | null): Date | null => {
 const yesterday = new Date();
 yesterday.setDate(yesterday.getDate() - 1);
 
+// ============================================================
+// Type Definitions
+// ============================================================
+
+type LangId = "en" | "de";
+
+type HomeScreenRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: LangId;
+  language?: string;
+  branchId?: string | null;
+};
+
+type RootStackParamList = {
+  HomeScreen: HomeScreenRouteParams;
+  NotificationScreen: {
+    userId?: string;
+    langId?: string;
+    branchId?: string | null;
+  };
+};
+
+type KeyboardEvent = {
+  endCoordinates: {
+    height?: number;
+  };
+};
+
+type ErrorWithMessage = {
+  message?: string;
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+};
+
 interface ScreenProps {
   userId: string;
   langId: string;
@@ -165,16 +194,17 @@ interface ScreenProps {
 }
 
 const HomeScreen_A: React.FC<ScreenProps> = (props) => {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "HomeScreen">>();
 
   const propUserId = props?.userId;
   const propLangId = props?.langId;
   const routeUserId = route.params?.userId;
   const routeLangId = route.params?.langId;
   const userId = propUserId || routeUserId;
-  const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId];
+  const langId = (propLangId || routeLangId || "en") as LangId;
+  const langKey = langId as keyof typeof translations;
+  const lang = translations[langKey] || translations["en"];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -183,13 +213,13 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [version, setVersion] = useState<number>(0);
 
-  const passedBranchId = route.params?.branch_id ?? route.params?.branchId ?? null;
+  const passedBranchId = route.params?.branchId ?? null;
 
   const [activeBranchId, setActiveBranchId] = useState<string | null>(passedBranchId || null);
 
   // schedules & users (previously used)
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
-  const [usersState, setUsersState] = useState<any[]>([]);
+  const [usersState, setUsersState] = useState<ProfileUser[]>([]);
   const [loadingShiftData, setLoadingShiftData] = useState<boolean>(false);
 
   // Modal / checkout state
@@ -314,8 +344,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       await fetchShiftData(activeBranchId);
 
       showSuccessToast(lang.Checked_out_successfully);
-    } catch (err) {
-      console.warn("force checkout failed", err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn("force checkout failed", error);
       showErrorToast(lang.Checkout_failed_Try_again);
     } finally {
       setConfirmSubmitting(false);
@@ -323,16 +354,15 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   };
 
   // recent checkins from attendance API (already enriched)
-  const [recentCheckins, setRecentCheckins] = useState<
-    Array<{
-      attendance: AttendanceHistoryItem;
-      userProfile: { fullname: string; username: string };
-      schedule?: ScheduleItem | null;
-      status: "early" | "late" | "ontime" | "noschedule";
-      diffText: string;
-      branchNameToShow?: string | null;
-    }>
-  >([]);
+  type RecentCheckinItem = {
+    attendance: AttendanceHistoryItem;
+    userProfile: { fullname: string; username: string } | null;
+    schedule?: ScheduleItem | null;
+    status: "early" | "late" | "ontime" | "noschedule";
+    diffText: string;
+    branchNameToShow?: string | null;
+  };
+  const [recentCheckins, setRecentCheckins] = useState<RecentCheckinItem[]>([]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -383,8 +413,9 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
       ]);
       setSchedulesState(schedules);
       setUsersState(users ?? []);
-    } catch (err) {
-      console.warn('fetchShiftData failed', err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn('fetchShiftData failed', error);
       setSchedulesState([]);
       setUsersState([]);
     } finally {
@@ -393,8 +424,8 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
   };
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [timeFrom, setTimeFrom] = useState<string>("");
-  const onShowNativeTimePicker = () => setShowTimePicker(true);
-  const onNativeTimeChange = (event: any, selected?: Date) => {
+  const onShowNativeTimePicker = () => { setShowTimePicker(true); };
+  const onNativeTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
     setShowTimePicker(false);
     if (!selected) return;
     const hh = pad2(selected.getHours());
@@ -444,9 +475,10 @@ const showConfirmDialog = () => {
     // passed validation — clear error and show popup
     setCheckoutTimeError("");
     setForceCheckoutModalVisible(false);
-    setTimeout(() => setConfirmPopupVisible(true), 350);
-  } catch (err) {
-    console.warn("showConfirmDialog validation error", err);
+    setTimeout(() => { setConfirmPopupVisible(true); }, 350);
+  } catch (err: unknown) {
+    const error = err as ErrorWithMessage;
+    console.warn("showConfirmDialog validation error", error);
     setCheckoutTimeError(lang.Invalid_time);
   }
 };
@@ -462,7 +494,7 @@ const showConfirmDialog = () => {
     const uniqueEmpIds = new Set<string>();
 
     schedulesState.forEach((s) => {
-      if (!s?.date) return;
+      if (!s.date) return;
 
       const sDate = new Date(s.date);
       const sYMD = toYMDLocal(sDate);
@@ -542,11 +574,12 @@ const showConfirmDialog = () => {
       const enriched = await Promise.all(
         filtered.map(async (att) => {
           const uid = att.user.id;
-          let userProfile = usersState.find((u) => String((u)._id) === String(uid));
+          let userProfile: ProfileUser | null = usersState.find((u) => String((u)._id) === String(uid)) ?? null;
 
           if (!userProfile && uid) {
             try {
-              userProfile = await getUserById(String(uid));
+              const fetched = await getUserById(String(uid));
+              userProfile = fetched ?? null;
             } catch {
               userProfile = null;
             }
@@ -588,8 +621,9 @@ const showConfirmDialog = () => {
                 else status = "early";
               }
             }
-          } catch (err) {
-            console.warn('compute status error', err);
+          } catch (err: unknown) {
+            const error = err as ErrorWithMessage;
+            console.warn('compute status error', error);
             status = "noschedule";
           }
 
@@ -598,29 +632,39 @@ const showConfirmDialog = () => {
           try {
             if (userProfile) {
               let userBranchId: string | null = null;
-              if (typeof userProfile.branch === 'string') userBranchId = userProfile.branch;
-              else if (userProfile.branch && typeof userProfile.branch === 'object' && '_id' in userProfile.branch) {
-                userBranchId = userProfile.branch._id ?? null;
-              }
-              const userBranchName = userProfile.branch && typeof userProfile.branch === 'object' ? userProfile.branch.name ?? null : null;
-              if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
-                branchNameToShow = userBranchName || (await getBranchById(userBranchId))?.name || null;
+              if (typeof userProfile.branch === 'string') {
+                userBranchId = userProfile.branch;
+              } else if (userProfile.branch && typeof userProfile.branch === 'object') {
+                const branchObj = userProfile.branch as { _id?: string; id?: string; name?: string };
+                userBranchId = branchObj._id ?? branchObj.id ?? null;
+                const userBranchName = branchObj.name ?? null;
+                if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
+                  branchNameToShow = userBranchName || (await getBranchById(userBranchId)).name || null;
+                }
               }
             } else if (att.branch_id) {
               const b = await getBranchById(att.branch_id);
-              const userBranchId = b._id;
-              if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
-                branchNameToShow = b?.name ?? null;
+              if (b) {
+                const userBranchId = b._id;
+                if (userBranchId && String(userBranchId) !== String(branchIdToUse ?? activeBranchId)) {
+                  branchNameToShow = b.name ?? null;
+                }
               }
             }
-          } catch (err) {
-            console.warn('branchNameToShow lookup failed', err);
+          } catch (err: unknown) {
+            const error = err as ErrorWithMessage;
+            console.warn('branchNameToShow lookup failed', error);
             branchNameToShow = null;
           }
 
+          // Transform userProfile to match expected type
+          const transformedUserProfile: { fullname: string; username: string } | null = userProfile
+            ? { fullname: userProfile.fullname, username: userProfile.username }
+            : null;
+
           return {
             attendance: att,
-            userProfile,
+            userProfile: transformedUserProfile,
             schedule,
             status,
             diffText,
@@ -630,16 +674,17 @@ const showConfirmDialog = () => {
       );
 
       setRecentCheckins(enriched);
-    } catch (err) {
-      console.warn('fetchAttendanceAndEnrich failed', err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn('fetchAttendanceAndEnrich failed', error);
       setRecentCheckins([]);
     }
   };
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
-      setKeyboardHeight(e.endCoordinates?.height || 0);
+    const showSub = Keyboard.addListener("keyboardDidShow", (e: KeyboardEvent) => {
+      setKeyboardHeight(e.endCoordinates.height || 0);
     });
     const hideSub = Keyboard.addListener("keyboardDidHide", () => {
       setKeyboardHeight(0);
@@ -654,12 +699,12 @@ const showConfirmDialog = () => {
     if (!activeBranchId || !isFocused) return;
     // immediate refresh when screen becomes focused
     fetchShiftData(activeBranchId);
-    fetchAttendanceAndEnrich(activeBranchId);
+    void fetchAttendanceAndEnrich(activeBranchId);
 
     // poll attendance only (keeps UI live while screen open)
     const pollMs = 60 * 1000; // 60s - adjust as needed
     const interval = setInterval(() => {
-      fetchAttendanceAndEnrich(activeBranchId);
+      void fetchAttendanceAndEnrich(activeBranchId);
     }, pollMs);
 
     return () => {
@@ -703,8 +748,9 @@ const showConfirmDialog = () => {
         } else {
           console.log("No branchId found for user");
         }
-      } catch (err) {
-        console.warn("Failed to load branch from userId", err);
+      } catch (err: unknown) {
+        const error = err as ErrorWithMessage;
+        console.warn("Failed to load branch from userId", error);
       }
     })();
     return () => {
@@ -717,7 +763,7 @@ const showConfirmDialog = () => {
   }, [activeBranchId, version]);
 
   useEffect(() => {
-    fetchAttendanceAndEnrich(activeBranchId);
+    void fetchAttendanceAndEnrich(activeBranchId);
   }, [activeBranchId, version, schedulesState, usersState]);
 
   const handleNotificationPress = () => {
@@ -843,7 +889,7 @@ const showConfirmDialog = () => {
                         textStyle={{ color: colors.primary, paddingVertical: 10, fontSize: fonts.size.l, fontWeight: fonts.weight.medium }}
                         backgroundColor={colors.secondary}
                         containerStyle={{ borderColor: colors.primary, borderWidth: 1, borderRadius: 12, width: '100%', marginTop: 10 }}
-                        onPress={() => openForceCheckoutModal(attendance, schedule, userProfile)}
+                        onPress={() => { openForceCheckoutModal(attendance, schedule, userProfile); }}
                       />
                     )}
                   </CartBox>
@@ -858,7 +904,7 @@ const showConfirmDialog = () => {
         visible={forceCheckoutModalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setForceCheckoutModalVisible(false)}
+        onRequestClose={() => { setForceCheckoutModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
@@ -870,7 +916,7 @@ const showConfirmDialog = () => {
             style={{ flex: 1, justifyContent: "flex-end" }}
             keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
           >
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
               <View
                 style={[
                   styles.modalContainer,
@@ -879,7 +925,7 @@ const showConfirmDialog = () => {
               >
                 <View style={styles.modalHandle} />
                 <Text style={styles.modalTitle}>
-                  {lang.Check_out} - {checkoutTargetAttendance?.userProfile?.fullname ?? checkoutTargetAttendance?.user?.fullname}
+                  {lang.Check_out} - {checkoutTargetAttendance?.user.fullname}
                 </Text>
 
                 <Text style={[styles.name, { marginBottom: 16 }]}>
@@ -895,7 +941,7 @@ const showConfirmDialog = () => {
                   label={lang.Check_out_time}
                   placeholder="HH:MM"
                   value={checkoutTime}
-                  setValue={(v: string) => setCheckoutTimeSafe(v)}
+                  setValue={(v: string) => { setCheckoutTimeSafe(v); }}
                   keyboardType="numeric"
                   maxLength={5}
                   rightIcon={require("../../../assets/icons/clock_b.png")}
@@ -920,7 +966,7 @@ const showConfirmDialog = () => {
       {/* Confirm popup */}
       <Popup
         visible={confirmPopupVisible}
-        onClose={() => setConfirmPopupVisible(false)}
+        onClose={() => { setConfirmPopupVisible(false); }}
         popupBorderColor={colors.primary}
         dismissOnOverlayPress={false}
         title={`${lang.Confirm_checkout_for} ${checkoutTargetAttendance?.userProfile?.fullname} ? ${lang.This_action_will_be_recorded}`}
@@ -947,7 +993,7 @@ const showConfirmDialog = () => {
               textStyle={{ color: colors.secondary }}
               onPress={() => {
                 if (confirmSubmitting) return; 
-                handleSaveForceCheckout();
+                void handleSaveForceCheckout();
               }}
             />
           </View>
