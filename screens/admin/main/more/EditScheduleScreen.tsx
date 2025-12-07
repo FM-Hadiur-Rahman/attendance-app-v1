@@ -18,9 +18,16 @@ import {
     Keyboard,
     TouchableWithoutFeedback
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { RefreshControl } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+    useNavigation,
+    useRoute,
+    NavigationProp,
+    RouteProp,
+} from "@react-navigation/native";
+import DateTimePicker, {
+    DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { fetchUsers, ProfileUser, getProfile, postSchedulesBulk } from "../../../../api/profile";
 import { getAllBranches, Branch as ApiBranch } from "../../../../api/Branchs";
 import { getSchedulesByEmployee, getSchedules, ScheduleItem, createSchedule, updateSchedule, deleteSchedule } from "../../../../api/schedules";
@@ -35,11 +42,13 @@ import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../.
 import Popup from "../../../../components/Popup";
 import { getAttendanceAllHistory, AttendanceHistoryItem } from "../../../../api/attendanceAllHistory";
 import { useFocusEffect } from "@react-navigation/native";
+
 type Branch = {
     _id?: string;
     id?: string;
     name?: string;
 };
+
 type LocalUser = {
     id: string;
     fullname: string;
@@ -47,21 +56,79 @@ type LocalUser = {
     role?: string;
     raw?: ProfileUser;
 };
+
 type LocalBranch = {
     id: string;
     name: string;
     raw?: ApiBranch;
 };
-export default function EditScheduleScreen(props: any) {
-    const navigation = useNavigation<any>();
-    const route = useRoute<any>();
+
+type NormalizedSchedule = {
+    id: string;
+    user_id: string;
+    branch_id: string;
+    start_time: string;
+    duration: number;
+    end_time: string;
+    date: string;
+    raw: ScheduleItem;
+    _id?: string;
+    employee_id?: string;
+};
+
+type ChangeLogEntry = {
+    type: "add" | "update" | "delete";
+    schedule: NormalizedSchedule;
+};
+
+type EditScheduleScreenParams = {
+    userId?: string;
+    langId?: string;
+    id?: string;
+    language?: string;
+    branch_id?: string;
+    branchId?: string;
+};
+
+type RootStackParamList = {
+    EditScheduleScreen: EditScheduleScreenParams;
+    Footer_A: {
+        selectedTab?: string;
+        userId?: string;
+        langId?: string;
+        toastMessage?: string;
+    };
+};
+
+type EditScheduleScreenProps = {
+    userId?: string;
+    langId?: string;
+};
+
+type KeyboardEvent = {
+    endCoordinates?: {
+        height?: number;
+    };
+};
+
+type ScheduleResponse = {
+    schedules?: ScheduleItem[];
+    data?: {
+        schedules?: ScheduleItem[];
+    };
+};
+
+export default function EditScheduleScreen(props: EditScheduleScreenProps) {
+    const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+    const route = useRoute<RouteProp<RootStackParamList, "EditScheduleScreen">>();
     const propUserId = props?.userId;
     const propLangId = props?.langId;
     const routeUserId = route.params?.userId ?? route.params?.id;
     const routeLangId = route.params?.langId ?? route.params?.language;
     const userId = propUserId || routeUserId || null;
     const langId = propLangId || routeLangId || "en";
-    const lang = (translations as any)[langId] || (translations as any)["en"];
+    const langKey = (langId && langId in translations ? langId : "en") as keyof typeof translations;
+    const lang = translations[langKey];
     const [saveConfirmVisible, setSaveConfirmVisible] = useState<boolean>(false);
     const screenBranchId: string = (route.params?.branch_id as string) ?? (route.params?.branchId as string) ?? "";
     // loading states
@@ -71,9 +138,9 @@ export default function EditScheduleScreen(props: any) {
     const [localUsers, setLocalUsers] = useState<LocalUser[]>([]);
     const [localBranches, setLocalBranches] = useState<LocalBranch[]>([]);
     // schedules will be fetched from api/schedules.ts
-    const [localSchedules, setLocalSchedules] = useState<Array<any>>([]);
+    const [localSchedules, setLocalSchedules] = useState<NormalizedSchedule[]>([]);
     // derived schedules map
-    const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, any[]>>({});
+    const [localSchedulesByDate, setLocalSchedulesByDate] = useState<Record<string, NormalizedSchedule[]>>({});
     // UI state
     const [modalEditingId, setModalEditingId] = useState<string | null>(null);
     const [selectedStaff, setSelectedStaff] = useState<string>("");
@@ -95,31 +162,32 @@ export default function EditScheduleScreen(props: any) {
     const [durationHours, setDurationHours] = useState<string>("");
     const [durationError, setDurationError] = useState<string>("");
     const [addScheduleModalVisible, setAddScheduleModalVisible] = useState(false);
-    const [changeLog, setChangeLog] = useState<Array<{ type: "add" | "update" | "delete"; schedule: any }>>([]);
+    const [changeLog, setChangeLog] = useState<ChangeLogEntry[]>([]);
     const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     const [weekOffset, setWeekOffset] = useState<number>(0);
     const [checkedInMap, setCheckedInMap] = useState<Record<string, Set<string>>>({});
     const [loadingAttendance, setLoadingAttendance] = useState(false);
-    const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => {
-        return users.map((u) => {
-            const id = (u as any)._id ?? (u as any).id ?? "";
-            const fullname = (u as any).fullname ?? (u as any).fullName ?? (u as any).name ?? (u as any).username ?? id;
-            let branch_id = "";
-            if (typeof u.branch === "string") {
-                branch_id = u.branch;
-            } else if (u.branch) {
-                branch_id = (u.branch ?? (u.branch as any).id) ?? ""; // safe fallback for API that might include id
-            } else if (u._id) {
-                branch_id = u._id;
-            }
-            return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
-        });
-    };
-    const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => {
-        return branches.map((b) => ({ id: (b as any)._id ?? (b as any).id ?? "", name: (b as any).name ?? (b as any).branch_name ?? "", raw: b }));
-    };
-    const normalizeSchedules = (schedules: ScheduleItem[] = []): any[] => {
+    const normalizeUsers = (users: ProfileUser[] = []): LocalUser[] => users.map((u) => {
+        const id = u._id ?? "";
+        const fullname = u.fullname ?? u.username ?? id;
+        let branch_id = "";
+        if (typeof u.branch === "string") {
+            branch_id = u.branch;
+        } else if (u.branch && typeof u.branch === "object") {
+            const branchObj = u.branch as { _id?: string; id?: string };
+            branch_id = branchObj._id ?? branchObj.id ?? "";
+        } else if (u._id) {
+            branch_id = u._id;
+        }
+        return { id: String(id), fullname: String(fullname), branch_id: String(branch_id || ""), role: u.role, raw: u };
+    });
+    const normalizeBranches = (branches: ApiBranch[] = []): LocalBranch[] => branches.map((b) => ({
+        id: b._id ?? "",
+        name: b.name ?? "",
+        raw: b,
+    }));
+    const normalizeSchedules = (schedules: ScheduleItem[] = []): NormalizedSchedule[] => {
         const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
         const computeFromStartAndDuration = (start: string, dur: number) => {
             if (!start) return "";
@@ -139,16 +207,26 @@ export default function EditScheduleScreen(props: any) {
             return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; // local Y-M-D
         };
         return schedules.map((s) => {
-            const id = (s as any)._id ?? (s as any).id ?? (s as any).schedule_id ?? '';
-            const rawEmployee = (s as any).employee_id ?? (s as any).user_id ?? (s as any).employee ?? null;
-            const user_id = typeof rawEmployee === 'string' ? rawEmployee : (rawEmployee && (rawEmployee._id ?? rawEmployee.id)) ?? (s as any).user_id ?? (s as any).employee_id ?? '';
-            const branch_raw = (s as any).branch_id ?? (s as any).branch ?? null;
-            const branch_id = typeof branch_raw === 'string' ? branch_raw : (branch_raw && (branch_raw._id ?? branch_raw.id)) ?? '';
-            const start_time = (s as any).start_time ?? (s as any).start ?? (s as any).from_time ?? '';
-            const duration = (s as any).duration ?? (s as any).hours ?? (s as any).dur ?? 0;
-            const apiEnd = (s as any).end_time ?? (s as any).end ?? '';
+            const id = s._id ?? (s as { id?: string }).id ?? (s as { schedule_id?: string }).schedule_id ?? '';
+            const rawEmployee = s.employee_id ?? null;
+            const user_id =
+                typeof rawEmployee === 'string'
+                    ? rawEmployee
+                    : rawEmployee && typeof rawEmployee === 'object' && '_id' in rawEmployee
+                        ? String(rawEmployee._id)
+                        : '';
+            const branch_raw = s.branch_id;
+            const branch_id =
+                typeof branch_raw === 'string'
+                    ? branch_raw
+                    : typeof branch_raw === 'object' && '_id' in branch_raw
+                        ? String(branch_raw._id)
+                        : '';
+            const start_time = s.start_time ?? (s as { start?: string }).start ?? (s as { from_time?: string }).from_time ?? '';
+            const duration = (s as { duration?: number }).duration ?? (s as { hours?: number }).hours ?? (s as { dur?: number }).dur ?? 0;
+            const apiEnd = s.end_time || (s as { end?: string }).end || '';
             const end_time = apiEnd && String(apiEnd).trim() !== '' ? String(apiEnd) : computeFromStartAndDuration(String(start_time || ''), Number(duration || 0));
-            const dateYmd = toLocalYmd((s as any).date ?? (s as any).day ?? '');
+            const dateYmd = toLocalYmd(s.date ?? (s as { day?: string }).day ?? '');
             return {
                 id: String(id),
                 user_id: String(user_id || ''),
@@ -158,7 +236,7 @@ export default function EditScheduleScreen(props: any) {
                 end_time: String(end_time || ''),
                 date: dateYmd,
                 raw: s,
-            } as any;
+            } as NormalizedSchedule;
         });
     };
 
@@ -188,7 +266,7 @@ export default function EditScheduleScreen(props: any) {
         const map: Record<string, Set<string>> = {};
         items.forEach((it) => {
             const uid = (it?.user?.id ?? it?.user?._id ?? "") as string;
-            const inYmd = inStringToYmd(it?.In);
+            const inYmd = inStringToYmd(it.In);
             if (!uid || !inYmd) return;
             if (!map[uid]) map[uid] = new Set<string>();
             map[uid].add(inYmd);
@@ -244,7 +322,7 @@ export default function EditScheduleScreen(props: any) {
             } finally {
                 setLoadingAttendance(false);
             }
-        } catch (err: any) {
+        } catch (err) {
             console.warn('loadInitialData failed', err);
             showErrorToast('Failed to load staff or branch data');
         }
@@ -253,14 +331,14 @@ export default function EditScheduleScreen(props: any) {
         }
     };
     useEffect(() => {
-        loadInitialData();
+        void loadInitialData();
     }, [screenBranchId]);
     useEffect(() => {
-        if (!localSchedules?.length) {
+        if (!localSchedules.length) {
             setLocalSchedulesByDate({});
             return;
         }
-        const map: Record<string, any[]> = {};
+        const map: Record<string, NormalizedSchedule[]> = {};
         localSchedules.forEach((s) => {
             if (!s?.date) return;
             const dateKey = s.date.split("T")[0];
@@ -317,8 +395,8 @@ export default function EditScheduleScreen(props: any) {
     };
     const weekDates = getWeekDates(weekOffset);
     const displayWeekDates = getWeekDates(0);
-    const buildMapFromList = (list: any[]) => {
-        const map: Record<string, any[]> = {};
+    const buildMapFromList = (list: NormalizedSchedule[]) => {
+        const map: Record<string, NormalizedSchedule[]> = {};
         (list || []).forEach((s) => {
             if (!s?.date) return;
             const dateKey = String(s.date).split("T")[0];
@@ -364,7 +442,7 @@ export default function EditScheduleScreen(props: any) {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-        const onShow = (e: any) => {
+        const onShow = (e: KeyboardEvent) => {
             const h = e?.endCoordinates?.height ?? 0;
             setKeyboardHeight(h);
         };
@@ -435,7 +513,7 @@ export default function EditScheduleScreen(props: any) {
         const endTime = computeEndTime(timeFrom, dur);
         try {
             setLoading(true);
-            let backendSchedule: any;
+            let backendSchedule: ScheduleItem;
             if (modalEditingId) {
                 // ✅ Update or delete existing schedule
                 if (isNaN(dur) || dur <= 0) {
@@ -445,7 +523,7 @@ export default function EditScheduleScreen(props: any) {
                     // Remove from local state
                     setLocalSchedules((prev = []) => {
                         const filtered = prev.filter((s) => s._id !== modalEditingId);
-                        const map: Record<string, any[]> = {};
+                        const map: Record<string, NormalizedSchedule[]> = {};
                         const currentWeekYMD = displayWeekDates.map((d) => dateToYMD(d));
                         filtered.forEach((s) => {
                             if (!currentWeekYMD.includes(s.date)) return;
@@ -497,20 +575,26 @@ export default function EditScheduleScreen(props: any) {
                 showSuccessToast("Schedule created successfully");
                 setModalEditingId(backendSchedule._id);
             }
-            // Normalize backend date
-            const normalizedSchedule = {
-                ...backendSchedule,
-                date: String(backendSchedule.date).split("T")[0],
+            // Normalize backend schedule to NormalizedSchedule format
+            const normalizedSchedule: NormalizedSchedule = normalizeSchedules([backendSchedule])[0] ?? {
+                id: backendSchedule._id || "",
+                user_id: typeof backendSchedule.employee_id === "string" ? backendSchedule.employee_id : (backendSchedule.employee_id as { _id?: string })?._id || "",
+                branch_id: typeof backendSchedule.branch_id === "string" ? backendSchedule.branch_id : (backendSchedule.branch_id as { _id?: string })._id || "",
+                start_time: backendSchedule.start_time || "",
+                duration: 0,
+                end_time: backendSchedule.end_time || "",
+                date: String(backendSchedule.date ?? "").split("T")[0],
+                raw: backendSchedule,
             };
             // Update local schedules state
             setLocalSchedules((prev = []) => {
                 const copy = [...prev];
                 const idx = copy.findIndex(
                     (s) =>
-                        s._id === normalizedSchedule._id ||
-                        (s.employee_id === normalizedSchedule.employee_id && s.date === normalizedSchedule.date)
+                        s.id === normalizedSchedule.id ||
+                        (s.user_id === normalizedSchedule.user_id && s.date === normalizedSchedule.date)
                 );
-                if (Number(normalizedSchedule.duration) <= 0) {
+                if (normalizedSchedule.duration <= 0) {
                     // 🗑️ Delete schedule if duration <= 0
                     if (idx !== -1) {
                         const deletedSchedule = copy[idx];
@@ -538,7 +622,7 @@ export default function EditScheduleScreen(props: any) {
                     }
                 }
                 // Only include schedules for current week
-                const map: Record<string, any[]> = {};
+                const map: Record<string, NormalizedSchedule[]> = {};
                 const currentWeekYMD = displayWeekDates.map((d) => dateToYMD(d));
                 copy.forEach((s) => {
                     if (!currentWeekYMD.includes(s.date)) return;
@@ -612,7 +696,7 @@ export default function EditScheduleScreen(props: any) {
             // Prefill fields from template (previous-week schedule)
             setTimeFrom(staffSchedule.start_time || "");
             const durFromApi = staffSchedule.duration ?? null;
-            const endFromApi = staffSchedule.end_time ?? staffSchedule.end ?? "";
+            const endFromApi = staffSchedule.end_time ?? "";
             let finalDuration = 0;
             if (typeof durFromApi === "number" && !isNaN(durFromApi) && durFromApi > 0) {
                 finalDuration = Number(durFromApi);
@@ -699,11 +783,11 @@ export default function EditScheduleScreen(props: any) {
             }
             if (!u.id) return;
             // unwrap various API shapes
-            const unwrapSchedules = (resp: any): any[] => {
+            const unwrapSchedules = (resp: ScheduleItem[] | ScheduleResponse | null | undefined): ScheduleItem[] => {
                 if (!resp) return [];
                 if (Array.isArray(resp)) return resp;
-                if (Array.isArray(resp.schedules)) return resp.schedules;
-                if (resp.data && Array.isArray(resp.data.schedules)) return resp.data.schedules;
+                if (typeof resp === 'object' && 'schedules' in resp && Array.isArray(resp.schedules)) return resp.schedules;
+                if (typeof resp === 'object' && 'data' in resp && resp.data && typeof resp.data === 'object' && 'schedules' in resp.data && Array.isArray(resp.data.schedules)) return resp.data.schedules;
                 return [];
             };
             const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
@@ -723,19 +807,19 @@ export default function EditScheduleScreen(props: any) {
                 console.log(`[DEBUG] raw resp for offset=${offsetWeeks}`, resp);
                 const rawArr = unwrapSchedules(resp) || [];
                 // debug list: id, iso, localYmd
-                const debugList = rawArr.map((r: any) => {
-                    const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
-                    return { id: r?._id ?? r?.id, iso, localYmd: toLocalYmdFromIso(iso) };
+                const debugList = rawArr.map((r: ScheduleItem) => {
+                    const iso = r.date ?? (r as { day?: string }).day ?? (r as { createdAt?: string }).createdAt ?? null;
+                    return { id: r._id ?? (r as { id?: string }).id, iso, localYmd: toLocalYmdFromIso(iso ?? undefined) };
                 });
                 console.log(`[DEBUG] raw items (id, iso, localYmd) for offset=${offsetWeeks}`, debugList);
                 // filter raw arr by localYmd inside [start..end]
-                const filtered = rawArr.filter((r: any) => {
-                    const iso = r?.date ?? r?.day ?? r?.createdAt ?? null;
-                    const localYmd = toLocalYmdFromIso(iso);
+                const filtered = rawArr.filter((r: ScheduleItem) => {
+                    const iso = r.date ?? (r as { day?: string }).day ?? (r as { createdAt?: string }).createdAt ?? null;
+                    const localYmd = toLocalYmdFromIso(iso ?? undefined);
                     if (!localYmd) return false;
                     return localYmd >= start && localYmd <= end;
                 });
-                console.log(`[DEBUG] filtered.length for offset=${offsetWeeks} =`, filtered.length, "ids:", filtered.map((f: any) => f._id ?? f.id));
+                console.log(`[DEBUG] filtered.length for offset=${offsetWeeks} =`, filtered.length, "ids:", filtered.map((f: ScheduleItem) => f._id ?? (f as { id?: string }).id));
                 // normalize and return
                 return normalizeSchedules(filtered || []);
             };
@@ -758,7 +842,7 @@ export default function EditScheduleScreen(props: any) {
             // search current then older weeks
             let found = false;
             let chosenOffset = 0;
-            let finalSchedulesNormalized: any[] = [];
+            let finalSchedulesNormalized: NormalizedSchedule[] = [];
             try {
                 const cur = await fetchWeekForOffset(0);
                 if (cur.length > 0) {
@@ -798,8 +882,8 @@ export default function EditScheduleScreen(props: any) {
             }
             setLocalSchedules((existing) => {
                 // re-normalize existing items to get consistent { id, user_id, date, ... }
-                const existingNormalized = normalizeSchedules((existing || []).map((e: any) => e.raw ?? e));
-                const byId: Record<string, any> = {};
+                const existingNormalized = normalizeSchedules((existing || []).map((e: NormalizedSchedule) => e.raw ?? (e as unknown as ScheduleItem)));
+                const byId: Record<string, NormalizedSchedule> = {};
                 existingNormalized.forEach((s) => {
                     if (s && s.id) byId[s.id] = s;
                 });
@@ -808,7 +892,7 @@ export default function EditScheduleScreen(props: any) {
                 });
                 const mergedNormalized = Object.values(byId);
                 // rebuild map keyed by local YMD
-                const map: Record<string, any[]> = {};
+                const map: Record<string, NormalizedSchedule[]> = {};
                 mergedNormalized.forEach((s) => {
                     if (!s?.date) return;
                     const dateKey = s.date; // already YYYY-MM-DD from normalizeSchedules
@@ -875,7 +959,7 @@ export default function EditScheduleScreen(props: any) {
         b.id.toLowerCase().includes((selectedBranch || "").toLowerCase())
     );
     const onShowNativeTimePicker = () => setShowTimePicker(true);
-    const onNativeTimeChange = (event: any, selected?: Date) => {
+    const onNativeTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
         setShowTimePicker(false);
         if (!selected) return;
         const hh = pad2(selected.getHours());
@@ -966,7 +1050,7 @@ export default function EditScheduleScreen(props: any) {
                             const displayTime = hasScheduleForStaff
                                 ? `${formatTime12(staffSchedule.start_time)} – ${formatTime12(
                                     staffSchedule.end_time ||
-                                    computeEndTime(staffSchedule.start_time, parseFloat(staffSchedule.duration || "0"))
+                                    computeEndTime(staffSchedule.start_time, staffSchedule.duration || 0)
                                 )}`
                                 : null;
                             const branchNameForSchedule = hasScheduleForStaff && staffSchedule.branch_id && (staffSchedule.branch_id !== effectiveBranchId)
@@ -1107,7 +1191,7 @@ export default function EditScheduleScreen(props: any) {
                                             value={timeFrom}
                                             setValue={(v: string) => {
                                                 // Remove non-digits
-                                                let digits = v.replace(/[^0-9]/g, "");
+                                                const digits = v.replace(/[^0-9]/g, "");
                                                 let hh = "";
                                                 let mm = "";
                                                 if (digits.length > 0) {
@@ -1235,7 +1319,7 @@ export default function EditScheduleScreen(props: any) {
                 visible={saveConfirmVisible}
                 onClose={() => setSaveConfirmVisible(false)}
                 dismissOnOverlayPress={false}
-                title={lang.Confirm_saving_of_staff_work_schedule || "Confirm saving of staff’s work schedule."}
+                title={(lang as { Confirm_saving_of_staff_work_schedule?: string }).Confirm_saving_of_staff_work_schedule || "Confirm saving of staff's work schedule."}
                 titleStyle={{ color: colors.primary, marginBottom: 30, fontSize: fonts.size.m, fontWeight: fonts.weight.regular }}
             >
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
@@ -1260,7 +1344,7 @@ export default function EditScheduleScreen(props: any) {
                                     .flatMap(([, schedules]) => schedules)
                                     .map(s => ({ ...JSON.parse(JSON.stringify(s)) }));
                                 // 3️⃣ Merge add/update changes
-                                const scheduleMap = new Map<string, any>();
+                                const scheduleMap = new Map<string, NormalizedSchedule & { _action?: string; _dedupeKey?: string }>();
                                 currentWeekSchedules.forEach(s => {
                                     const key = `${s.user_id}-${s.date}-${s.branch_id || ""}`;
                                     scheduleMap.set(key, s);
@@ -1274,10 +1358,9 @@ export default function EditScheduleScreen(props: any) {
                                     }
                                 });
                                 // 4️⃣ Normalize
-                                const normalize = (s: any) => {
-                                    const startRaw = s.start_time ?? s.start ?? s.from_time ?? "";
-                                    const computedEnd =
-                                        s.end_time ?? s.end ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
+                                const normalize = (s: NormalizedSchedule & { _action?: string; _dedupeKey?: string }) => {
+                                    const startRaw = s.start_time ?? "";
+                                    const computedEnd = s.end_time ?? (s.duration && startRaw ? computeEndTime(startRaw, Number(s.duration)) : "");
                                     const start = timeToHHMM(String(startRaw));
                                     const end = timeToHHMM(String(computedEnd));
                                     return {
@@ -1296,8 +1379,8 @@ export default function EditScheduleScreen(props: any) {
                                     return true;
                                 });
                                 const schedulesToSave = deduped.map(s => {
-                                    const copy = { ...s };
-                                    delete copy._dedupeKey;
+                                    const copy: Omit<typeof s, "_dedupeKey"> = { ...s };
+                                    delete (copy as { _dedupeKey?: string })._dedupeKey;
                                     return copy;
                                 });
                                 // 6️⃣ Split add/update
@@ -1307,13 +1390,13 @@ export default function EditScheduleScreen(props: any) {
                                 // 7️⃣ Always navigate (even for deletes)
                                 navigation.navigate("Footer_A", {
                                     selectedTab: "WorkSchedule",
-                                    userId,
-                                    langId,
+                                    userId: userId ?? undefined,
+                                    langId: langId ?? undefined,
                                     toastMessage: "Schedules saved successfully",
                                 });
                             } catch (err) {
                                 console.error("❌ Failed to save schedules:", err);
-                                showErrorToast(lang.failed_to_save || "Failed to save schedules");
+                                showErrorToast((lang as { Failed_to_save?: string }).Failed_to_save || "Failed to save schedules");
                             } finally {
                                 setLoading(false);
                             }

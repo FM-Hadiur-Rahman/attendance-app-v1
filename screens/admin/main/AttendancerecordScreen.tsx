@@ -20,7 +20,7 @@ import colors from "../../../styles/Colors";
 import Header from "../../../components/Header";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import SearchBar from "../../../components/SearchBar";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, NavigationProp, RouteProp } from "@react-navigation/native";
 import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
 import CartBox from "../../../components/CartBox";
@@ -35,10 +35,11 @@ import {
   getAttendanceReport,
   AttendanceReportItem,
 } from "../../../api/checkin_checkout";
-import { getBranchId, getProfile } from "../../../api/profile";
+import { getBranchId, getProfile, ProfileUser } from "../../../api/profile";
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -137,6 +138,100 @@ const normalizeDateToYMD = (s?: string | null) => {
   return s;
 };
 
+// ============================================================
+// Type Definitions
+// ============================================================
+
+type LangId = "en" | "de";
+
+type BranchLike = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  branch_name?: string;
+} | string | null;
+
+type CreatedUserLike = {
+  _id?: string;
+  id?: string;
+  username?: string;
+  fullname?: string;
+  email?: string;
+} | null;
+
+type AttendancerecordScreenRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: LangId;
+  language?: string;
+  branchId?: string | null;
+};
+
+type RootStackParamList = {
+  AttendancerecordScreen: AttendancerecordScreenRouteParams;
+  NotificationScreen: {
+    userId?: string;
+    langId?: string;
+    branchId?: string | null;
+  };
+};
+
+type ExtendedAttendanceReportItem = AttendanceReportItem & {
+  actual_in?: string | null;
+  actual_out?: string | null;
+  checkIn?: string | null;
+  check_in?: string | null;
+  in?: string | null;
+  in_time?: string | null;
+  branch_id?: string;
+  branch_name?: string;
+  branch?: BranchLike;
+  user?: {
+    fullname?: string;
+    username?: string;
+  };
+  name?: string;
+  employee_id?: string;
+};
+
+type AttendanceApiResponse = 
+  | AttendanceReportItem[]
+  | { rows: AttendanceReportItem[] }
+  | { data: AttendanceReportItem[] }
+  | null
+  | undefined;
+
+type EnrichedRecord = {
+  raw: ExtendedAttendanceReportItem;
+  id: string;
+  name: string;
+  username: string;
+  branchId: string;
+  branchName: string;
+  date: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  scheduledStartDisplay: string;
+  scheduledEndDisplay: string;
+  checkInRaw: string | null;
+  checkOutRaw: string | null;
+  checkInTime: string;
+  checkOutTime: string;
+  durationMins: number | null;
+  durationText: string;
+  diffVsScheduleText: string;
+  status: "early" | "late" | "on_time" | "no-schedule";
+};
+
+type ErrorWithMessage = {
+  message?: string;
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+};
+
 // ---------------- component ----------------
 interface ScreenProps {
   userId?: string | null;
@@ -146,21 +241,22 @@ interface ScreenProps {
   onConsumedRefresh?: () => void;
   toastMessage?: string | null;
   onConsumedToast?: () => void;
-  branch?: any;
-  createdUser?: any;
+  branch?: BranchLike;
+  createdUser?: CreatedUserLike;
 }
 
 const AttendancerecordScreen: React.FC<ScreenProps> = (props) => {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "AttendancerecordScreen">>();
 
   const propUserId = props?.userId;
   const propLangId = props?.langId;
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
   const userId = propUserId || routeUserId;
-  const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const langId = (propLangId || routeLangId || "en") as LangId;
+  const langKey = langId as keyof typeof translations;
+  const lang = (langKey in translations ? translations[langKey] : null) || translations["en"];
 
   const [query, setQuery] = useState<string>("");
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
@@ -318,9 +414,9 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
         endDate,
         branchId
       );
-      const rows = Array.isArray(res) ? res : (res as any)?.rows ?? (res as any)?.data ?? [];
+      const rows: AttendanceReportItem[] = Array.isArray(res) ? res : [];
       const normalized = Array.isArray(rows) ? rows : [];
-      const normalizedWithCheckin = normalized.filter((r: any) => {
+      const normalizedWithCheckin = normalized.filter((r: ExtendedAttendanceReportItem) => {
         const actualIn =
           r.actualIn ??
           r.actual_in ??
@@ -334,7 +430,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
       });
 
       // --- normalize branch info for each record ---
-      const enriched = normalizedWithCheckin.map((r: any) => {
+      const enriched = normalizedWithCheckin.map((r: ExtendedAttendanceReportItem) => {
         const rawBranch =
           r.branchId ?? r.branch_id ?? r.branch ?? r.branch_name ?? "";
         let branchIdStr = "";
@@ -343,8 +439,9 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
         if (typeof rawBranch === "string") {
           branchIdStr = rawBranch;
         } else if (rawBranch && typeof rawBranch === "object") {
-          branchIdStr = rawBranch._id ?? rawBranch.id ?? "";
-          branchNameStr = rawBranch.name ?? rawBranch.branch_name ?? "";
+          const branchObj = rawBranch as { _id?: string; id?: string; name?: string; branch_name?: string };
+          branchIdStr = branchObj._id ?? branchObj.id ?? "";
+          branchNameStr = branchObj.name ?? branchObj.branch_name ?? "";
         }
 
         // fallback name fields
@@ -356,7 +453,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
           branchName: branchNameStr,
           employeeId: r.employeeId ?? r.employee_id ?? "",
           name: r.user?.fullname ?? r.name ?? "Unknown",
-        };
+        } as ExtendedAttendanceReportItem;
       });
 
       // --- filter only logged-in user if not admin ---
@@ -369,8 +466,9 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
       }
 
       setAttendanceData(filtered);
-    } catch (err) {
-      console.error("Failed to load attendance report:", err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Failed to load attendance report:", error);
       showErrorToast("Failed to load attendance");
       setAttendanceData([]);
     } finally {
@@ -380,7 +478,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
   }, [selectedRange]);
 
   useEffect(() => {
-    fetchAttendanceReport();
+    void fetchAttendanceReport();
   }, [fetchAttendanceReport]);
 
   // onRefresh
@@ -391,8 +489,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
   };
 
   // ---------- transform raw rows into enriched items ----------
-  const enriched = useMemo(() => {
-    return (attendanceData || []).map((r) => {
+  const enriched = useMemo(() => (attendanceData || []).map((r) => {
       // r likely has:
       // { actualIn, actualOut, branchId, branchName, date, employeeId, endStatus, fullname, scheduledEnd, scheduledStart, startStatus, username }
       const dateYmd = normalizeDateToYMD(r.date ?? r.startStatus ?? "");
@@ -547,9 +644,8 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
           durationMins !== null ? minutesToDurationText(durationMins) : "",
         diffVsScheduleText,
         status,
-      } as const;
-    });
-  }, [attendanceData]);
+      } as EnrichedRecord;
+    }), [attendanceData]);
 
   // determine selected-date range -> filter enriched accordingly
   const todayRecords = useMemo(() => {
@@ -557,12 +653,12 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
 
     // ✅ Step 1: Keep only users who have a real check-in (not empty, not "No Schedule")
     const onlyCheckedIn = enriched.filter((item) => {
-      const checkIn = item?.checkInRaw || "";
+      const checkIn = item.checkInRaw || "";
       return checkIn.trim() !== "";
     });
 
     // ✅ Step 2: Filter by selected range (Day / Week / Month)
-    const getRecordDate = (item: any) => {
+    const getRecordDate = (item: EnrichedRecord): Date | null => {
       const d = new Date(item.date);
       return isNaN(d.getTime()) ? null : d;
     };
@@ -625,8 +721,8 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
   }, [todayRecords, query]);
 
   // UI handlers
-  const onShowNativeDatePicker = () => setShowDatePicker(true);
-  const onNativeDateChange = (event: any, selectedDate?: Date) => {
+  const onShowNativeDatePicker = () => { setShowDatePicker(true); };
+  const onNativeDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       selectedDate.setHours(0, 0, 0, 0);
@@ -758,8 +854,9 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
       } else {
         showSuccessToast("File saved to: " + fileUri);
       }
-    } catch (err) {
-      console.warn("XLSX Export Error:", err);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn("XLSX Export Error:", error);
       showErrorToast(" Failed to export Excel file");
     }
   };
@@ -781,7 +878,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
           width: 24,
           height: 24,
           onPress: () =>
-            navigation.navigate("NotificationScreen" as any, {
+            navigation.navigate("NotificationScreen", {
               userId,
               langId,
               branchId: currentBranchId,
@@ -892,8 +989,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
                       : "No records for selected month"}
                 </Text>
               ) : (
-                displayedRecords.map((r, index) => {
-                  return (
+                displayedRecords.map((r, index) => (
                     <CartBox
                       key={`${r.id}-${r.date}-${index}-${r.checkInTime || r.checkOutTime || ''}`}
                       containerStyle={styles.detail_cartbox}
@@ -999,8 +1095,7 @@ const [refreshing, setRefreshing] = useState(false); // pull-to-refresh
                         </View>
                       </View>
                     </CartBox>
-                  );
-                })
+                ))
               )}
             </View>
           </ScrollView>
@@ -1032,17 +1127,6 @@ const styles = StyleSheet.create({
   searchWrap: { marginBottom: 12 },
   inputWrap: { paddingBottom: 8 },
   buttonWrap: { paddingBottom: 20 },
-  recordCard: {
-    backgroundColor: "#fff",
-    marginHorizontal: 12,
-    marginVertical: 6,
-    padding: 12,
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
   details: {},
   detail_cartbox: {
     width: "100%",
@@ -1070,12 +1154,6 @@ const styles = StyleSheet.create({
   },
   time: { fontSize: fonts.size.s, color: colors.subtext, marginTop: 6 },
   time1: { fontSize: fonts.size.s, color: colors.primary, marginTop: 6 },
-  duration: {
-    color: colors.primary,
-    fontWeight: "500",
-    fontSize: 14,
-    marginLeft: 8,
-  },
   status_early: {
     fontWeight: fonts.weight.regular,
     color: colors.status_early,
@@ -1109,29 +1187,12 @@ const styles = StyleSheet.create({
     marginRight: 7,
     textAlign: "center",
   },
-  status_noschedule: {
-    fontWeight: fonts.weight.regular,
-    color: colors.subtext,
-    fontSize: fonts.size.xs,
-    paddingVertical: 2,
-    paddingHorizontal: 12,
-    backgroundColor: "#00000006",
-    borderRadius: 10,
-    marginRight: 7,
-    textAlign: "center",
-  },
   noDataText: { textAlign: "center", color: colors.subtext, marginTop: 12 },
   profileImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     resizeMode: "cover",
-  },
-  branchHeader: {
-    flexDirection: "row",
-    marginBottom: 10,
-    alignSelf: "flex-start",
-    width: "90%",
   },
   branchRow: {
     flexDirection: "row",

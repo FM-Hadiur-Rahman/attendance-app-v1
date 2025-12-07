@@ -27,7 +27,7 @@ import Header from "../../../../components/Header";
 import CartBox from "../../../../components/CartBox";
 import * as ImagePicker from "expo-image-picker";
 import translations from "../../../../assets/translations.json";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, NavigationProp, RouteProp } from "@react-navigation/native";
 import Popup from "../../../../components/Popup";
 import {
   getUserById,
@@ -42,17 +42,42 @@ import Toast, {
   toastConfig,
 } from "../../../../components/Toast";
 // add near other imports
-import { countryList } from "../../../../components/Code";
+import { countryList, CountryItem } from "../../../../components/Code";
 import { exportMonthlyAttendanceXLSX } from "../../../../components/AttendanceXLSX";
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; // Optional, but recommended for safe areas
 
-export const getUserWorkSummaryLocal = (userId: string) => {
-  // Kept for compatibility if you have local mock data — but we now prefer server API.
-  return { totalDays: 0, totalTime: "0h 0m" };
-};
+export const getUserWorkSummaryLocal = (userId: string) => ({ totalDays: 0, totalTime: "0h 0m" });
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
+
+// ============================================================
+// Type Definitions
+// ============================================================
+
+type LangId = "en" | "de";
+
+type StaffProfileScreenRouteParams = {
+  id?: string;
+  userId?: string;
+  langId?: LangId;
+  language?: string;
+};
+
+type RootStackParamList = {
+  StaffProfileScreen: StaffProfileScreenRouteParams;
+  Footer_A: {
+    selectedTab: string;
+    userId?: string | null;
+    langId?: string;
+    refresh?: boolean;
+    toastMessage?: string;
+  };
+  Code: {
+    initialSelectedId: number;
+    onSelect: (item: CountryItem) => void;
+  };
+};
 
 interface StaffProfileScreenprops {
   id?: string;
@@ -61,12 +86,38 @@ interface StaffProfileScreenprops {
   setLangId?: (lang: string) => void;
 }
 
+type ExtendedProfileUser = ProfileUser & {
+  id?: string;
+  profileImage?: string;
+  userName?: string;
+  password?: string;
+};
+
+type KeyboardEvent = {
+  endCoordinates?: {
+    height?: number;
+  };
+};
+
+type ErrorWithMessage = {
+  message?: string;
+  response?: {
+    data?: {
+      message?: string;
+    };
+    statusText?: string;
+  };
+};
+
+type TouchedFields = Record<string, boolean>;
+
 const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
-  const navigation = useNavigation();
-  const route = useRoute<any>();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "StaffProfileScreen">>();
   const { id, userId: navUserId, langId } = route.params || {};
-  const currentLang = langId || "en";
-  const lang = translations[currentLang as keyof typeof translations] || translations["en"];
+  const currentLang = (langId || "en") as LangId;
+  const langKey = currentLang as keyof typeof translations;
+  const lang = translations[langKey] || translations["en"];
 
   const insets = useSafeAreaInsets(); // If using safe-area-context; else use { top: 0 }
 
@@ -84,11 +135,11 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const [phone, setPhone] = useState("");
   const [phoneRaw, setPhoneRaw] = useState("");
 
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [touched, setTouched] = useState<{ [key: string]: boolean }>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<TouchedFields>({});
 
   const getPhoneRuleForSelected = () => {
-    const codeDigits = (selectedCountry?.code || "").replace(/\D/g, "");
+    const codeDigits = (selectedCountry.code || "").replace(/\D/g, "");
     return PHONE_RULES[codeDigits] || DEFAULT_PHONE_RULE;
   };
   const formatPhoneForDisplay = (digitsOnly: string) => {
@@ -142,11 +193,11 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-    const onShow = (e: any) => {
+    const onShow = (e: KeyboardEvent) => {
       const h = e?.endCoordinates?.height ?? 0;
       setKeyboardHeight(h);
     };
-    const onHide = () => setKeyboardHeight(0);
+    const onHide = () => { setKeyboardHeight(0); };
 
     const showSub = Keyboard.addListener(showEvent, onShow);
     const hideSub = Keyboard.addListener(hideEvent, onHide);
@@ -178,7 +229,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
   const validateAllStep1 = () => {
     const fields = ["phone"];
-    const newTouched: any = {};
+    const newTouched: TouchedFields = {};
     fields.forEach((f) => (newTouched[f] = true));
     setTouched((prev) => ({ ...prev, ...newTouched }));
 
@@ -196,9 +247,10 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const [deletePopupVisible, setDeletePopupVisible] = useState(false);
 
   // helper to get canonical id from ProfileUser (support id or _id)
-  const getUserIdFromProfile = (u?: ProfileUser | null) => {
+  const getUserIdFromProfile = (u?: ProfileUser | ExtendedProfileUser | null): string => {
     if (!u) return "";
-    return (u as any).id ?? (u as any)._id ?? "";
+    const extended = u as ExtendedProfileUser;
+    return extended.id ?? extended._id ?? "";
   };
   const formatHHMMSimple = (hhmm?: string, fallbackMinutes?: number) => {
     if (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm)) {
@@ -272,8 +324,9 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       // show only local number in text input
       setPhone(parsed.local ?? "");
 
-      if ((user as any)?.profileImage)
-        setProfileImage((user as any).profileImage);
+      const extendedUser = user as ExtendedProfileUser;
+      if (extendedUser?.profileImage)
+        setProfileImage(extendedUser.profileImage);
 
       // fetch attendance summary from API
       const uid = getUserIdFromProfile(user);
@@ -293,7 +346,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   // initial load
   useEffect(() => {
     if (id) {
-      fetchStaff(id);
+      void fetchStaff(id);
     } else {
       console.warn("StaffProfileScreen mounted without id param");
     }
@@ -306,7 +359,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
     try {
       await fetchStaff(id);
     } finally {
-      setTimeout(() => setRefreshing(false), 500);
+      setTimeout(() => { setRefreshing(false); }, 500);
     }
   };
 
@@ -362,17 +415,21 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
     try {
       const updated = await updateUser(id, payload);
       // merge/replace local state with updated user (server response)
-      setCurrentUser((prev) => ({ ...(prev ?? {}), ...(updated as any) }));
+      setCurrentUser((prev) => {
+        if (!prev) return updated;
+        return { ...prev, ...updated };
+      });
       // success toast if available
       try {
-        showSuccessToast?.("Saved");
+        showSuccessToast("Saved");
       } catch {
         // ignore if not present
       }
       return updated;
-    } catch (err: any) {
-      console.error("Failed to save user field:", err);
-      Alert.alert("Save failed", String(err?.message ?? err));
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Failed to save user field:", error);
+      Alert.alert("Save failed", String(error?.message ?? error));
       return null;
     } finally {
       setSaving(false);
@@ -394,12 +451,13 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         // ensure local state updated (saveField merges server response)
         setPositionModalVisible(false);
         try {
-          showSuccessToast?.(lang.positionUpdated);
+          showSuccessToast(lang.positionUpdated);
         } catch { }
       }
-    } catch (err: any) {
-      console.error("Failed to save position:", err);
-      Alert.alert("Save failed", String(err?.message ?? err));
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Failed to save position:", error);
+      Alert.alert("Save failed", String(error?.message ?? error));
     } finally {
       setSaving(false);
     }
@@ -422,12 +480,13 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       if (res) {
         setEmailModalVisible(false);
         try {
-          showSuccessToast?.(lang.emailUpdated);
+          showSuccessToast(lang.emailUpdated);
         } catch { }
       }
-    } catch (err: any) {
-      console.error("Failed to save email:", err);
-      Alert.alert("Save failed", String(err?.message ?? err));
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Failed to save email:", error);
+      Alert.alert("Save failed", String(error?.message ?? error));
     } finally {
       setSaving(false);
     }
@@ -445,14 +504,15 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
       // show toast for deletion
       try {
-        showSuccessToast?.("Staff deleted");
+        showSuccessToast("Staff deleted");
       } catch { }
 
       // get logged-in admin id fallback
-      let currentUserId = route.params?.userId;
+      let currentUserId: string | undefined = route.params?.userId;
       if (!currentUserId) {
         try {
-          currentUserId = await AsyncStorage.getItem("userId");
+          const storedUserId = await AsyncStorage.getItem("userId");
+          currentUserId = storedUserId ?? undefined;
         } catch (e) {
           console.warn("Couldn't fetch userId from storage:", e);
         }
@@ -461,16 +521,17 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       const lang = route.params?.langId ?? "de";
 
       // navigate back to Footer_A opening StaffRecord tab and pass props
-      (navigation as any).navigate("Footer_A", {
+      navigation.navigate("Footer_A", {
         selectedTab: "StaffRecord",
         userId: currentUserId,
         langId: lang,
         refresh: true,
         toastMessage: "Staff Deleted",
       });
-    } catch (err: any) {
-      console.error("Delete failed:", err);
-      Alert.alert("Delete failed", String(err?.message ?? err));
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Delete failed:", error);
+      Alert.alert("Delete failed", String(error?.message ?? error));
     } finally {
       setDeleting(false);
       setDeletePopupVisible(false);
@@ -491,7 +552,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   };
   const DEFAULT_PHONE_RULE = { min: 7, max: 17 };
 
-  const [selectedCountry, setSelectedCountry] = useState({
+  const [selectedCountry, setSelectedCountry] = useState<CountryItem>({
     id: 1,
     name: "Deutsch",
     code: "49",
@@ -501,9 +562,9 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
   const parsePhoneForInput = (phone?: string) => {
     if (!phone) return { code: selectedCountry.code, local: "" };
 
-    let str = phone.trim();
+    const str = phone.trim();
     const hasPlus = str.startsWith("+");
-    let digits = str.replace(/\D/g, "");
+    const digits = str.replace(/\D/g, "");
     if (hasPlus) {
     }
 
@@ -540,7 +601,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       // strip leading trunk zeros
       normalized = normalized.replace(/^0+/, "");
 
-      const cc = selectedCountry.code?.toString().replace(/\D/g, "") || "";
+      const cc = selectedCountry.code.toString().replace(/\D/g, "") || "";
       if (!cc) {
         Alert.alert("Validation", "Country code missing");
         return;
@@ -551,22 +612,24 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       const res = await saveField({ phone: phoneWithCode });
       if (res) {
         // update local user state immediately (saveField already merges server response but ensure)
-        setCurrentUser(
-          (prev) => ({ ...(prev ?? {}), phone: phoneWithCode } as any)
-        );
+        setCurrentUser((prev) => {
+          if (!prev) return res;
+          return { ...prev, phone: phoneWithCode };
+        });
 
         // show a clear toast for phone update
         try {
-          showSuccessToast?.(lang.phoneUpdated);
+          showSuccessToast(lang.phoneUpdated);
         } catch {
           // ignore if toast helper missing
         }
 
         setPhoneModalVisible(false);
       }
-    } catch (err: any) {
-      console.error("Failed saving phone:", err);
-      Alert.alert("Save failed", String(err?.message ?? err));
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.error("Failed saving phone:", error);
+      Alert.alert("Save failed", String(error?.message ?? error));
     } finally {
       setSaving(false);
     }
@@ -666,7 +729,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
               </View>
               <TouchableOpacity
                 style={styles.editIconContainer}
-                onPress={() => setModalVisible(true)}
+                onPress={() => { setModalVisible(true); }}
               >
                 <Image
                   source={require("../../../../assets/icons/p_edit.png")}
@@ -737,7 +800,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => setPositionModalVisible(true)}
+              onPress={() => { setPositionModalVisible(true); }}
               style={{ marginBottom: 12 }}
             >
               <View
@@ -766,7 +829,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => setEmailModalVisible(true)}
+              onPress={() => { setEmailModalVisible(true); }}
               style={{ marginBottom: 12 }}
             >
               <View
@@ -809,7 +872,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                     Linking.openURL(
                       `mailto:${toEmail}?subject=${subject}&body=${body}`
                     ).catch((err) =>
-                      console.log("Failed to open email app:", err)
+                      { console.log("Failed to open email app:", err); }
                     );
                   }}
                 >
@@ -820,7 +883,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => setPhoneModalVisible(true)}
+              onPress={() => { setPhoneModalVisible(true); }}
               style={{ marginBottom: 0 }}
             >
               <View
@@ -855,7 +918,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                       ""
                     );
                     Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
-                      console.log("Failed to open dialer:", err)
+                      { console.log("Failed to open dialer:", err); }
                     );
                   }}
                 >
@@ -902,7 +965,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
               numberOfLines={1}
               ellipsizeMode="tail"
             >
-              {(currentUser as any)?.username ?? (currentUser as any)?.userName}
+              {(currentUser as ExtendedProfileUser)?.username ?? (currentUser as ExtendedProfileUser)?.userName ?? ""}
             </Text>
           </View>
 
@@ -921,7 +984,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
               <Text style={styles.infoLabel}>{lang.password}</Text>
             </View>
             <Text style={styles.infoValue}>
-              {"*".repeat((currentUser as any)?.password?.length || 5)}
+              {"*".repeat((currentUser as ExtendedProfileUser)?.password?.length || 5)}
             </Text>
           </View>
         </CartBox>
@@ -934,7 +997,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
             paddingLeft={20}
             paddingRight={20}
             alignItems="flex-start"
-            onPress={() => setDeletePopupVisible(true)}
+            onPress={() => { setDeletePopupVisible(true); }}
           >
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Image
@@ -952,11 +1015,11 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         animationType="slide"
         transparent
         visible={positionModalVisible}
-        onRequestClose={() => setPositionModalVisible(false)}
+        onRequestClose={() => { setPositionModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setPositionModalVisible(false)}
+          onPress={() => { setPositionModalVisible(false); }}
         />
         {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
         <KeyboardAvoidingView
@@ -964,7 +1027,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={{ flex: 1, justifyContent: "flex-end" }}
           keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+          <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
             <View
               style={[
                 styles.modalContainer,
@@ -995,11 +1058,11 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         animationType="slide"
         transparent
         visible={emailModalVisible}
-        onRequestClose={() => setEmailModalVisible(false)}
+        onRequestClose={() => { setEmailModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setEmailModalVisible(false)}
+          onPress={() => { setEmailModalVisible(false); }}
         />
         {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
         <KeyboardAvoidingView
@@ -1007,7 +1070,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={{ flex: 1, justifyContent: "flex-end" }}
           keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+          <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
             <View
               style={[
                 styles.modalContainer,
@@ -1044,11 +1107,11 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         animationType="slide"
         transparent
         visible={phoneModalVisible}
-        onRequestClose={() => setPhoneModalVisible(false)}
+        onRequestClose={() => { setPhoneModalVisible(false); }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setPhoneModalVisible(false)}
+          onPress={() => { setPhoneModalVisible(false); }}
         />
 
         {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
@@ -1057,7 +1120,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           style={{ flex: 1, justifyContent: "flex-end" }}
           keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         >
-          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+          <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); }}>
             <View
               style={[
                 styles.modalContainer,
@@ -1071,14 +1134,14 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
                 label={lang.phoneNumber}
                 placeholder="123 456 789"
                 value={phone} // <-- use phoneInput state
-                setValue={(text: string) => onPhoneChange(text)}
+                setValue={(text: string) => { onPhoneChange(text); }}
                 errorMessage={touched.phone ? errors.phone : ""}
                 leftIcon={selectedCountry.flag}
                 leftIcon2={require("../../../../assets/icons/down_b.png")}
                 onLeftIcon2Press={() =>
-                  (navigation as any).navigate("Code", {
+                  navigation.navigate("Code", {
                     initialSelectedId: selectedCountry.id,
-                    onSelect: (item: any) => {
+                    onSelect: (item: CountryItem) => {
                       setSelectedCountry(item);
                       const newRule =
                         PHONE_RULES[(item.code || "").replace(/\D/g, "")] ||
@@ -1141,7 +1204,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
       <Modal animationType="slide" transparent visible={modalVisible}>
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)}
+          onPress={() => { setModalVisible(false); }}
         />
         <View style={[styles.modalContainer]}>
           <View style={styles.modalHandle} />
@@ -1175,7 +1238,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 
       <Popup
         visible={deletePopupVisible}
-        onClose={() => setDeletePopupVisible(false)}
+        onClose={() => { setDeletePopupVisible(false); }}
         popupBorderColor={colors.primary}
         dismissOnOverlayPress={false}
         title={lang.deleteStaffRecord}
@@ -1198,7 +1261,7 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
           />
           <Button1
             text={lang.no}
-            onPress={() => setDeletePopupVisible(false)}
+            onPress={() => { setDeletePopupVisible(false); }}
             backgroundColor={colors.error_text}
             width={"48%"}
             textStyle={{ color: colors.secondary }}
@@ -1209,7 +1272,13 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
         <Button1
           text={lang.generate_csv}
           width={"90%"}
-          onPress={() => exportMonthlyAttendanceXLSX(id)}
+          onPress={() => {
+            if (id) {
+              exportMonthlyAttendanceXLSX(id);
+            } else {
+              Alert.alert("Error", "Staff ID is missing");
+            }
+          }}
         />
       </View>
       <Toast config={toastConfig} />
@@ -1220,12 +1289,6 @@ const StaffProfileScreen: React.FC<StaffProfileScreenprops> = () => {
 export default StaffProfileScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.secondary,
-    paddingHorizontal: 20,
-  },
-
   profileContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -1234,11 +1297,6 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     position: "relative",
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
   },
   editIconContainer: {
     position: "absolute",

@@ -14,7 +14,7 @@ import Header from "../../../components/Header";
 import colors from "../../../styles/Colors";
 import CartBox from "../../../components/CartBox";
 import fonts from "../../../styles/Fonts";
-import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect, NavigationProp, RouteProp } from "@react-navigation/native";
 import translations from "../../../assets/translations.json";
 import Toast, { toastConfig, showSuccessToast, showErrorToast } from "../../../components/Toast";
 import Button3 from "../../../components/Button";
@@ -22,9 +22,55 @@ import SearchBar from "../../../components/SearchBar";
 
 import { fetchUsers, getUserById, ProfileUser } from "../../../api/profile";
 
-const StaffRecordScreen: React.FC<any> = (props) => {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+// ============================================================
+// Type Definitions
+// ============================================================
+
+type LangId = "en" | "de";
+
+type StaffRecordScreenRouteParams = {
+  userId?: string;
+  id?: string;
+  langId?: LangId;
+  language?: string;
+};
+
+type RootStackParamList = {
+  StaffRecordScreen: StaffRecordScreenRouteParams;
+  NotificationScreen: {
+    userId?: string;
+    langId?: string;
+    branchId?: string | null;
+  };
+  AddStaffScreen: {
+    userId?: string;
+    langId?: string;
+    branchId?: string | null;
+    onSave?: (user: { id: string; email: string; username: string; role: string }) => void;
+  };
+  StaffProfileScreen: {
+    id?: string;
+    userId?: string;
+    langId?: LangId;
+    language?: string;
+    branchId?: string | null;
+  };
+};
+
+type StaffRecordScreenProps = {
+  userId?: string;
+  langId?: LangId;
+};
+
+type FetchUsersParams = {
+  role?: string;
+  limit?: number;
+  branchId?: string;
+};
+
+const StaffRecordScreen: React.FC<StaffRecordScreenProps> = (props) => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "StaffRecordScreen">>();
 
   // incoming props/params, Footer passes these
   const propUserId = props.userId;
@@ -32,10 +78,11 @@ const StaffRecordScreen: React.FC<any> = (props) => {
   const routeUserId = route.params?.userId ?? route.params?.id;
   const routeLangId = route.params?.langId ?? route.params?.language;
   const userId = propUserId || routeUserId;
-  const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
-  const paramUserId = route.params?.userId ?? route.params?.id ?? propUserId ?? null;
-  const paramLangId = route.params?.langId ?? propLangId ?? "en";
+  const langId = (propLangId || routeLangId || "en") as LangId;
+  const langKey = langId as keyof typeof translations;
+  const lang = translations[langKey] || translations["en"];
+  const paramUserId = route.params.userId;
+  const paramLangId = route.params.langId ?? "en";
 
   // local state
   const [branchId, setBranchId] = useState<string | null>(null);
@@ -89,13 +136,13 @@ const StaffRecordScreen: React.FC<any> = (props) => {
 
       // 2. Fetch all users for that branch ("role": "user")
       // If branch not resolved, pass undefined — API may return all users; we guard client-side to show nothing or warn.
-      const fetchParams: any = { role: "user", limit: 1000 };
+      const fetchParams: FetchUsersParams = { role: "user", limit: 1000 };
       if (resolvedBranchId) fetchParams.branchId = resolvedBranchId;
 
       const res = await fetchUsers(fetchParams);
       const fetchedUsers = Array.isArray(res.users) ? res.users : [];
       // ensure role === 'user'
-      const onlyUsers = fetchedUsers.filter((x: any) => ((x && x.role) ?? "user") === "user");
+      const onlyUsers = fetchedUsers.filter((x: ProfileUser) => ((x && x.role) ?? "user") === "user");
 
       console.log("StaffRecordScreen -> fetched users count:", onlyUsers.length);
 
@@ -159,29 +206,29 @@ const StaffRecordScreen: React.FC<any> = (props) => {
   // navigation helpers with logs
   const openNotification = () => {
     console.log("StaffRecordScreen -> navigate to NotificationScreen with:", { userId: paramUserId, langId: langId, branchId });
-    navigation.navigate("NotificationScreen" as any, {
+    navigation.navigate("NotificationScreen", {
       userId: paramUserId,
       langId: langId,
-      branchId,
+      branchId: branchId,
     });
   };
 
   const openAddStaff = () => {
     console.log("StaffRecordScreen -> navigate to AddStaffScreen with:", { userId: paramUserId, langId: langId, branchId });
-    navigation.navigate("AddStaffScreen" as any, {
+    navigation.navigate("AddStaffScreen", {
       userId: paramUserId,
       langId: langId,
-      branchId,
+      branchId: branchId,
     });
   };
 
   const openStaffProfile = (staffId: string) => {
     console.log("StaffRecordScreen -> navigate to StaffProfileScreen with:", { id: staffId, userId: paramUserId, langId: langId, branchId });
-    navigation.navigate("StaffProfileScreen" as any, {
+    navigation.navigate("StaffProfileScreen", {
       id: staffId,
       userId: paramUserId,
       langId: langId,
-      branchId,
+      branchId: branchId,
     });
   };
 
@@ -228,7 +275,7 @@ const StaffRecordScreen: React.FC<any> = (props) => {
                   const staffLabel = `Staff${(index + 1).toString().padStart(2, "0")}`;
                   const userIdKey = (u)._id ?? `u-${index}`;
                   return (
-                    <TouchableOpacity key={userIdKey} onPress={() => openStaffProfile(userIdKey)}>
+                    <TouchableOpacity key={userIdKey} onPress={() => { openStaffProfile(userIdKey); }}>
                       <CartBox containerStyle={styles.detail_cartbox}>
                         <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
                           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
