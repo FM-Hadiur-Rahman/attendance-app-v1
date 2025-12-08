@@ -62,7 +62,7 @@ export default function BranchProfileScreen(props: any) {
   const routeLangId = route.params?.langId;
   const userId = propUserId || routeUserId;
   const langId = propLangId || routeLangId || "en";
-  const lang = (translations as any)[langId] || (translations as any)["en"];
+  const lang = (translations as any)[langId];
 
   // branchId passed from previous screen
   const propBranchId = props?.branchId;
@@ -93,7 +93,7 @@ export default function BranchProfileScreen(props: any) {
   }, [propLangId]);
 
   const [refreshing, setRefreshing] = useState(false);
-  const phoneRef = useRef<TextInput | any>(null);
+  const phoneRef = useRef<TextInput>(null);
 
   // values (now initially empty until loaded from API)
   const [branchName, setbranchName] = useState("");
@@ -132,27 +132,27 @@ export default function BranchProfileScreen(props: any) {
   useEffect(() => setAddressLatInput(latitude ?? ""), [latitude]);
   useEffect(() => setAddressLonInput(longitude ?? ""), [longitude]);
 
-      // added this for android keyboard avoiding view 
-      const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
-    
-      useEffect(() => {
-        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    
-        const onShow = (e: any) => {
-          const h = e?.endCoordinates?.height ?? 0;
-          setKeyboardHeight(h);
-        };
-        const onHide = () => setKeyboardHeight(0);
-    
-        const showSub = Keyboard.addListener(showEvent, onShow);
-        const hideSub = Keyboard.addListener(hideEvent, onHide);
-    
-        return () => {
-          showSub.remove();
-          hideSub.remove();
-        };
-      }, []);
+  // added this for android keyboard avoiding view 
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = (e: any) => {
+      const h = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(h);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // --- helper: read/write cache map (branchId -> { addr, lat, lon, savedAt }) ---
   const readGeoCache = async (): Promise<Record<string, any>> => {
@@ -399,17 +399,17 @@ export default function BranchProfileScreen(props: any) {
       lat = Number(b.location.coordinates[1]);
     }
 
-    // Fallback: check (b as any).latitude/longitude if location missing or invalid
+    // Fallback: check b.latitude/longitude if location missing or invalid
     if (
       (lat === undefined ||
         lon === undefined ||
         !isFinite(lat) ||
         !isFinite(lon)) &&
-      (b as any).latitude !== undefined &&
-      (b as any).longitude !== undefined
+      b.latitude !== undefined &&
+      b.longitude !== undefined
     ) {
-      lat = Number((b as any).latitude);
-      lon = Number((b as any).longitude);
+      lat = Number(b.latitude);
+      lon = Number(b.longitude);
     }
 
     if (
@@ -481,11 +481,11 @@ export default function BranchProfileScreen(props: any) {
         try {
           const names = await listBranchNames().catch(() => []);
           setExistingBranchNames(names);
-        } catch {}
+        } catch { }
         try {
           const branches = await getAllBranches().catch(() => []);
           setAllBranches(branches);
-        } catch {}
+        } catch { }
       }
     };
     fetchAllBranchesData();
@@ -810,7 +810,7 @@ export default function BranchProfileScreen(props: any) {
           // optionally notify the user but don't rollback branch update
           showErrorToast(
             lang?.Failed_to_update_Manager_phone ||
-              "Failed to update manager phone"
+            "Failed to update manager phone"
           );
         }
       }
@@ -988,7 +988,7 @@ export default function BranchProfileScreen(props: any) {
 
       {loading ? (
         <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+          style={styles.loading}
         >
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -1045,17 +1045,12 @@ export default function BranchProfileScreen(props: any) {
                   >
                     {/* Use a parent row to hold left & right parts */}
                     <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        width: "100%",
-                      }}
+                      style={styles.parent_row}
                     >
                       {/* LEFT SIDE: icon + labels */}
                       <View style={styles.itemLeft}>
                         <Image source={item.icon} style={styles.itemIcon} />
-                        <View style={{ justifyContent: "flex-start" }}>
+                        <View style={styles.left_align}>
                           <Text style={styles.itemText}>{item.labelname}</Text>
 
                           {/* For phone and password we make the value tappable and show a right-side action button */}
@@ -1087,7 +1082,7 @@ export default function BranchProfileScreen(props: any) {
                               {/* </TouchableOpacity> */}
                             </View>
                           ) : (
-                            <View style={{ width: 320 * base }}>
+                            <View style={styles.box}>
                               <Text
                                 style={styles.labelValue}
                                 numberOfLines={2}
@@ -1113,10 +1108,7 @@ export default function BranchProfileScreen(props: any) {
                           }}
                         >
                           <View
-                            style={{
-                              borderRadius: 20,
-                              backgroundColor: colors.primary,
-                            }}
+                            style={styles.action_buttons}
                           >
                             <Text style={styles.callText}>
                               {lang.call || "Call"}
@@ -1132,12 +1124,7 @@ export default function BranchProfileScreen(props: any) {
                             Linking.openURL(`mailto:${branchEmail}`);
                           }}
                         >
-                          <View
-                            style={{
-                              borderRadius: 20,
-                              backgroundColor: colors.primary,
-                            }}
-                          >
+                          <View style={styles.action_buttons}>
                             <Text style={styles.callText}>{lang.mail}</Text>
                           </View>
                         </TouchableOpacity>
@@ -1183,41 +1170,42 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setbranchnameModalVisible(false)}
         >
-                  {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={{ flex: 1, justifyContent: "flex-end" }}
-                    keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                  >
-                    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                      <View
-                        style={[
-                          styles.modalContainer,
-                          Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                        ]}
-                      >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{lang.Edit_branch_name}</Text>
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardavoiding}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>{lang.Edit_branch_name}</Text>
 
-            <InputBox
-              label={lang.Branch_name}
-              value={branchnameInput}
-              setValue={handleBranchNameChange}
-              //setValue={setbranchnameInput}
-              placeholder={lang.Enter_the_branch_name}
-              inputStyle={{ marginTop: 0 }}
-              errorMessage={branchNameError}
-              forceBlueBorder={false}
-            />
+                <InputBox
+                  label={lang.Branch_name}
+                  value={branchnameInput}
+                  setValue={handleBranchNameChange}
+                  //setValue={setbranchnameInput}
+                  placeholder={lang.Enter_the_branch_name}
+                  inputStyle={{ marginTop: 0 }}
+                  errorMessage={branchNameError}
+                  forceBlueBorder={false}
+                  returnKeyType="done"
+                />
 
-            <Button1
-              text={lang.save}
-              width={"100%"}
-              onPress={saveBranchName}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
-           </TouchableWithoutFeedback>
+                <Button1
+                  text={lang.save}
+                  width={"100%"}
+                  onPress={saveBranchName}
+                  containerStyle={styles.save_button}
+                />
+              </View>
+            </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
@@ -1233,39 +1221,40 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setManagerModalVisible(false)}
         >
-              {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-              <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1, justifyContent: "flex-end" }}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardavoiding}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
               >
-                <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                  <View
-                    style={[
-                      styles.modalContainer,
-                      Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                    ]}
-                  >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{lang.Manager_name}</Text>
-            <InputBox
-              label={lang.Manager_name}
-              value={managerInput}
-              setValue={setManagerInput}
-              placeholder={lang.Manager_name}
-              inputStyle={{ marginTop: 0 }}
-              errorMessage={managerError}
-              forceBlueBorder={false}
-            />
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>{lang.Manager_name}</Text>
+                <InputBox
+                  label={lang.Manager_name}
+                  value={managerInput}
+                  setValue={setManagerInput}
+                  placeholder={lang.Manager_name}
+                  inputStyle={{ marginTop: 0 }}
+                  errorMessage={managerError}
+                  forceBlueBorder={false}
+                  returnKeyType="done"
+                />
 
-            <Button1
-              text={lang.save}
-              width={"100%"}
-              onPress={saveManager}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
-           </TouchableWithoutFeedback>
+                <Button1
+                  text={lang.save}
+                  width={"100%"}
+                  onPress={saveManager}
+                  containerStyle={styles.save_button}
+                />
+              </View>
+            </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
@@ -1281,56 +1270,56 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setPhoneModalVisible(false)}
         >
-                   {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-                   <KeyboardAvoidingView
-                     behavior={Platform.OS === "ios" ? "padding" : "height"}
-                     style={{ flex: 1, justifyContent: "flex-end" }}
-                     keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                   >
-                     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                       <View
-                         style={[
-                           styles.modalContainer,
-                           Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                         ]}
-                       >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>
-              {lang.Edit_manager_phone_number}
-            </Text>
-            <InputBox
-              ref={phoneRef}
-              label={lang.Manager_phone_number}
-              placeholder={`1234 567 891`}
-              value={phoneInput}
-              setValue={(v) => {
-                setPhoneInput(v);
-                if (phoneError) setPhoneError("");
-              }} // clear error on change
-              leftIcon={selectedCountry.flag}
-              leftIcon2={require("../../../assets/icons/down_b.png")}
-              onLeftIcon2Press={() =>
-                navigation.navigate("Code", {
-                  initialSelectedId: selectedCountry.id,
-                  onSelect: (item: any) => {
-                    setSelectedCountry(item);
-                  },
-                })
-              }
-              returnKeyType="next"
-              keyboardType="phone-pad"
-              inputStyle={{}}
-              errorMessage={phoneError}
-            />
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardavoiding}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>
+                  {lang.Edit_manager_phone_number}
+                </Text>
+                <InputBox
+                  ref={phoneRef}
+                  label={lang.Manager_phone_number}
+                  placeholder={`1234 567 891`}
+                  value={phoneInput}
+                  setValue={(v) => {
+                    setPhoneInput(v);
+                    if (phoneError) setPhoneError("");
+                  }} // clear error on change
+                  leftIcon={selectedCountry.flag}
+                  leftIcon2={require("../../../assets/icons/down_b.png")}
+                  onLeftIcon2Press={() =>
+                    navigation.navigate("Code", {
+                      initialSelectedId: selectedCountry.id,
+                      onSelect: (item: any) => {
+                        setSelectedCountry(item);
+                      },
+                    })
+                  }
+                  returnKeyType="done"
+                  keyboardType="phone-pad"
+                  inputStyle={{}}
+                  errorMessage={phoneError}
+                />
 
-            <Button1
-              text={lang.save}
-              width={"100%"}
-              onPress={savePhone}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
-           </TouchableWithoutFeedback>
+                <Button1
+                  text={lang.save}
+                  width={"100%"}
+                  onPress={savePhone}
+                  containerStyle={styles.save_button}
+                />
+              </View>
+            </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
@@ -1346,50 +1335,50 @@ export default function BranchProfileScreen(props: any) {
           style={styles.modalOverlay}
           onPress={() => setAddressModalVisible(false)}
         >
-                   {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
-                   <KeyboardAvoidingView
-                     behavior={Platform.OS === "ios" ? "padding" : "height"}
-                     style={{ flex: 1, justifyContent: "flex-end" }}
-                     keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                   >
-                     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                       <View
-                         style={[
-                           styles.modalContainer,
-                           Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
-                         ]}
-                       >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{lang.Edit_branch_address}</Text>
+          {/* Keep KeyboardAvoidingView (helps iOS) but also use keyboardHeight for Android */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardavoiding}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  Platform.OS === "android" ? { marginBottom: keyboardHeight || 0 } : {},
+                ]}
+              >
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>{lang.Edit_branch_address}</Text>
 
-            <InputBox
-              label={lang.Branch_address_latitude}
-              value={addressLatInput}
-              setValue={handleAddressLatChange}
-              placeholder={lang.Branch_address_latitude}
-              inputStyle={{ marginTop: 0 }}
-              errorMessage={latError}
-              returnKeyType="next"
-            />
+                <InputBox
+                  label={lang.Branch_address_latitude}
+                  value={addressLatInput}
+                  setValue={handleAddressLatChange}
+                  placeholder={lang.Branch_address_latitude}
+                  inputStyle={{ marginTop: 0 }}
+                  errorMessage={latError}
+                  returnKeyType="next"
+                />
 
-            <InputBox
-              label={lang.Branch_address_longitude}
-              value={addressLonInput}
-              setValue={handleAddressLonChange}
-              placeholder={lang.Branch_address_longitude}
-              inputStyle={{ marginTop: 0 }}
-              errorMessage={lonError}
-              returnKeyType="done"
-            />
-            <Button1
-              text={lang.save}
-              width={"100%"}
-              onPress={saveAddress}
-              containerStyle={{ alignSelf: "center", marginTop: 10 }}
-            />
-          </View>
+                <InputBox
+                  label={lang.Branch_address_longitude}
+                  value={addressLonInput}
+                  setValue={handleAddressLonChange}
+                  placeholder={lang.Branch_address_longitude}
+                  inputStyle={{ marginTop: 0 }}
+                  errorMessage={lonError}
+                  returnKeyType="done"
+                />
+                <Button1
+                  text={lang.save}
+                  width={"100%"}
+                  onPress={saveAddress}
+                  containerStyle={styles.save_button}
+                />
+              </View>
 
-          </TouchableWithoutFeedback>
+            </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
@@ -1508,4 +1497,26 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 15,
   },
+  loading: {
+    flex: 1, justifyContent: "center", alignItems: "center"
+  },
+  parent_row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  box:{width: 320 * base },
+  save_button:{
+    alignSelf: "center", marginTop: 10
+  },
+  keyboardavoiding:{
+    flex: 1, justifyContent: "flex-end"
+  },
+  action_buttons:{
+    borderRadius: 20,backgroundColor: colors.primary,
+  },
+  left_align:{
+    justifyContent: "flex-start" 
+  }
 });

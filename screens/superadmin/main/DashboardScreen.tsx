@@ -25,7 +25,6 @@ import { getAllBranches, Branch } from '../../../api/Branchs';
 import { getSchedulesForDate, ScheduleItem } from '../../../api/schedules';
 import { clearAllAuthData } from '../../../api/auth/authToken';
 import {
-  getAttendanceAllHistory,
   getCurrentShiftUsers,
   AttendanceHistoryItem,
 } from '../../../api/attendanceAllHistory';
@@ -36,7 +35,7 @@ import CartBox from '../../../components/CartBox';
 const { width: deviceWidth } = Dimensions.get('window');
 const base = deviceWidth / 440;
 
-type LangId = keyof typeof translations; 
+type LangId = keyof typeof translations;
 
 // Navigation typing (small subset used by this screen)
 type RootStackParamList = {
@@ -85,10 +84,15 @@ const DashboardScreen: React.FC<Props> = (props) => {
   const [branchesState, setBranchesState] = useState<Branch[]>([]);
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
 
+  // small loading flags for specific data so we can show "..." while numbers load
+  const [usersLoading, setUsersLoading] = useState<boolean>(false);
+  const [schedulesLoading, setSchedulesLoading] = useState<boolean>(false);
+
   // attendance (current shift) counts
   const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false);
   const [branchAttendanceCounts, setBranchAttendanceCounts] = useState<Record<string, number>>({});
   const [totalAttendanceCount, setTotalAttendanceCount] = useState<number>(0);
+
 
   const cacheClearIntervalRef = useRef<number | null>(null);
 
@@ -182,25 +186,46 @@ const DashboardScreen: React.FC<Props> = (props) => {
 
   // ------------------ Data loading & cache strategy ------------------
   const loadDataFromBackend = async () => {
-    // Always fetch fresh values from backend and then update cache
-    const [branchesRes, usersRes, schedulesRes] = await Promise.all([
-      getAllBranches(),
-      getUsers({ limit: 1000 }),
-      getSchedulesForDate(todayYMD),
-    ]);
+    try {
+      // 1) Fetch branches first (so UI can render branch cards immediately)
+      const branchesRes = await getAllBranches();
+      setBranchesState(branchesRes ?? []);
+      saveCache(CACHE_KEYS.branches, branchesRes ?? []);
 
-    // set states immediately
-    setBranchesState(branchesRes ?? []);
-    setUsersState(usersRes ?? []);
-    setSchedulesState(schedulesRes ?? []);
+      // 2) Kick off users + schedules in parallel (they can take longer)
+      setUsersLoading(true);
+      setSchedulesLoading(true);
 
-    // save to cache (non-blocking)
-    saveCache(CACHE_KEYS.branches, branchesRes ?? []);
-    saveCache(CACHE_KEYS.users, usersRes ?? []);
-    saveCache(CACHE_KEYS.schedules(todayYMD), schedulesRes ?? []);
+      const [usersRes, schedulesRes] = await Promise.all([
+        getUsers({ limit: 1000 }).catch((e) => {
+          console.warn('getUsers failed', e);
+          return null;
+        }),
+        getSchedulesForDate(todayYMD).catch((e) => {
+          console.warn('getSchedulesForDate failed', e);
+          return null;
+        }),
+      ]);
 
-    // update attendance counts (depends on attendance API)
-    await fetchAttendanceCounts();
+      if (usersRes) {
+        setUsersState(usersRes);
+        saveCache(CACHE_KEYS.users, usersRes);
+      }
+
+      if (schedulesRes) {
+        setSchedulesState(schedulesRes);
+        saveCache(CACHE_KEYS.schedules(todayYMD), schedulesRes);
+      }
+    } catch (e) {
+      console.warn('loadDataFromBackend failed', e);
+    } finally {
+      // clear the granular loading flags
+      setUsersLoading(false);
+      setSchedulesLoading(false);
+
+      // update attendance counts (depends on attendance API) — do it after we've attempted to load schedules/users
+      fetchAttendanceCounts().catch((err) => console.warn('fetchAttendanceCounts failed', err));
+    }
   };
 
   const loadData = async (opts: { forceReload?: boolean } = {}) => {
@@ -212,7 +237,7 @@ const DashboardScreen: React.FC<Props> = (props) => {
       const cacheValid = !opts.forceReload && ts && now - ts < CACHE_TTL_MS;
 
       if (cacheValid) {
-        // Load from cache quickly and then fetch fresh in background
+        // Load from cache quickly so UI shows something fast
         const [branchesCached, usersCached, schedulesCached] = await Promise.all([
           loadCache<Branch[]>(CACHE_KEYS.branches),
           loadCache<ProfileUser[]>(CACHE_KEYS.users),
@@ -226,10 +251,21 @@ const DashboardScreen: React.FC<Props> = (props) => {
         // always refresh attendance counts from backend (to reflect checkouts)
         fetchAttendanceCounts().catch((e) => console.warn(e));
 
-        // fetch backend in background to keep UI fresh
+        // Immediately refresh branches (fast) and then load users/schedules in background.
+        // This ensures branch names/cards appear quickly and navigation is possible.
+        getAllBranches()
+          .then((b) => {
+            if (b) {
+              setBranchesState(b);
+              saveCache(CACHE_KEYS.branches, b);
+            }
+          })
+          .catch((e) => console.warn('background getAllBranches failed', e));
+
+        // Kick off background refresh of users + schedules (non-blocking)
         loadDataFromBackend().catch((e) => console.warn('background reload failed', e));
       } else {
-        // no valid cache -> load from backend
+        // no valid cache -> load from backend (this will set branches first then others)
         await loadDataFromBackend();
       }
     } catch (err) {
@@ -291,8 +327,8 @@ const DashboardScreen: React.FC<Props> = (props) => {
     const setIds = new Set<string>();
     schedulesState.forEach((s) => {
       if (!scheduleIsUser(s)) return;
-      const uid = typeof s.employee_id === 'object' && s.employee_id !== null ? 
-      s.employee_id._id : String(s.employee_id);
+      const uid = typeof s.employee_id === 'object' && s.employee_id !== null ?
+        s.employee_id._id : s.employee_id;
       if (uid) setIds.add(String(uid));
     });
     return setIds.size;
@@ -353,35 +389,39 @@ const DashboardScreen: React.FC<Props> = (props) => {
       <View style={styles.body}>
         <View style={styles.boxes}>
           <CartBox containerStyle={styles.staff}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={styles.total_staff_icon}>
               <Image source={require('../../../assets/icons/totalstaff_b.png')} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
             </View>
-            <Text style={styles.total_count}>{todaysUniqueStaffCount}</Text>
+            <Text style={styles.total_count}>
+              {schedulesLoading ? '...' : String(todaysUniqueStaffCount)}
+            </Text>
+
           </CartBox>
 
           <CartBox containerStyle={styles.staff}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={styles.total_staff_icon}>
               <Image source={require('../../../assets/icons/staff_tik_g.png')} style={styles.icon} />
               <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
             </View>
-
             <Text style={styles.shift_count} ellipsizeMode="tail" numberOfLines={1}>
               {attendanceLoading ? '...' : totalAttendanceCount}
             </Text>
-
           </CartBox>
         </View>
 
         {loading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={styles.loading}>
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <ScrollView
             style={{ marginBottom: 0 }}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />}
+            refreshControl={<RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh} 
+              colors={[colors.primary]} tintColor={colors.primary} />}
           >
             <View style={styles.all_branches}>
               {branchCounts.map((b) => (
@@ -403,10 +443,9 @@ const DashboardScreen: React.FC<Props> = (props) => {
                       <Text style={styles.branch_name} ellipsizeMode="tail" numberOfLines={1}>{b.branchName}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                      <Text style={styles.count}>{attendanceLoading ? '...' : (branchAttendanceCounts[b.branchId] ?? 0)}</Text>
+                      <Text style={styles.count}>{attendanceLoading ? '...' : String(branchAttendanceCounts[b.branchId] ?? 0)}</Text>
                       <Text style={styles.count}>/</Text>
-                      <Text style={styles.count}>{b.todayWorking}</Text>
-
+                      <Text style={styles.count}>{schedulesLoading ? '...' : String(b.todayWorking)}</Text>
                     </View>
                   </CartBox>
                 </TouchableOpacity>
@@ -416,9 +455,13 @@ const DashboardScreen: React.FC<Props> = (props) => {
         )}
       </View>
 
-      <Popup visible={logoutPopupVisible} onClose={() => setLogoutPopupVisible(false)} popupBorderColor={colors.error_text} dismissOnOverlayPress={false} title={lang.Logout} titleStyle={{ color: colors.error_text }}>
+      <Popup visible={logoutPopupVisible} 
+      onClose={() => setLogoutPopupVisible(false)} 
+      popupBorderColor={colors.error_text} 
+      dismissOnOverlayPress={false} title={lang.Logout} 
+      titleStyle={{ color: colors.error_text }}>
         <Text style={styles.popupsubtext}>{lang.logout_confirm}</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+        <View style={styles.button_group}>
           <Button1
             text={lang.yes}
             onPress={async () => {
@@ -439,9 +482,11 @@ const DashboardScreen: React.FC<Props> = (props) => {
             width={'48%'}
             textStyle={{ color: colors.secondary }}
           />
-
-
-          <Button1 text={lang.no} onPress={() => setLogoutPopupVisible(false)} backgroundColor={colors.error_text} width={'48%'} textStyle={{ color: colors.secondary }} />
+          <Button1 text={lang.no}
+            onPress={() => setLogoutPopupVisible(false)}
+            backgroundColor={colors.error_text}
+            width={'48%'}
+            textStyle={{ color: colors.secondary }} />
         </View>
       </Popup>
     </View>
@@ -524,5 +569,15 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fonts.size.xxl,
     fontWeight: fonts.weight.medium,
+  },
+  total_staff_icon: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  loading: {
+    flex: 1, justifyContent: 'center', alignItems: 'center'
+  },
+  button_group:{ 
+    flexDirection: 'row', justifyContent: 'space-between', width: '100%' 
   },
 });

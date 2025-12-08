@@ -359,7 +359,8 @@
     "Checkout_cannot_be_earlier_than_scheduled_end": "Checkout cannot be earlier than scheduled end",
     "Confirm_checkout_for": "Confirm checkout for",
     "Invalid_time":"Invalid time",
-    "This_action_will_be_recorded":"This action will be recorded."
+    "This_action_will_be_recorded":"This action will be recorded.",
+    "Location_not_available":"Location not available"
 
   },
   "de": {
@@ -720,6 +721,7 @@
     "Checkout_cannot_be_earlier_than_scheduled_end": "Das Auschecken kann nicht vor dem geplanten Ende erfolgen",
     "Confirm_checkout_for": "Checkout für bestätigen",
     "Invalid_time":"Ungültige Zeit",
-    "This_action_will_be_recorded":"Diese Aktion wird aufgezeichnet."
+    "This_action_will_be_recorded":"Diese Aktion wird aufgezeichnet.",
+    "Location_not_available":"Standort nicht verfügbar"
   }
 }
