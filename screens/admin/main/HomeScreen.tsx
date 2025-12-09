@@ -31,6 +31,7 @@ import InputBox from "../../../components/InputBox";
 import { Button1 } from "../../../components/Button";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import Toast, { showErrorToast, showSuccessToast, toastConfig } from "../../../components/Toast";
+import { NotificationServiceInstance, subscribeNotifications } from "../../../api/notification/NotificationService";
 
 const { width: deviceWidth } = Dimensions.get("window");
 const base = deviceWidth / 440;
@@ -435,53 +436,53 @@ const HomeScreen_A: React.FC<ScreenProps> = (props) => {
     setTimeFrom(`${formatted}:00`);
   };
 
-const showConfirmDialog = () => {
-  try {
-    if (!checkoutTargetAttendance) return;
+  const showConfirmDialog = () => {
+    try {
+      if (!checkoutTargetAttendance) return;
 
-    // 1) basic format check
-    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+      // 1) basic format check
+      if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(checkoutTime)) {
+        setCheckoutTimeError(lang.Invalid_time);
+        return;
+      }
+
+      // 2) schedule end check (if schedule exists)
+      const scheduleEndHHMM = checkoutTargetAttendance.schedule
+        ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "")
+        : null;
+      if (scheduleEndHHMM) {
+        const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
+        const checkoutMin = hhmmToMinutesStrict(checkoutTime);
+        if (checkoutMin < schedMin) {
+          setCheckoutTimeError(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
+          return;
+        }
+      }
+
+      // 3) not before check-in
+      const inStr = checkoutTargetAttendance.In ?? "";
+      const checkinDt = parseAttendanceDatetime(inStr);
+      if (inStr && checkinDt) {
+        const inDatePart = inStr.split(" ")[0];
+        const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
+        const [hh, mm] = checkoutTime.split(":").map(s => parseInt(s || "0", 10));
+        const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+        if (checkoutLocal.getTime() < checkinDt.getTime()) {
+          setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
+          return;
+        }
+      }
+
+      // passed validation — clear error and show popup
+      setCheckoutTimeError("");
+      setForceCheckoutModalVisible(false);
+      setTimeout(() => { setConfirmPopupVisible(true); }, 350);
+    } catch (err: unknown) {
+      const error = err as ErrorWithMessage;
+      console.warn("showConfirmDialog validation error", error);
       setCheckoutTimeError(lang.Invalid_time);
-      return;
     }
-
-    // 2) schedule end check (if schedule exists)
-    const scheduleEndHHMM = checkoutTargetAttendance.schedule
-      ? normalizeToHHMM(checkoutTargetAttendance.schedule.end_time ?? "")
-      : null;
-    if (scheduleEndHHMM) {
-      const schedMin = hhmmToMinutesStrict(scheduleEndHHMM);
-      const checkoutMin = hhmmToMinutesStrict(checkoutTime);
-      if (checkoutMin < schedMin) {
-        setCheckoutTimeError(`${lang.Checkout_cannot_be_earlier_than_scheduled_end} (${formatTime12(scheduleEndHHMM)})`);
-        return;
-      }
-    }
-
-    // 3) not before check-in
-    const inStr = checkoutTargetAttendance.In ?? "";
-    const checkinDt = parseAttendanceDatetime(inStr);
-    if (inStr && checkinDt) {
-      const inDatePart = inStr.split(" ")[0];
-      const [y, m, d] = inDatePart.split("-").map(s => parseInt(s || "0", 10));
-      const [hh, mm] = checkoutTime.split(":").map(s => parseInt(s || "0", 10));
-      const checkoutLocal = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
-      if (checkoutLocal.getTime() < checkinDt.getTime()) {
-        setCheckoutTimeError(lang.Checkout_cannot_be_before_checkin);
-        return;
-      }
-    }
-
-    // passed validation — clear error and show popup
-    setCheckoutTimeError("");
-    setForceCheckoutModalVisible(false);
-    setTimeout(() => { setConfirmPopupVisible(true); }, 350);
-  } catch (err: unknown) {
-    const error = err as ErrorWithMessage;
-    console.warn("showConfirmDialog validation error", error);
-    setCheckoutTimeError(lang.Invalid_time);
-  }
-};
+  };
 
   //To calculate total staff count (For the current branch, Today date schedule)
   const TotalstaffCount = useMemo(() => {
@@ -733,7 +734,7 @@ const showConfirmDialog = () => {
           return;
         }
         const branchField = u.branch;
-        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ? 
+        const branchId = typeof branchField === "string" ? branchField : (branchField && typeof branchField === "object" ?
           (branchField as { _id?: string })._id ?? null : null);
 
         const branchName = branchField && typeof branchField === "object" ? (branchField as { name: string }).name ?? null : null;
@@ -766,6 +767,21 @@ const showConfirmDialog = () => {
     void fetchAttendanceAndEnrich(activeBranchId);
   }, [activeBranchId, version, schedulesState, usersState]);
 
+  // this is to show the notification
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  useEffect(() => {
+    if (!userId) return;
+    // pass branch id so service listens to both personal + branch inbox
+    NotificationServiceInstance.start(userId, activeBranchId ?? null)
+      .catch((e) => console.warn('[AdminHome] notif start failed', e));
+    const unsub = subscribeNotifications((_items, uc) => {
+      setUnreadCount(uc);
+    });
+    return () => {
+      try { unsub(); } catch (e) { /* ignore */ }
+    };
+  }, [userId, activeBranchId]);
+
   const handleNotificationPress = () => {
     console.log('Header notification pressed — params:', { userId, langId, activeBranchId });
     (navigation.navigate)("NotificationScreen", { userId, langId, branchId: activeBranchId });
@@ -779,7 +795,9 @@ const showConfirmDialog = () => {
         center={{ type: "text", value: lang.timeTrack, color: colors.text }}
         right={{
           type: "image",
-          url: require("../../../assets/icons/f_notification_b.png"),
+          url: unreadCount > 0
+            ? require("../../../assets/icons/notification_active.png")
+            : require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
           onPress: handleNotificationPress,
@@ -992,7 +1010,7 @@ const showConfirmDialog = () => {
               width={"100%"}
               textStyle={{ color: colors.secondary }}
               onPress={() => {
-                if (confirmSubmitting) return; 
+                if (confirmSubmitting) return;
                 void handleSaveForceCheckout();
               }}
             />

@@ -1946,7 +1946,7 @@ const styles = StyleSheet.create({
   overlayBackdrop: { position: "absolute", left: 0, right: 0, top: 8, bottom: 0 },
   overlayContainer: {
     position: "absolute",
-    height: "80%",
+    height: "65%",
     backgroundColor: colors.secondary,
     borderRadius: 8,
     borderWidth: 1,

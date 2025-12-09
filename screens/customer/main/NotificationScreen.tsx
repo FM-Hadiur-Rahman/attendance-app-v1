@@ -17,33 +17,31 @@ import fonts from "../../../styles/Fonts";
 import translations from "../../../assets/translations.json";
 import { useNavigation } from "@react-navigation/native";
 
-import {
-  db,
-  onSnapshot,
-  collection,
-  query,
-  orderBy,
-  doc,
-  setDoc,
-  serverTimestamp,
-} from "../../../api/notification/firebase";
-
 import { getUserId } from "../../../api/auth/authToken";
-import { sendNotificationToUser } from "../../../api/notification/firebaseNotifications";
+
+import { NotificationServiceInstance, subscribeNotifications, NotificationItem } from "../../../api/notification/NotificationService";
 
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 
-interface NotificationItem {
-  n_id: string;
-  userId: string;
-  n_type: string;
-  title: string;
-  subtitle: string;
-  createdTime: string;
-  updatedTime?: string;
-  read?: boolean;
-}
+// Helper: check if a date string is inside the current week (Sunday -> Saturday)
+const isInCurrentWeek = (timeStr: string) => {
+  const date = new Date(timeStr);
+  if (isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  // get start of week (Sunday)
+  const day = now.getDay(); // 0 = Sunday
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(now.getDate() - day);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
+};
 
 const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ userId, langId }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -51,12 +49,8 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
   const [effectiveUserId, setEffectiveUserId] = useState<string | null>(userId ?? null);
 
   const currentLang = langId || "en";
-  const lang = (translations as any)[currentLang] || (translations as any)["en"];
+  const lang = (translations as any)[currentLang];
   const navigation = useNavigation();
-
-  // persistent refs
-  const prevIdsRef = useRef<string[]>([]);
-  const initialLoadRef = useRef<boolean>(true); // avoid alerting on first snapshot load
 
   const [loading, setLoading] = useState(true);
 
@@ -65,7 +59,6 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
     (async () => {
       if (!Device.isDevice) {
         console.warn("[notif-screen] notifications: physical device recommended");
-        // we'll still continue but push token logic elsewhere should guard Device.isDevice
       }
 
       try {
@@ -109,77 +102,29 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
   }, []);
 
   // Firestore realtime listener
+  // subscribe to the service's notifications (keeps screen in sync)
   useEffect(() => {
     if (!effectiveUserId) {
       setNotifications([]);
+      setLoading(false);
       return;
     }
-    const inboxRef = collection(db, "notifications", effectiveUserId, "inbox");
-    const q = query(inboxRef, orderBy("createdAt", "desc"));
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const arr: NotificationItem[] = snap.docs.map((d) => {
-          const raw = d.data() as any;
-          let createdISO = new Date().toISOString();
-          if (raw?.createdAt && typeof raw.createdAt.toDate === "function") {
-            createdISO = raw.createdAt.toDate().toISOString();
-          } else if (raw?.createdAt && typeof raw.createdAt === "string") {
-            createdISO = raw.createdAt;
-          }
-          let updatedISO: string | undefined = undefined;
-          if (raw?.updatedAt && typeof raw.updatedAt.toDate === "function") {
-            updatedISO = raw.updatedAt.toDate().toISOString();
-          } else if (raw?.updatedAt && typeof raw.updatedAt === "string") {
-            updatedISO = raw.updatedAt;
-          }
-          return {
-            n_id: d.id,
-            userId: effectiveUserId!,
-            n_type: raw?.type ?? "notification",
-            title: raw?.title ?? raw?.t ?? "",
-            subtitle: raw?.body ?? raw?.message ?? "",
-            createdTime: createdISO,
-            updatedTime: updatedISO,
-            read: !!raw?.read,
-          } as NotificationItem;
-        });
-
-        const newIds = arr.map((a) => a.n_id);
-        const prev = prevIdsRef.current || [];
-        const added = newIds.filter((id) => !prev.includes(id));
-
-        // If this is the first snapshot after mount, treat as initial load:
-        if (initialLoadRef.current) {
-          // seed prev ids, do not play alerts for existing items
-          prevIdsRef.current = newIds;
-          initialLoadRef.current = false;
-          setNotifications(arr);
-          setLoading(false); // mark loading complete
-          return;
-        }
-
-        // For subsequent snapshots only: play single alert for newly added unread items
-        if (added.length > 0) {
-          const addedItems = arr.filter((it) => added.includes(it.n_id));
-          // pick first unread added item to show single alert
-          const firstUnread = addedItems.find((it) => !it.read);
-          if (firstUnread) {
-            playNotificationLocal(firstUnread.title, firstUnread.subtitle);
-          }
-        }
-
-        prevIdsRef.current = newIds;
-        setNotifications(arr);
-      },
-      (err) => {
-        console.warn("[notif-screen] Firestore listener error", err);
-      }
+    // ensure service started for this user (safe to call repeatedly)
+    NotificationServiceInstance.start(effectiveUserId).catch((e) =>
+      console.warn('[notif-screen] start service failed', e)
     );
 
-    return () => unsub();
+    const unsub = subscribeNotifications((items) => {
+      setNotifications(items);
+      setLoading(false);
+    });
+
+    return () => {
+      unsub();
+    };
   }, [effectiveUserId]);
+
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -188,30 +133,11 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
 
   const markAsRead = async (notif: NotificationItem) => {
     try {
-      if (!effectiveUserId || !notif?.n_id) return;
-      const docRef = doc(db, "notifications", effectiveUserId, "inbox", notif.n_id);
-      await setDoc(docRef, { read: true, updatedAt: serverTimestamp() }, { merge: true });
-      // snapshot will update local state
+      if (!notif?.n_id) return;
+      await NotificationServiceInstance.markAsRead(notif.n_id);
+      // snapshot will update local state via the service subscriber
     } catch (e) {
       console.warn("[notif-screen] markAsRead failed", e);
-    }
-  };
-
-  // schedule a local notification (single immediate alert) using default system sound
-  // This runs in-app and will appear while app is foregrounded (and can show in tray on some OS).
-  // For background/closed behavior on iOS, you must send push notifications from a server + standalone build.
-  const playNotificationLocal = async (title?: string, body?: string) => {
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: title || "New Notification",
-          body: body || "You have a new notification",
-          sound: "default", // ask system to play default sound
-        },
-        trigger: null, // immediate
-      });
-    } catch (e) {
-      console.warn("[notif-screen] scheduleNotificationAsync failed", e);
     }
   };
 
@@ -239,23 +165,22 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
           url: require("../../../assets/icons/back_b.png"),
           width: 23,
           height: 23,
-          onPress: () => (navigation as any).goBack(),
+          onPress: () => navigation.goBack(),
         }}
         center={{ type: "text", value: lang.Notification || "Notifications", color: colors.text }}
       />
 
       <View style={styles.body}>
         {loading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={styles.loading}>
             <ActivityIndicator color={colors.primary} size={'large'} />
-            {/* Optional: ActivityIndicator can go here */}
           </View>
         ) : (
           <SectionList
             sections={groupNotifications(notifications, lang)}
             keyExtractor={(item) => item.n_id}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 80 }}
+            contentContainerStyle={styles.scroll}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} progressBackgroundColor={colors.secondary} colors={[colors.primary]} tintColor={colors.primary} />
 
@@ -269,13 +194,21 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
             renderItem={({ item }) => (
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={() => {
-                  markAsRead(item); // mark notification as read
-                  // navigate to ScheduleScreen tab in Footer_C
-                  (navigation as any).navigate('Footer_C', { selectedTab: 'ScheduleScreen' });
+                onPress={async () => {
+                  try {
+                    await markAsRead(item); // mark notification as read (will update snapshot)
+                  } catch (e) {
+                    console.warn("[notif-screen] markAsRead error on press", e);
+                  }
+                  // Only navigate to ScheduleScreen when the notification's createdTime
+                  // falls inside the current week (Sunday -> Saturday)
+                  if (isInCurrentWeek(item.createdTime)) {
+                    (navigation as any).navigate('Footer_C', { selectedTab: 'ScheduleScreen' });
+                  }
+                  // otherwise do nothing (we already marked it read)
                 }}
               >
-                <View style={{ position: "relative", marginTop: 12 }}>
+                <View style={styles.section}>
                   <CartBox
                     marginTop={0}
                     paddingLeft={12}
@@ -305,8 +238,8 @@ const C_NotificationScreen: React.FC<{ userId?: string; langId?: string }> = ({ 
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              <View style={{ padding: 20 }}>
-                <Text style={{ color: colors.subtext, textAlign: "center" }}>{lang.No_notifications}</Text>
+              <View style={styles.empty_group}>
+                <Text style={styles.empty_notification}>{lang.No_notifications}</Text>
               </View>
             }
           />
@@ -358,8 +291,8 @@ const styles = StyleSheet.create({
   body: { flex: 1, backgroundColor: colors.secondary, paddingHorizontal: 20, marginTop: 20 },
   dateRow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
   dateIcon: { width: 16, height: 16, marginRight: 4, resizeMode: "contain" },
-  sectionTitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular , fontFamily: fonts.family.regular, color: colors.text, minHeight: 16 },
-  title: { fontSize: fonts.size.m, fontWeight: fonts.weight.medium , fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 5 },
+  sectionTitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16 },
+  title: { fontSize: fonts.size.m, fontWeight: fonts.weight.medium, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 5 },
   subtitle: { fontSize: fonts.size.m, fontWeight: fonts.weight.regular, fontFamily: fonts.family.regular, color: colors.text, minHeight: 16, marginBottom: 10 },
   timeRow: { flexDirection: "row", alignItems: "center" },
   icon: { width: 15, height: 15, marginRight: 4 },
@@ -371,4 +304,19 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   unreadDot: { width: 10, height: 10, borderRadius: 10, backgroundColor: colors.primary },
+  loading: {
+    flex: 1, justifyContent: 'center', alignItems: 'center'
+  },
+  scroll: {
+    paddingBottom: 80
+  },
+  section: {
+    position: "relative", marginTop: 12
+  },
+  empty_group: {
+    padding: 20
+  },
+  empty_notification: {
+    color: colors.subtext, textAlign: "center"
+  }
 });

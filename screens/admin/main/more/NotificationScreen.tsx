@@ -1,4 +1,4 @@
-// screens/admin/main/NotificationScreen.tsx
+// screens/admin/main/more/AdminNotificationScreen.tsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
@@ -35,8 +35,6 @@ import {
   setDoc,
   serverTimestamp,
 } from "../../../../api/notification/firebase";
-
-import { fetchUsers, ProfileUser } from "../../../../api/profile";
 
 const REFRESH_INTERVAL_MS = 30 * 1000; // 30 seconds; change as needed
 const PLAYED_EXPIRY_MS = 60 * 1000; // don't replay same notif within 60s
@@ -92,7 +90,7 @@ const AdminNotificationScreen: React.FC = () => {
 
   const routeUserId = route.params?.userId ?? null;
   const routeLangId = route.params?.langId ?? "en";
-  const lang = (translations as any)[routeLangId] || (translations as any)["en"];
+  const lang = (translations as any)[routeLangId];
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);

@@ -103,7 +103,7 @@ const FULL_MONTHS = [
 // ------------------------
 // Caching helpers
 // ------------------------
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 async function readCache(key: string): Promise<unknown | null> {
   try {
@@ -297,8 +297,13 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
   const [schedulesState, setSchedulesState] = useState<ScheduleItem[]>([]);
   const [usersState, setUsersState] = useState<UserProfileItem[]>([]);
 
+  // granular loading state so we can render parts ASAP
+  const [usersLoading, setUsersLoading] = useState<boolean>(false);
+  const [schedulesLoading, setSchedulesLoading] = useState<boolean>(false);
+
   const [recentCheckins, setRecentCheckins] = useState<EnrichedEntry[]>([]);
   const defaultToday = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+
   const defaultDateDisplay = `${WEEKDAYS[defaultToday.getDay()]}, ${MONTHS[defaultToday.getMonth()]} ${defaultToday.getDate()}`;
 
   const prevDateRef = useRef<string>(defaultDateDisplay);
@@ -423,49 +428,63 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
       setUsersState([]);
       return { schedules: [], users: [] };
     }
+
+    // We'll load users first (so UI shows staff/profile info quickly),
+    // then load schedules (may take longer) and cache them.
     try {
-      const start = targetDates[0];
-      const end = targetDates[targetDates.length - 1] || start;
-      const schedulesCacheKey = cacheKeySchedules(branchIdToUse, start, end);
-      const cached = await readCache(schedulesCacheKey);
-      let fetchedSchedules: ScheduleItem[] = Array.isArray(cached) ? (cached as ScheduleItem[]) : [];
-
-      if (!Array.isArray(fetchedSchedules) || fetchedSchedules.length === 0) {
-        // fetch schedules for each date
-        const promises = targetDates.map((d: string) => getSchedulesForDate(d).catch(() => [] as unknown));
-        const results = await Promise.all(promises);
-        // flatten results, assert to ScheduleItem[]
-        const flat = ([] as unknown[]).concat(...results);
-        fetchedSchedules = flat as ScheduleItem[];
-        await writeCache(schedulesCacheKey, fetchedSchedules);
-      }
-      setSchedulesState(fetchedSchedules || []);
-
-      // users cache per branch
+      // --- USERS: try cache first, then network, update usersState immediately ---
       const usersCacheKey = cacheKeyUsers(branchIdToUse);
+      setUsersLoading(true);
       const usersCached = await readCache(usersCacheKey);
       let usersArr: UserProfileItem[] = Array.isArray(usersCached) ? (usersCached as UserProfileItem[]) : [];
 
       if (!Array.isArray(usersArr) || usersArr.length === 0) {
-        // try getUsers with big limit first
+        // Try the faster getUsers() endpoint first (large limit).
         try {
           const r = await getUsers({ limit: 1000 }) as UserProfileItem[] | { users: UserProfileItem[] };
           usersArr = Array.isArray(r) ? (r as UserProfileItem[]) : (r && 'users' in r ? (r.users as UserProfileItem[]) : []);
         } catch (err) {
-          // fallback to fetchUsers
+          // fallback to branch-scoped fetchUsers
           try {
-            const r = await fetchUsers({ branchId: branchIdToUse, role: "user,staff", limit: 1000, page: 1 });
+            const r = await fetchUsers({ branchId: branchIdToUse, role: "user", limit: 1000, page: 1 });
             usersArr = Array.isArray(r?.users) ? (r.users as UserProfileItem[]) : [];
           } catch (er) {
             usersArr = [];
           }
         }
+        // Save users to cache (non-blocking)
         await writeCache(usersCacheKey, usersArr);
       }
+      // update UI immediately with whatever we have
       setUsersState(usersArr || []);
+      setUsersLoading(false);
+
+      // --- SCHEDULES: load (per-date) with cache, set schedulesState when available ---
+      setSchedulesLoading(true);
+      const start = targetDates[0];
+      const end = targetDates[targetDates.length - 1] || start;
+      const schedulesCacheKey = cacheKeySchedules(branchIdToUse, start, end);
+      const cachedSchedules = await readCache(schedulesCacheKey);
+      let fetchedSchedules: ScheduleItem[] = Array.isArray(cachedSchedules) ? (cachedSchedules as ScheduleItem[]) : [];
+
+      if (!Array.isArray(fetchedSchedules) || fetchedSchedules.length === 0) {
+        // fetch schedules for each date in parallel (fast) but keep network-failure defensive
+        const promises = targetDates.map((d: string) => getSchedulesForDate(d).catch(() => [] as unknown));
+        const results = await Promise.all(promises);
+        const flat = ([] as unknown[]).concat(...results);
+        fetchedSchedules = flat as ScheduleItem[];
+        // cache schedules for this branch+range
+        await writeCache(schedulesCacheKey, fetchedSchedules);
+      }
+
+      setSchedulesState(fetchedSchedules || []);
+      setSchedulesLoading(false);
+
       return { schedules: fetchedSchedules || [], users: usersArr || [] };
     } catch (e) {
       console.warn("fetchShiftData failed", e);
+      setSchedulesLoading(false);
+      setUsersLoading(false);
       setSchedulesState([]);
       setUsersState([]);
       return { schedules: [], users: [] };
@@ -650,6 +669,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
   }, [activeBranchId, passedBranchName]);
 
   // Main data loading effect (respects cache)
+  // Main data loading effect (respects cache) — users first, schedules next, attendance enrichment last.
   useEffect(() => {
     if (!activeBranchId || !rangeStartEnd) return;
 
@@ -665,9 +685,14 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
     let cancelled = false;
     (async () => {
       try {
+        // show that attendance enrichment is in progress (keeps cards interactive because users/schedules will update separately)
         setLoadingData(true);
+
+        // fetchShiftData sets usersState quickly, then schedulesState — it returns both arrays when done.
         const { schedules, users } = await fetchShiftData(activeBranchId, targetDates);
         if (cancelled) return;
+
+        // fetchAttendanceAndEnrich depends on both schedules + users; call it after those are available
         await fetchAttendanceAndEnrich(activeBranchId, targetDates, schedules, users);
       } catch (err) {
         console.warn("fetch data error", err);
@@ -678,6 +703,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
 
     return () => { cancelled = true; };
   }, [activeBranchId, rangeStartEnd, version]);
+
 
   // onRefresh clears relevant caches and reloads fresh data
   const onRefresh = async () => {
@@ -1111,7 +1137,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
                     <Image source={require("../../../assets/icons/totalstaff_b.png")} style={styles.icon} />
                     <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}> {lang.total_staff}</Text>
                   </View>
-                  <Text style={styles.total_count}>{loadingData ? "..." : TotalstaffCount}</Text>
+                  <Text style={styles.total_count}>{usersLoading || schedulesLoading || loadingData ? "..." : TotalstaffCount}</Text>
                 </CartBox>
 
                 <CartBox containerStyle={styles.staff}>
@@ -1120,8 +1146,9 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
                     <Text style={styles.total_staff} ellipsizeMode="tail" numberOfLines={1}>{lang.staff_on_shift}</Text>
                   </View>
                   <Text style={styles.shift_count}>
-                    {loadingData ? "..." : String(recentCheckins.length)}
+                    {schedulesLoading || loadingData ? "..." : String(recentCheckins.length)}
                   </Text>
+
                 </CartBox>
               </View>
             )}
@@ -1137,7 +1164,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
           >
             <View style={styles.details}>
               {loadingData ? (
-                <View style={{ paddingVertical: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={styles.loading}>
                   <ActivityIndicator size="large" color={colors.primary} />
                 </View>
               ) : (
@@ -1149,13 +1176,13 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
                   ) : null}
 
                   {!loadingData && filteredScheduleEntries.map(({ schedule, userProfile, attendance, status, diffText, branchNameToShow, dateYmd }, idx) => {
-                    const displayName = (userProfile && (userProfile.fullname || userProfile.username)) ?? (schedule && (typeof schedule.employee_id === "object" ? (schedule.employee_id as EmployeeRef).username : String(schedule.employee_id))) ?? 'Unknown';
+                    const displayName = (userProfile && (userProfile.fullname)) ?? (schedule && (typeof schedule.employee_id === "object" ? schedule.employee_id.username : schedule.employee_id)) ?? 'Unknown';
                     const startTime = schedule?.start_time ? formatTime12(schedule.start_time) : "-";
                     const endTime = schedule?.end_time ? formatTime12(schedule.end_time) : "";
                     const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
                     const dateDisplay = formatYMDDisplay(dateYmd || toYMD(new Date()));
                     const att = attendance || ({} as AttendanceItem);
-                    const idPart = att?.id ?? userProfile?._id ?? (schedule && (typeof schedule.employee_id === "object" ? (schedule.employee_id as EmployeeRef)._id : String(schedule.employee_id))) ?? displayName;
+                    const idPart = att?.id ?? userProfile?._id ?? (schedule && (typeof schedule.employee_id === "object" ? schedule.employee_id._id : schedule.employee_id)) ?? displayName;
                     const key = `${String(idPart)}_${String(dateYmd)}_${idx}`;
 
                     return (
@@ -1167,9 +1194,9 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
                           </View>
                         ) : null}
 
-                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                          <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1 }}>
-                            <View style={{ width: 40, height: 40, borderRadius: 20, overflow: "hidden", justifyContent: "center", alignItems: "center" }}>
+                        <View style={styles.full_detail}>
+                          <View style={styles.section1}>
+                            <View style={styles.avatar}>
                               <Image source={require("../../../assets/images/profile2.png")} style={styles.profileImage} />
                             </View>
 
@@ -1180,7 +1207,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
                             </View>
                           </View>
 
-                          <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                          <View style={styles.status_group}>
                             {status === "late" ? (
                               <Text style={styles.status_late} ellipsizeMode="tail" numberOfLines={1}>
                                 {lang.late}
@@ -1216,7 +1243,7 @@ const AttendanceScreen: React.FC<Props> = (props: Props) => {
         />
       )}
       {loading && (
-        <View style={{ justifyContent: 'center', alignItems: 'center', position: 'absolute', left: 0, top: '30%', right: 0, bottom: 0 }}>
+        <View style={styles.loading1}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
@@ -1337,6 +1364,24 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
     alignItems: "flex-start",
     borderEndWidth: 1
+  },
+  loading:{
+    paddingVertical: 40, alignItems: 'center', justifyContent: 'center'
+  },
+  full_detail:{
+    flexDirection: "row", alignItems: "flex-start"
+  },
+  section1:{
+    flexDirection: "row", alignItems: "flex-start", flex: 1
+  },
+  avatar:{
+    width: 40, height: 40, borderRadius: 20, overflow: "hidden", justifyContent: "center", alignItems: "center"
+  },
+  status_group:{
+    flexDirection: "row", alignItems: "flex-end"
+  },
+  loading1:{
+    justifyContent: 'center', alignItems: 'center', position: 'absolute', left: 0, top: '30%', right: 0, bottom: 0
   },
 });
 

@@ -50,6 +50,7 @@ import {
   getScheduledNotifications,
   cancelNotification
 } from "../../../api/checkin_checkout";
+import { NotificationServiceInstance, subscribeNotifications } from "../../../api/notification/NotificationService";
 //import { getTodaySchedule } from "../../../api/schedules";
 
 // ✅ Define your navigation stack param list
@@ -1584,6 +1585,19 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
     }
   );
 
+    //This function is to show the notification icon change when unread notifications exist
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  useEffect(() => {
+    // ensure service started for current userId 
+    if (userId) {
+      NotificationServiceInstance.start(userId).catch((e) => console.warn('[Home] start notif service', e));
+    }
+    const unsub = subscribeNotifications((_items, uc) => {
+      setUnreadCount(uc);
+    });
+    return () => unsub();
+  }, [userId]);
+  
   return (
     <>
       {/* ✅ Hidden debug button - uncomment for testing */}
@@ -1598,7 +1612,7 @@ const C_Homescreen: React.FC<HomeScreenProps> = ({
         center={{ type: "text", value: lang.timeTrack, color: colors.text }}
         right={{
           type: "image",
-          url: require("../../../assets/icons/f_notification_b.png"),
+          url: unreadCount > 0 ? require("../../../assets/icons/notification_active.png") : require("../../../assets/icons/f_notification_b.png"),
           width: 24,
           height: 24,
           onPress: () => {

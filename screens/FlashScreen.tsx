@@ -1,11 +1,9 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Image, ActivityIndicator, Dimensions } from 'react-native';
+import { View, StyleSheet, Image, ActivityIndicator} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '../styles/Colors';
 import { getToken, getUserId } from '../api/auth/authToken';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const FlashScreen = () => {
   const navigation = useNavigation();
@@ -66,7 +64,7 @@ const FlashScreen = () => {
       }
     };
 
-    void checkLoginStatus();
+    checkLoginStatus();
   }, [navigation]);
 
   return (

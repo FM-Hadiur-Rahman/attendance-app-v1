@@ -7,7 +7,7 @@ export const sendNotificationToUser = async (
     title: string;
     body: string;
     type?: string;
-    meta?: Record<string, any>;
+    meta?: Record<string, unknown>;
   }
 ) => {
   if (!userId) throw new Error("sendNotificationToUser: missing userId");
