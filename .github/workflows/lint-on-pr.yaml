@@ -1,14 +1,12 @@
-name: Lint Code
+name: Lint Code on PR
 
 on:
   pull_request:
     branches: [ main, dev ]
-  push:
-    branches: [ main, dev ]
 
 jobs:
   lint:
-    name: Lint Code
+    name: Run ESLint
     runs-on: ubuntu-latest
 
     steps:
@@ -25,4 +23,5 @@ jobs:
         run: npm ci
 
       - name: Run ESLint
-        run: npm run lint
+        run: |
+          npm run lint
