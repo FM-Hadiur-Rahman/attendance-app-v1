@@ -14,15 +14,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.timetrack"
+      "bundleIdentifier": "com.jyothisictzone.attendanceapp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.yourcompany.timetrack",
-
+      "package": "com.jyothisictzone.attendanceapp",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -34,8 +33,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "90bd73b6-b79d-40c0-9ed6-cb5e199f3655"
+        "projectId": "30ffa517-0abf-47b9-8caa-ed66eed00882"
       }
-    }
+    },
+    "owner": "infrastructurejyothis"
   }
 }

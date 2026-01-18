@@ -1,4 +1,3 @@
-
 {
   "cli": {
     "version": ">= 2.0.0"
@@ -15,13 +14,13 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "credentialsSource": "local"
+        "credentialsSource": "remote"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "credentialsSource": "local"
+        "credentialsSource": "remote"
       }
     }
   }

@@ -1,4 +1,4 @@
-package com.sanjeevan23.attendanceapp
+package com.jyothisictzone.attendanceapp
 
 import android.os.Build
 import android.os.Bundle
