@@ -84,6 +84,7 @@ export const StackNavigator: React.FC = () => {
         component={LanguageScreen}
         options={{ headerShown: false }}
       />
+      
       <Stack.Screen
         name="OpenScreen"
         component={OpenScreen}
