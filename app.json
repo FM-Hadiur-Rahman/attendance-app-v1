@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "",
+    "name": "Time Track",
     "slug": "time-track",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,23 +10,32 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E90FF"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.timetrack"
+      "bundleIdentifier": "com.jyothisictzone.attendanceapp"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1E90FF"
+        "foregroundImage": "",
+        "backgroundColor": "#FFFFFF"
       },
-      "package": "com.yourcompany.timetrack",
+      "package": "com.jyothisictzone.attendanceapp",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/icon.png"
-    }
+    },
+    "cli": {
+      "appVersionSource": "local"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "30ffa517-0abf-47b9-8caa-ed66eed00882"
+      }
+    },
+    "owner": "infrastructurejyothis"
   }
 }
