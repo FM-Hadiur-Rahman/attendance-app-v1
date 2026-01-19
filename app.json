@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E90FF"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
@@ -18,8 +18,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1E90FF"
+        "foregroundImage": "",
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.jyothisictzone.attendanceapp",
       "edgeToEdgeEnabled": true,
