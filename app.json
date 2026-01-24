@@ -34,10 +34,8 @@
       "appVersionSource": "local"
     },
     "extra": {
-      "eas": {
-        "projectId": "30ffa517-0abf-47b9-8caa-ed66eed00882"
-      }
+      "eas": {}
     },
-    "owner": "infrastructurejyothis"
+    "owner": "fm-hadi"
   }
 }
