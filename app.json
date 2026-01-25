@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
@@ -14,16 +14,18 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.jyothisictzone.attendanceapp"
+      "bundleIdentifier": "com.jyothisictzone.attendanceapp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.jyothisictzone.timetrack",
+      "package": "com.jyothisictzone.attendanceapp",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.jyothisictzone.attendanceapp",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -34,7 +36,9 @@
       "appVersionSource": "local"
     },
     "extra": {
-      "eas": {}
+      "eas": {
+        "projectId": "bcd276a5-95a2-4860-953e-1ac537bf1043"
+      }
     },
     "owner": "fm-hadi"
   }
