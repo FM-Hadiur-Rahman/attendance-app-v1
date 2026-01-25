@@ -23,5 +23,8 @@
         "credentialsSource": "remote"
       }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
