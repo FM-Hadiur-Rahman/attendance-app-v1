@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jyothisictzone.attendanceapp",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -23,7 +24,7 @@
       "package": "com.jyothisictzone.attendanceapp",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
@@ -31,9 +32,6 @@
     },
     "web": {
       "favicon": "./assets/icon.png"
-    },
-    "cli": {
-      "appVersionSource": "local"
     },
     "extra": {
       "eas": {
